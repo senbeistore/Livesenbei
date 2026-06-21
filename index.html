@@ -1685,9 +1685,24 @@ function LiveOrderSorter() {
                   客人金額滿 $2498（999+1499）自動拆成同一賣場的兩筆金額方案，盡量對半分、並自動調整到都滿足 999／1499 兩張折價券門檻，方便客人分兩次結帳都用得到券
                 </label>
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm" style={{ color: COLORS.inkMuted }}>
-                    已勾選 {iopenSelected.size} / {customerOrderTotals.length} 位客人
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm" style={{ color: COLORS.inkMuted }}>
+                      已勾選 {iopenSelected.size} / {customerOrderTotals.length} 位客人
+                    </span>
+                    <button
+                      onClick={() => {
+                        if (iopenSelected.size === customerOrderTotals.length) {
+                          setIopenSelected(new Set());
+                        } else {
+                          setIopenSelected(new Set(customerOrderTotals.map((c, idx) => iopenKey(c, idx))));
+                        }
+                      }}
+                      className="text-xs px-2.5 py-1 rounded-md font-medium"
+                      style={{ border: `1px solid ${COLORS.line}`, color: COLORS.ink }}
+                    >
+                      {iopenSelected.size === customerOrderTotals.length ? "取消全選" : "全選"}
+                    </button>
+                  </div>
                   <button onClick={exportIopenXLSX} disabled={iopenSelected.size === 0} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-md font-medium text-white disabled:opacity-40" style={{ background: COLORS.stamp }}>
                     <Download size={14} /> 匯出已勾選的 iOPEN Mall Excel
                   </button>
