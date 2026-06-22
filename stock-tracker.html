@@ -591,29 +591,40 @@ function App(){
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:C.ink,zIndex:50,padding:"14px 16px",boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
           <div style={{maxWidth:640,margin:"0 auto"}}>
             <div style={{color:"rgba(255,255,255,0.7)",fontSize:12,marginBottom:10}}>
-              已選 <strong style={{color:"#fff"}}>{batchSel.size}</strong> 筆，設定訂購日後按套用
+              已選 <strong style={{color:"#fff"}}>{batchSel.size}</strong> 筆
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{color:"rgba(255,255,255,0.7)",fontSize:13,width:60,flexShrink:0}}>首次訂購日</span>
+              {/* 首次訂購日 */}
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{color:"rgba(255,255,255,0.7)",fontSize:12,width:60,flexShrink:0}}>首次訂購日</span>
                 <input type="date" value={batchDate1} onChange={e=>setBatchDate1(e.target.value)}
-                  style={{flex:1,background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:8,padding:"8px 10px",fontSize:15,color:"#fff"}}/>
+                  style={{flex:1,background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:8,padding:"7px 8px",fontSize:14,color:"#fff",minWidth:0}}/>
+                <button onClick={()=>{
+                  setItems(prev=>{const next=prev.map(it=>batchSel.has(it.id)?{...it,firstOrderDate:batchDate1}:it);scheduleSave(next);return next;});
+                  setBatchDate1("");
+                }} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer",flexShrink:0}}>套用</button>
+                <button onClick={()=>{
+                  setItems(prev=>{const next=prev.map(it=>batchSel.has(it.id)?{...it,firstOrderDate:""}:it);scheduleSave(next);return next;});
+                }} style={{background:"rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 10px",fontSize:13,cursor:"pointer",flexShrink:0}}>清除</button>
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{color:"rgba(255,255,255,0.7)",fontSize:13,width:60,flexShrink:0}}>二次訂購日</span>
+              {/* 二次訂購日 */}
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{color:"rgba(255,255,255,0.7)",fontSize:12,width:60,flexShrink:0}}>二次訂購日</span>
                 <input type="date" value={batchDate2} onChange={e=>setBatchDate2(e.target.value)}
-                  style={{flex:1,background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:8,padding:"8px 10px",fontSize:15,color:"#fff"}}/>
+                  style={{flex:1,background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:8,padding:"7px 8px",fontSize:14,color:"#fff",minWidth:0}}/>
+                <button onClick={()=>{
+                  setItems(prev=>{const next=prev.map(it=>batchSel.has(it.id)?{...it,secondOrderDate:batchDate2}:it);scheduleSave(next);return next;});
+                  setBatchDate2("");
+                }} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer",flexShrink:0}}>套用</button>
+                <button onClick={()=>{
+                  setItems(prev=>{const next=prev.map(it=>batchSel.has(it.id)?{...it,secondOrderDate:""}:it);scheduleSave(next);return next;});
+                }} style={{background:"rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"7px 10px",fontSize:13,cursor:"pointer",flexShrink:0}}>清除</button>
               </div>
-              <div style={{display:"flex",gap:8,marginTop:4}}>
-                <button onClick={applyBatch} disabled={!batchDate1&&!batchDate2}
-                  style={{flex:1,background:(batchDate1||batchDate2)?C.stamp:"rgba(255,255,255,0.2)",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:16,fontWeight:700,cursor:(batchDate1||batchDate2)?"pointer":"default"}}>
-                  套用
-                </button>
-                <button onClick={()=>{setBatchSel(new Set());setBatchDate1("");setBatchDate2("");}}
-                  style={{background:"rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.8)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,padding:"12px 18px",fontSize:15,cursor:"pointer"}}>
-                  取消
-                </button>
-              </div>
+              {/* 取消選取 */}
+              <button onClick={()=>{setBatchSel(new Set());setBatchDate1("");setBatchDate2("");}}
+                style={{background:"transparent",color:"rgba(255,255,255,0.5)",border:"none",padding:"4px",fontSize:13,cursor:"pointer",textAlign:"center"}}>
+                取消選取
+              </button>
             </div>
           </div>
         </div>
