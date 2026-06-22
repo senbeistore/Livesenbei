@@ -60,8 +60,6 @@ function isLateArrival(it){
   return d!==null&&d>14;
 }
 
-// 排序優先度
-// 1=完全未操作 2=訂貨中（未全數訂完） 3=全數訂完待到貨 4=已到貨
 function sortPri(it){
   if(it.allArrived)return 4;
   if(it.allOrdered)return 3;
@@ -282,21 +280,27 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
           <div style={{color:C.inkMuted,fontSize:11,marginBottom:4}}>首次訂購日</div>
           <div style={{display:"flex",alignItems:"center",gap:4}}>
             <input type="date" value={it.firstOrderDate||""} onChange={e=>onUpdate("firstOrderDate",e.target.value)}
-              style={{flex:1,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 8px",fontSize:13,color:C.ink,background:C.bg,minWidth:0}}/>
-            {it.firstOrderDate&&(
+              disabled={!!it.allOrdered}
+              style={{flex:1,border:`1px solid ${it.allOrdered?"transparent":C.line}`,borderRadius:8,padding:"6px 8px",fontSize:13,
+                color:it.allOrdered?C.inkMuted:C.ink,background:it.allOrdered?"transparent":C.bg,minWidth:0,
+                opacity:it.allOrdered?0.6:1}}/>
+            {it.firstOrderDate&&!it.allOrdered&&(
               <button onClick={()=>onUpdate("firstOrderDate","")}
-                style={{flexShrink:0,width:26,height:26,borderRadius:6,border:`1px solid ${C.line}`,background:C.surface,color:C.inkMuted,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
+                style={{flexShrink:0,width:26,height:26,borderRadius:6,border:`1px solid ${C.line}`,background:C.surface,color:C.inkMuted,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
             )}
           </div>
         </div>
         <div style={{flex:1}}>
-          <div style={{color:C.inkMuted,fontSize:11,marginBottom:4}}>二次訂購日<span style={{color:C.inkMuted,fontSize:10}}> （選填）</span></div>
+          <div style={{color:C.inkMuted,fontSize:11,marginBottom:4}}>二次訂購日<span style={{fontSize:10}}> 選填</span></div>
           <div style={{display:"flex",alignItems:"center",gap:4}}>
             <input type="date" value={it.secondOrderDate||""} onChange={e=>onUpdate("secondOrderDate",e.target.value)}
-              style={{flex:1,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 8px",fontSize:13,color:C.ink,background:C.bg,minWidth:0}}/>
-            {it.secondOrderDate&&(
+              disabled={!!it.allOrdered}
+              style={{flex:1,border:`1px solid ${it.allOrdered?"transparent":C.line}`,borderRadius:8,padding:"6px 8px",fontSize:13,
+                color:it.allOrdered?C.inkMuted:C.ink,background:it.allOrdered?"transparent":C.bg,minWidth:0,
+                opacity:it.allOrdered?0.6:1}}/>
+            {it.secondOrderDate&&!it.allOrdered&&(
               <button onClick={()=>onUpdate("secondOrderDate","")}
-                style={{flexShrink:0,width:26,height:26,borderRadius:6,border:`1px solid ${C.line}`,background:C.surface,color:C.inkMuted,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
+                style={{flexShrink:0,width:26,height:26,borderRadius:6,border:`1px solid ${C.line}`,background:C.surface,color:C.inkMuted,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
             )}
           </div>
         </div>
@@ -304,13 +308,21 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
 
       {/* 全數訂完 */}
       <div style={{paddingLeft:32,marginBottom:10}}>
-        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
-          <input type="checkbox" checked={!!it.allOrdered} onChange={e=>{onUpdate("allOrdered",e.target.checked);}}
-            style={{width:20,height:20,accentColor:C.info,cursor:"pointer"}}/>
-          <span style={{fontSize:13,color:it.allOrdered?C.info:C.inkMuted,fontWeight:it.allOrdered?"600":"400"}}>
-            {it.allOrdered?"✔ 全數訂完":"全數訂完"}
-          </span>
-        </label>
+        {it.allOrdered?(
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:13,color:C.info,fontWeight:600}}>🔒 全數訂完，等待到貨</span>
+            <button onClick={()=>{if(window.confirm("確定要解鎖並修改訂貨資料？"))onUpdate("allOrdered",false);}}
+              style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>
+              解鎖
+            </button>
+          </div>
+        ):(
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
+            <input type="checkbox" checked={false} onChange={e=>{if(e.target.checked)onUpdate("allOrdered",true);}}
+              style={{width:20,height:20,accentColor:C.info,cursor:"pointer"}}/>
+            <span style={{fontSize:13,color:C.inkMuted}}>全數訂完</span>
+          </label>
+        )}
       </div>
 
       {/* 到貨確認 */}
@@ -451,8 +463,8 @@ function App(){
   }}/>;
 
   const displayed=items.filter(it=>{
-    if(filter==="unordered")return!it.allArrived&&!it.firstOrderDate&&!it.allOrdered;
-    if(filter==="ordered")return!it.allArrived&&(it.firstOrderDate||it.allOrdered);
+    if(filter==="unordered")return!it.allArrived&&!it.firstOrderDate;
+    if(filter==="ordered")return!it.allArrived&&!!it.firstOrderDate;
     if(filter==="arrived")return it.allArrived;
     return true;
   }).filter(it=>!search.trim()||it.product.includes(search.trim()))
