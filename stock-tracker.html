@@ -184,22 +184,44 @@ function computeProportionalAlloc(parsed,stockItems){
   });
   return result;
 }
-// ── 重新計算（只重算未出貨訂單，已出貨保留）──
+// ── 重新計算（已出貨訂單保留shipments，重算剩餘未出品項；未出貨訂單全部重算）──
 function recalculateAlloc(currentAlloc,parsed,stockItems,method){
   const{customers,orders}=parsed;
   const stock={};
   stockItems.forEach(it=>{stock[itemKey(it)]=Math.max(0,(it.arrivedQty||0)-(it.shippedQty||0));});
-  const shipped=[],unshipped=[];
+  const shippedArr=[],unshippedArr=[];
   orders.forEach(o=>{
     const oKey=makeOrderKey(o.customerKey,o.items);
     const ex=currentAlloc[oKey];
     const isShip=ex&&(ex.shipments?.length>0||ex.shippedAt);
-    if(isShip)shipped.push(o);else unshipped.push(o);
+    if(isShip)shippedArr.push({o,oKey,ex});else unshippedArr.push(o);
   });
   const result={};
-  shipped.forEach(o=>{const oKey=makeOrderKey(o.customerKey,o.items);result[oKey]=currentAlloc[oKey];});
-  if(unshipped.length>0){
-    const sub={customers,orders:unshipped};
+  // 已出貨訂單：依客人金額高低優先取得剩餘庫存，保留 shipments 歷史
+  shippedArr.sort((a,b)=>(customers[b.o.customerKey]?.totalAmount||0)-(customers[a.o.customerKey]?.totalAmount||0));
+  shippedArr.forEach(({o,oKey,ex})=>{
+    // 計算每個SKU已出貨數量（從 shipments 陣列加總）
+    const alreadyShipped={};
+    (ex.shipments||[]).forEach(s=>{
+      (s.items||[]).forEach(si=>{const k=itemKey(si);alreadyShipped[k]=(alreadyShipped[k]||0)+(si.allocatedQty||0);});
+    });
+    const allocItems=[],waitingItems=[];
+    o.items.forEach(item=>{
+      const k=itemKey(item);
+      const shipped=alreadyShipped[k]||0;
+      const remaining=item.qty-shipped;
+      if(remaining<=0)return; // 已全數出貨，略過
+      const rem=stock[k]||0;
+      const give=Math.min(remaining,rem);
+      stock[k]=Math.max(0,rem-give);
+      if(give>0)allocItems.push({...item,orderedQty:item.qty,allocatedQty:give});
+      if(give<remaining)waitingItems.push({...item,orderedQty:remaining-give,allocatedQty:0,qty:remaining-give});
+    });
+    result[oKey]={...ex,allocItems,waitingItems};
+  });
+  // 未出貨訂單：用剩餘庫存重新計算
+  if(unshippedArr.length>0){
+    const sub={customers,orders:unshippedArr};
     const fresh=method==="proportional"?computeProportionalAlloc(sub,stockItems):computeAlloc(sub,stockItems);
     Object.assign(result,fresh);
   }
@@ -415,7 +437,13 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
     const available=Math.max(0,(stockMap[sku]||0)-(usage[sku]||0));
     setEditAlloc(prev=>{
       const order={...prev[oKey]};
-      const item=order.allocItems.find(it=>itemKey(it)===sku);
+      let allocItems=[...order.allocItems];
+      let item=allocItems.find(it=>itemKey(it)===sku);
+      // 如果 allocItems 沒有此 SKU（例如已釋放或從未分配），從 waitingItems 補進來
+      if(!item&&delta>0){
+        const wi=order.waitingItems.find(it=>itemKey(it)===sku);
+        if(wi){item={...wi,allocatedQty:0};allocItems=[...allocItems,item];order.allocItems=allocItems;}
+      }
       if(!item)return prev;
       const maxByOrder=item.orderedQty||item.qty||999; // 不可超過客人訂購數量
       const newQty=Math.max(0,Math.min(available+item.allocatedQty,maxByOrder,item.allocatedQty+delta));
@@ -643,7 +671,13 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
                                 <span style={{fontSize:10,color:C.inkMuted}}>可用{available+it.allocatedQty}</span>
                               </div>
                             ):(
-                              <strong style={{fontSize:13,color:C.success,flexShrink:0}}>× {it.allocatedQty}</strong>
+                              <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                                <strong style={{fontSize:13,color:C.success}}>× {it.allocatedQty}</strong>
+                                <button onClick={()=>updateAllocQty(o.oKey,sku,-it.allocatedQty)}
+                                  style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:"rgba(255,255,255,0.8)",borderRadius:6,padding:"1px 7px",cursor:"pointer",whiteSpace:"nowrap"}}>
+                                  釋放
+                                </button>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -659,16 +693,18 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
                     {o.waitingItems.filter(it=>(it.orderedQty||it.qty)>0).map((it,i)=>{
                       const sku=itemKey(it);const otherUsage=usage[sku]||0;
                       const available=Math.max(0,(stockMap[sku]||0)-otherUsage);
-                      const isEditing=editingKey===o.oKey;
                       const waitQty=it.orderedQty||it.qty;
                       return(
                         <div key={i} style={{background:C.orangeSoft,borderRadius:8,padding:"6px 10px",marginBottom:4}}>
                           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
                             <span style={{fontSize:13,color:C.orange,flex:1}}>{[it.product,it.color,it.size,it.style].filter(Boolean).join(" ")}</span>
-                            {isEditing&&available>0?(
-                              <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
-                                <span style={{fontSize:13,color:C.orange}}>待 {waitQty}</span>
-                                <button onClick={()=>updateAllocQty(o.oKey,sku,1)} style={{background:C.success,color:"#fff",border:"none",borderRadius:6,padding:"2px 8px",fontSize:11,cursor:"pointer"}}>補入{available}</button>
+                            {available>0?(
+                              <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                                <span style={{fontSize:12,color:C.inkMuted}}>待 {waitQty}</span>
+                                <button onClick={()=>updateAllocQty(o.oKey,sku,available)}
+                                  style={{background:C.success,color:"#fff",border:"none",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+                                  補入{available}件
+                                </button>
                               </div>
                             ):(
                               <span style={{fontSize:13,color:C.orange,flexShrink:0}}>× {waitQty}</span>
