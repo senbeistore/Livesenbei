@@ -16,6 +16,7 @@ window.onerror=function(msg,src,line,col,err){
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei",sans-serif;background:#F5F3EE;}
 input[type="date"]{-webkit-appearance:none;appearance:none;}
+input[type="number"]{-webkit-appearance:none;-moz-appearance:textfield;}
 </style>
 </head>
 <body>
@@ -29,38 +30,51 @@ const C={
   info:"#1D6FA3",infoSoft:"#EFF6FC",
   success:"#2D7D46",successSoft:"#EBF5EE",
   warning:"#92400E",warningSoft:"#FFF8ED",
+  orange:"#E65100",orangeSoft:"#FFF3E0",
 };
 const GIST_FILE="stock-tracker-data.json";
+
 function genId(){return Math.random().toString(36).slice(2)+Date.now().toString(36);}
 function itemKey(it){return[it.product,it.color,it.size,it.style].join("|||");}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function fmtSavedTime(d){if(!d)return"";return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}
-function fmtArrivedTs(ts){
+function fmtTs(ts){
   if(!ts)return"";
   const d=new Date(ts);
   return`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
 }
 function daysSince(dateStr){
   if(!dateStr||isNaN(new Date(dateStr)))return null;
-  return Math.floor((new Date(todayStr())-new Date(dateStr))/(1000*60*60*24));
+  return Math.floor((new Date(todayStr())-new Date(dateStr))/(864e5));
 }
+
+// 警示判斷
 function isLateOrder(it){
-  // 超過3天還沒填訂貨日
-  if(it.arrived||it.supplierOrderDate)return false;
-  const d=daysSince(it.orderDate);
+  if(it.allOrdered||it.allArrived||it.firstOrderDate)return false;
+  const d=daysSince(it.importedAt||it.orderDate);
   return d!==null&&d>3;
 }
 function isLateArrival(it){
-  // 訂貨後超過14天還沒到貨
-  if(it.arrived||!it.supplierOrderDate)return false;
-  const d=daysSince(it.supplierOrderDate);
+  if(it.allArrived||!it.firstOrderDate)return false;
+  const d=daysSince(it.firstOrderDate);
   return d!==null&&d>14;
 }
-function sortPriority(it){
-  if(it.arrived)return 3;
-  if(it.supplierOrderDate)return 2;
+
+// 排序優先度
+// 1=完全未操作 2=訂貨中（未全數訂完） 3=全數訂完待到貨 4=已到貨
+function sortPri(it){
+  if(it.allArrived)return 4;
+  if(it.allOrdered)return 3;
+  if(it.firstOrderDate)return 2;
   return 1;
 }
+
+const GROUP_LABEL={
+  1:"📋 未開始訂貨",
+  2:"🚚 訂貨中",
+  3:"📦 全數訂完，待到貨",
+  4:"✅ 已到貨",
+};
 
 function parseLine(line){
   const out=[];let cur="",q=false;
@@ -85,6 +99,20 @@ function parseCSV(text){
   }).filter(r=>r.product);
 }
 
+// 舊資料欄位相容轉換
+function migrateItem(it){
+  return{
+    ...it,
+    firstOrderDate: it.firstOrderDate||it.supplierOrderDate||"",
+    secondOrderDate: it.secondOrderDate||"",
+    allOrdered: it.allOrdered||false,
+    arrivedQty: it.arrivedQty!=null?it.arrivedQty:(it.arrived?it.qty:0),
+    allArrived: it.allArrived||it.arrived||false,
+    arrivedTs: it.arrivedTs||"",
+    importedAt: it.importedAt||it.orderDate||todayStr(),
+  };
+}
+
 async function gFetch(token,gistId){
   const r=await fetch(`https://api.github.com/gists/${gistId}`,{
     headers:{Authorization:`Bearer ${token}`,Accept:"application/vnd.github.v3+json"}
@@ -92,10 +120,7 @@ async function gFetch(token,gistId){
   if(!r.ok)throw new Error(`無法讀取 (HTTP ${r.status})`);
   const d=await r.json();
   const content=d.files[GIST_FILE]?.content;
-  try{
-    const parsed=JSON.parse(content||"{}").items||[];
-    return parsed.map(it=>({...it,supplierOrderDate:it.supplierOrderDate||it.restockDate||""}));
-  }catch{return[];}
+  try{return(JSON.parse(content||"{}").items||[]).map(migrateItem);}catch{return[];}
 }
 async function gSave(token,gistId,items){
   const r=await fetch(`https://api.github.com/gists/${gistId}`,{
@@ -122,7 +147,6 @@ function Setup({onDone}){
   const[err,setErr]=useState("");
   const[busy,setBusy]=useState(false);
   const[newId,setNewId]=useState("");
-
   async function handle(createNew){
     if(!tkn.trim()){setErr("請輸入 Token");return;}
     if(!createNew&&!gid.trim()){setErr("請輸入 Gist ID");return;}
@@ -137,7 +161,6 @@ function Setup({onDone}){
     }catch(e){setErr(e.message);}
     finally{setBusy(false);}
   }
-
   return(
     <div style={{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:C.surface,borderRadius:16,padding:24,maxWidth:480,width:"100%",border:`1px solid ${C.line}`}}>
@@ -162,7 +185,7 @@ function Setup({onDone}){
         )}
         {err&&<div style={{color:C.stamp,background:"#FEF2F2",border:"1px solid #FCA5A5",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12}}>{err}</div>}
         <button onClick={()=>handle(true)} disabled={!tkn||busy}
-          style={{background:C.stamp,opacity:(!tkn||busy)?0.5:1}}
+          style={{background:C.stamp,opacity:(!tkn||busy)?0.5:1,border:"none",cursor:"pointer"}}
           className="w-full text-white font-medium py-2.5 rounded-lg mb-3 text-sm">
           {busy?"設定中…":"🆕 自動建立儲存空間（第一次用）"}
         </button>
@@ -171,7 +194,7 @@ function Setup({onDone}){
         <input type="text" value={gid} onChange={e=>setGid(e.target.value)} placeholder="貼上之前記下的 Gist ID"
           className="w-full px-3 py-2 rounded-lg mb-3 text-sm" style={{border:`1px solid ${C.line}`,fontFamily:"monospace"}}/>
         <button onClick={()=>handle(false)} disabled={!tkn||!gid||busy}
-          style={{border:`1px solid ${C.line}`,color:C.ink,background:C.surface,opacity:(!tkn||!gid||busy)?0.5:1}}
+          style={{border:`1px solid ${C.line}`,color:C.ink,background:C.surface,opacity:(!tkn||!gid||busy)?0.5:1,cursor:"pointer"}}
           className="w-full font-medium py-2 rounded-lg text-sm">
           {busy?"連線中…":"使用現有儲存空間"}
         </button>
@@ -181,54 +204,60 @@ function Setup({onDone}){
 }
 
 // ── Item Card ──
-function ItemCard({it,sel,onToggleSel,onUpdate,onToggleArrived}){
-  const lateOrder=isLateOrder(it);
-  const lateArrival=isLateArrival(it);
-  const daysNoOrder=lateOrder?daysSince(it.orderDate):null;
-  const daysNoArrival=lateArrival?daysSince(it.supplierOrderDate):null;
+function ItemCard({it,sel,onToggleSel,onUpdate}){
+  const late3=isLateOrder(it);
+  const late14=isLateArrival(it);
+  const days3=late3?daysSince(it.importedAt||it.orderDate):null;
+  const days14=late14?daysSince(it.firstOrderDate):null;
 
-  let cardBorder=C.line;
-  let cardBg=C.surface;
-  if(it.arrived){cardBg=C.successSoft;}
-  else if(lateArrival){cardBorder=C.warning;cardBg=C.warningSoft;}
-  else if(lateOrder){cardBorder="#FFB74D";cardBg:"#FFF8F0";}
-  else if(sel){cardBorder=C.info;}
+  let borderColor=C.line;
+  let bgColor=C.surface;
+  if(it.allArrived){bgColor=C.successSoft;borderColor=C.success;}
+  else if(late14){bgColor=C.warningSoft;borderColor=C.warning;}
+  else if(late3){bgColor:C.orangeSoft;borderColor="#FFB74D";}
+  if(sel&&!it.allArrived){borderColor=C.info;}
+
+  function handleArrivedQty(val){
+    const n=Math.max(0,Math.min(it.qty,parseInt(val,10)||0));
+    const nowFull=n>=it.qty;
+    onUpdate("arrivedQty",n);
+    if(nowFull&&!it.allArrived){
+      onUpdate("allArrived",true);
+      if(!it.arrivedTs)onUpdate("arrivedTs",new Date().toISOString());
+    }
+  }
+  function handleAllArrived(checked){
+    onUpdate("allArrived",checked);
+    if(checked){
+      if(!it.arrivedTs)onUpdate("arrivedTs",new Date().toISOString());
+      if(!it.arrivedQty||it.arrivedQty<it.qty)onUpdate("arrivedQty",it.qty);
+    }else{
+      onUpdate("arrivedTs","");
+    }
+  }
 
   return(
-    <div style={{
-      background:cardBg,
-      border:`1px solid ${sel&&!it.arrived?C.info:cardBorder}`,
-      borderRadius:12,
-      marginBottom:10,
-      padding:"12px 14px",
-      opacity:it.arrived?0.8:1,
-      boxShadow:sel?"0 0 0 2px rgba(29,111,163,0.2)":lateArrival?"0 0 0 2px rgba(146,64,14,0.15)":lateOrder?"0 0 0 2px rgba(255,183,77,0.2)":"none",
-    }}>
+    <div style={{background:bgColor,border:`2px solid ${borderColor}`,borderRadius:12,marginBottom:10,padding:"12px 14px",
+      boxShadow:sel?"0 0 0 3px rgba(29,111,163,0.15)":"none",transition:"border-color .15s"}}>
+
       {/* 警示徽章 */}
-      {(lateOrder||lateArrival)&&(
-        <div style={{marginBottom:8,display:"flex",gap:6,flexWrap:"wrap"}}>
-          {lateOrder&&(
-            <span style={{background:"#FFF3E0",color:"#E65100",border:"1px solid #FFB74D",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:600}}>
-              ⚠ {daysNoOrder}天未訂貨
-            </span>
-          )}
-          {lateArrival&&(
-            <span style={{background:C.warningSoft,color:C.warning,border:`1px solid ${C.warning}`,borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:600}}>
-              🚨 {daysNoArrival}天未到貨
-            </span>
-          )}
+      {(late3||late14)&&(
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+          {late3&&<span style={{background:C.orangeSoft,color:C.orange,border:`1px solid ${C.orange}`,borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:600}}>⚠ {days3}天未訂貨</span>}
+          {late14&&<span style={{background:C.warningSoft,color:C.warning,border:`1px solid ${C.warning}`,borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:600}}>🚨 {days14}天未到貨</span>}
         </div>
       )}
-      {/* 上排：勾選 + 商品名稱 + 數量 */}
-      <div className="flex items-start gap-3 mb-2">
+
+      {/* 商品名稱列 */}
+      <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
         <input type="checkbox" checked={sel} onChange={onToggleSel}
-          style={{width:22,height:22,marginTop:1,accentColor:C.info,cursor:"pointer",flexShrink:0}}/>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <span style={{color:it.arrived?C.success:C.ink,fontWeight:600,fontSize:15}}>
-              {it.arrived&&"✅ "}{it.product}
+          style={{width:22,height:22,marginTop:2,accentColor:C.info,cursor:"pointer",flexShrink:0}}/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+            <span style={{color:it.allArrived?C.success:C.ink,fontWeight:700,fontSize:15}}>
+              {it.product}
             </span>
-            <span style={{background:C.stripe,color:C.inkMuted,borderRadius:20,padding:"1px 10px",fontSize:12,flexShrink:0}}>
+            <span style={{background:C.stripe,color:C.inkMuted,borderRadius:20,padding:"2px 10px",fontSize:12,flexShrink:0,fontWeight:600}}>
               x{it.qty}
             </span>
           </div>
@@ -240,33 +269,56 @@ function ItemCard({it,sel,onToggleSel,onUpdate,onToggleArrived}){
         </div>
       </div>
 
-      {/* 日期列 */}
-      <div className="flex gap-2 mb-2 pl-9">
-        <div className="flex-1">
-          <div style={{color:C.inkMuted,fontSize:11,marginBottom:3}}>訂購日</div>
-          <input type="date" value={it.orderDate||""} onChange={e=>onUpdate("orderDate",e.target.value)}
+      {/* 訂貨日期 */}
+      <div style={{display:"flex",gap:8,marginBottom:10,paddingLeft:32}}>
+        <div style={{flex:1}}>
+          <div style={{color:C.inkMuted,fontSize:11,marginBottom:4}}>首次訂購日</div>
+          <input type="date" value={it.firstOrderDate||""} onChange={e=>onUpdate("firstOrderDate",e.target.value)}
             style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 8px",fontSize:13,color:C.ink,background:C.bg}}/>
         </div>
-        <div className="flex-1">
-          <div style={{color:lateArrival?C.warning:C.inkMuted,fontSize:11,marginBottom:3,fontWeight:lateArrival?"600":"400"}}>
-            訂貨日{lateArrival?" 🚨":""}
-          </div>
-          <input type="date" value={it.supplierOrderDate||""} onChange={e=>onUpdate("supplierOrderDate",e.target.value)}
-            style={{width:"100%",border:`1px solid ${lateArrival?C.warning:C.line}`,borderRadius:8,padding:"6px 8px",fontSize:13,color:lateArrival?C.warning:C.ink,background:lateArrival?C.warningSoft:C.bg}}/>
+        <div style={{flex:1}}>
+          <div style={{color:C.inkMuted,fontSize:11,marginBottom:4}}>二次訂購日<span style={{color:C.inkMuted,fontSize:10}}> （選填）</span></div>
+          <input type="date" value={it.secondOrderDate||""} onChange={e=>onUpdate("secondOrderDate",e.target.value)}
+            style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 8px",fontSize:13,color:C.ink,background:C.bg}}/>
         </div>
       </div>
 
-      {/* 到貨確認 */}
-      <div className="flex items-center gap-3 pl-9">
+      {/* 全數訂完 */}
+      <div style={{paddingLeft:32,marginBottom:10}}>
         <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
-          <input type="checkbox" checked={!!it.arrived} onChange={e=>onToggleArrived(e.target.checked)}
-            style={{width:24,height:24,accentColor:C.success,cursor:"pointer"}}/>
-          <span style={{color:it.arrived?C.success:C.inkMuted,fontSize:14,fontWeight:it.arrived?"600":"400"}}>
-            {it.arrived?"已到貨":"到貨確認"}
+          <input type="checkbox" checked={!!it.allOrdered} onChange={e=>{onUpdate("allOrdered",e.target.checked);}}
+            style={{width:20,height:20,accentColor:C.info,cursor:"pointer"}}/>
+          <span style={{fontSize:13,color:it.allOrdered?C.info:C.inkMuted,fontWeight:it.allOrdered?"600":"400"}}>
+            {it.allOrdered?"✔ 全數訂完":"全數訂完"}
           </span>
         </label>
-        {it.arrivedTs&&(
-          <span style={{color:C.success,fontSize:12}}>{fmtArrivedTs(it.arrivedTs)}</span>
+      </div>
+
+      {/* 到貨確認 */}
+      <div style={{paddingLeft:32,borderTop:`1px solid ${C.line}`,paddingTop:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{color:C.inkMuted,fontSize:12,whiteSpace:"nowrap"}}>已到貨</span>
+            <input type="number" min="0" max={it.qty} value={it.arrivedQty||0}
+              onChange={e=>handleArrivedQty(e.target.value)}
+              style={{width:52,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 6px",fontSize:14,textAlign:"center",background:C.bg,color:C.ink}}/>
+            <span style={{color:C.inkMuted,fontSize:12,whiteSpace:"nowrap"}}>/ {it.qty} 件</span>
+          </div>
+          <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
+            <input type="checkbox" checked={!!it.allArrived} onChange={e=>handleAllArrived(e.target.checked)}
+              style={{width:22,height:22,accentColor:C.success,cursor:"pointer"}}/>
+            <span style={{fontSize:13,color:it.allArrived?C.success:C.inkMuted,fontWeight:it.allArrived?"600":"400"}}>
+              {it.allArrived?"✅ 全數到貨":"全數到貨"}
+            </span>
+          </label>
+          {it.arrivedTs&&(
+            <span style={{color:C.success,fontSize:11,whiteSpace:"nowrap"}}>{fmtTs(it.arrivedTs)}</span>
+          )}
+        </div>
+        {it.arrivedQty>0&&!it.allArrived&&(
+          <div style={{color:C.orange,fontSize:11,marginTop:4}}>
+            ⚡ 部分到貨：{it.arrivedQty}/{it.qty} 件
+          </div>
         )}
       </div>
     </div>
@@ -280,16 +332,18 @@ function App(){
   const[setupMode,setSetupMode]=useState(!localStorage.getItem("st_gist_id"));
   const[items,setItems]=useState([]);
   const[filter,setFilter]=useState("all");
+  const[search,setSearch]=useState("");
   const[loading,setLoading]=useState(false);
   const[saving,setSaving]=useState(false);
   const[lastSaved,setLastSaved]=useState(null);
   const[globalErr,setGlobalErr]=useState("");
   const[showSettings,setShowSettings]=useState(false);
   const[batchSel,setBatchSel]=useState(new Set());
-  const[batchDate,setBatchDate]=useState("");
-  const[search,setSearch]=useState("");
+  const[batchDate1,setBatchDate1]=useState("");
+  const[batchDate2,setBatchDate2]=useState("");
   const fileRef=useRef(null);
   const saveTimer=useRef(null);
+  const pendingUpdates=useRef({});
 
   useEffect(()=>{
     if(!setupMode&&token&&gistId){
@@ -306,39 +360,44 @@ function App(){
       gSave(token,gistId,newItems)
         .then(()=>{setSaving(false);setLastSaved(new Date());})
         .catch(e=>{setSaving(false);setGlobalErr("自動儲存失敗："+e.message);});
-    },700);
+    },800);
   },[token,gistId]);
 
-  function update(id,field,value){
-    setItems(prev=>{const next=prev.map(it=>it.id===id?{...it,[field]:value}:it);scheduleSave(next);return next;});
-  }
-  function toggleArrived(id,checked){
+  function updateField(id,field,value){
     setItems(prev=>{
-      const next=prev.map(it=>it.id===id?{...it,arrived:checked,arrivedTs:checked?new Date().toISOString():""}:it);
+      const next=prev.map(it=>it.id===id?{...it,[field]:value}:it);
       scheduleSave(next);return next;
     });
   }
-  function toggleSel(id){
-    setBatchSel(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;});
+  // 批次更新同一個 item 多個欄位（避免連續setState覆蓋）
+  function updateItem(id,updates){
+    setItems(prev=>{
+      const next=prev.map(it=>it.id===id?{...it,...updates}:it);
+      scheduleSave(next);return next;
+    });
   }
+
   function applyBatch(){
-    if(!batchDate||batchSel.size===0)return;
+    if(batchSel.size===0)return;
+    const updates={};
+    if(batchDate1)updates.firstOrderDate=batchDate1;
+    if(batchDate2)updates.secondOrderDate=batchDate2;
+    if(!Object.keys(updates).length)return;
     setItems(prev=>{
-      const next=prev.map(it=>batchSel.has(it.id)?{...it,supplierOrderDate:batchDate}:it);
+      const next=prev.map(it=>batchSel.has(it.id)?{...it,...updates}:it);
       scheduleSave(next);return next;
     });
-    setBatchSel(new Set());setBatchDate("");
+    setBatchSel(new Set());setBatchDate1("");setBatchDate2("");
   }
+
   function handleCSV(e){
     const files=Array.from(e.target.files||[]);
     if(!files.length)return;
-    // 讀取所有檔案，再一起處理
     Promise.all(files.map(file=>new Promise(resolve=>{
       const reader=new FileReader();
       reader.onload=ev=>resolve(parseCSV(ev.target.result));
       reader.readAsText(file,"utf-8");
     }))).then(results=>{
-      // 先把所有檔案的品項累加（相同SKU加總數量）
       const aggMap={};
       results.forEach(parsed=>{
         parsed.forEach(p=>{
@@ -352,7 +411,7 @@ function App(){
         const merged=Object.values(aggMap).map(p=>{
           const k=itemKey(p);
           if(ex[k])return{...ex[k],qty:p.qty};
-          return{...p,id:genId(),orderDate:todayStr(),supplierOrderDate:"",arrived:false,arrivedTs:""};
+          return{...p,id:genId(),importedAt:todayStr(),firstOrderDate:"",secondOrderDate:"",allOrdered:false,arrivedQty:0,allArrived:false,arrivedTs:""};
         });
         const mk=new Set(merged.map(itemKey));
         prev.forEach(it=>{if(!mk.has(itemKey(it)))merged.push(it);});
@@ -361,6 +420,7 @@ function App(){
     });
     e.target.value="";
   }
+
   function resetSetup(){
     localStorage.removeItem("st_token");localStorage.removeItem("st_gist_id");
     setToken("");setGistId("");setItems([]);setSetupMode(true);setShowSettings(false);
@@ -372,17 +432,19 @@ function App(){
   }}/>;
 
   const displayed=items.filter(it=>{
-    const matchFilter=filter==="arrived"?it.arrived:filter==="pending"?!it.arrived:true;
-    const matchSearch=!search.trim()||it.product.includes(search.trim());
-    return matchFilter&&matchSearch;
-  }).slice().sort((a,b)=>sortPriority(a)-sortPriority(b));
-  const arrivedCount=items.filter(it=>it.arrived).length;
-  const lateOrderCount=items.filter(isLateOrder).length;
-  const lateArrivalCount=items.filter(isLateArrival).length;
+    if(filter==="arrived")return it.allArrived;
+    if(filter==="pending")return!it.allArrived;
+    return true;
+  }).filter(it=>!search.trim()||it.product.includes(search.trim()))
+    .slice().sort((a,b)=>sortPri(a)-sortPri(b));
+
+  const arrivedCount=items.filter(it=>it.allArrived).length;
+  const late3Count=items.filter(isLateOrder).length;
+  const late14Count=items.filter(isLateArrival).length;
   const allSel=displayed.length>0&&displayed.every(it=>batchSel.has(it.id));
 
   return(
-    <div style={{background:C.bg,minHeight:"100vh",paddingBottom:batchSel.size>0?90:0}}>
+    <div style={{background:C.bg,minHeight:"100vh",paddingBottom:batchSel.size>0?100:0}}>
       {/* Header */}
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
@@ -403,8 +465,8 @@ function App(){
           </div>
         </div>
         {showSettings&&(
-          <div style={{background:C.stripe,borderTop:`1px solid ${C.line}`,padding:"10px 14px",fontSize:12,color:C.inkMuted,maxWidth:640,margin:"0 auto"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{background:C.stripe,borderTop:`1px solid ${C.line}`,padding:"10px 14px",fontSize:12,color:C.inkMuted}}>
+            <div style={{maxWidth:640,margin:"0 auto",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span>Gist ID：<code style={{fontSize:11,color:C.ink}}>{gistId}</code></span>
               <button onClick={()=>{try{navigator.clipboard.writeText(gistId);}catch{}}}
                 style={{border:`1px solid ${C.line}`,padding:"2px 8px",borderRadius:6,cursor:"pointer"}}>複製</button>
@@ -424,20 +486,12 @@ function App(){
         )}
 
         {/* Stats */}
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
           <span style={{color:C.ink,fontSize:14}}>
             已到貨 <strong style={{color:C.success}}>{arrivedCount}</strong> / {items.length} 筆
           </span>
-          {lateOrderCount>0&&(
-            <span style={{background:"#FFF3E0",color:"#E65100",border:"1px solid #FFB74D",borderRadius:20,padding:"2px 10px",fontSize:12}}>
-              ⚠ {lateOrderCount} 筆逾3天未訂貨
-            </span>
-          )}
-          {lateArrivalCount>0&&(
-            <span style={{background:C.warningSoft,color:C.warning,border:`1px solid ${C.warning}`,borderRadius:20,padding:"2px 10px",fontSize:12}}>
-              🚨 {lateArrivalCount} 筆逾14天未到貨
-            </span>
-          )}
+          {late3Count>0&&<span style={{background:C.orangeSoft,color:C.orange,border:`1px solid ${C.orange}`,borderRadius:20,padding:"2px 10px",fontSize:11}}>⚠ {late3Count} 筆逾3天未訂</span>}
+          {late14Count>0&&<span style={{background:C.warningSoft,color:C.warning,border:`1px solid ${C.warning}`,borderRadius:20,padding:"2px 10px",fontSize:11}}>🚨 {late14Count} 筆逾14天未到</span>}
           <div style={{display:"flex",gap:4,marginLeft:"auto"}}>
             {[["all","全部"],["pending","待到貨"],["arrived","已到貨"]].map(([v,l])=>(
               <button key={v} onClick={()=>setFilter(v)}
@@ -451,49 +505,53 @@ function App(){
         {/* 搜尋 */}
         <div style={{position:"relative",marginBottom:10}}>
           <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:C.inkMuted,fontSize:16,pointerEvents:"none"}}>🔍</span>
-          <input
-            type="text"
-            value={search}
-            onChange={e=>setSearch(e.target.value)}
-            placeholder="搜尋商品名稱，例如：雲霧褲"
-            style={{width:"100%",border:`1px solid ${search?C.info:C.line}`,borderRadius:10,padding:"9px 36px 9px 34px",fontSize:14,background:C.surface,color:C.ink,boxSizing:"border-box"}}
-          />
-          {search&&(
-            <button onClick={()=>setSearch("")}
-              style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:C.inkMuted,fontSize:18,background:"none",border:"none",cursor:"pointer",lineHeight:1}}>×</button>
-          )}
+          <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜尋商品名稱"
+            style={{width:"100%",border:`1px solid ${search?C.info:C.line}`,borderRadius:10,padding:"9px 36px 9px 34px",fontSize:14,background:C.surface,color:C.ink,boxSizing:"border-box"}}/>
+          {search&&<button onClick={()=>setSearch("")}
+            style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:C.inkMuted,fontSize:18,background:"none",border:"none",cursor:"pointer"}}>×</button>}
         </div>
-        {search&&(
-          <div style={{color:C.info,fontSize:12,marginBottom:8}}>
-            搜尋「{search}」— 找到 {displayed.length} 筆，勾選左上角可一次全選這個品項的所有規格
-          </div>
+        {search&&displayed.length>0&&(
+          <div style={{color:C.info,fontSize:12,marginBottom:8}}>找到 {displayed.length} 筆 ——勾選後可批次設訂購日</div>
         )}
+
+        {/* 批次工具列 */}
         {displayed.length>0&&(
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,padding:"8px 12px",background:C.surface,border:`1px solid ${C.line}`,borderRadius:10}}>
-            <input type="checkbox" checked={allSel}
-              onChange={e=>{
-                if(e.target.checked)setBatchSel(new Set([...batchSel,...displayed.map(it=>it.id)]));
-                else setBatchSel(prev=>{const n=new Set(prev);displayed.forEach(it=>n.delete(it.id));return n;});
-              }}
-              style={{width:20,height:20,accentColor:C.info,cursor:"pointer"}}/>
-            <span style={{color:C.inkMuted,fontSize:13}}>
-              {batchSel.size>0?`已選 ${batchSel.size} 筆`:"全選"}
-            </span>
-            {batchSel.size>0&&(
-              <>
-                <span style={{color:C.inkMuted,fontSize:12,marginLeft:4}}>批次設訂貨日</span>
-                <input type="date" value={batchDate} onChange={e=>setBatchDate(e.target.value)}
-                  style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 8px",fontSize:13,flex:1,minWidth:120}}/>
-                <button onClick={applyBatch} disabled={!batchDate}
-                  style={{background:batchDate?C.stamp:"#ccc",color:"#fff",border:"none",borderRadius:8,padding:"5px 12px",fontSize:13,fontWeight:600,cursor:batchDate?"pointer":"default",whiteSpace:"nowrap"}}>
-                  套用
-                </button>
-                <button onClick={()=>{setBatchSel(new Set());setBatchDate("");}}
-                  style={{color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:8,padding:"5px 8px",fontSize:12,cursor:"pointer"}}>
-                  取消
-                </button>
-              </>
-            )}
+          <div style={{background:C.surface,border:`1px solid ${C.line}`,borderRadius:10,padding:"8px 12px",marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <input type="checkbox" checked={allSel}
+                onChange={e=>{
+                  if(e.target.checked)setBatchSel(new Set([...batchSel,...displayed.map(it=>it.id)]));
+                  else setBatchSel(prev=>{const n=new Set(prev);displayed.forEach(it=>n.delete(it.id));return n;});
+                }}
+                style={{width:20,height:20,accentColor:C.info,cursor:"pointer"}}/>
+              <span style={{color:C.inkMuted,fontSize:13,minWidth:60}}>
+                {batchSel.size>0?`已選 ${batchSel.size} 筆`:"全選"}
+              </span>
+              {batchSel.size>0&&(
+                <>
+                  <div style={{display:"flex",alignItems:"center",flex:1,flexWrap:"wrap",gap:6}}>
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      <span style={{color:C.inkMuted,fontSize:11,whiteSpace:"nowrap"}}>首次</span>
+                      <input type="date" value={batchDate1} onChange={e=>setBatchDate1(e.target.value)}
+                        style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 6px",fontSize:12,minWidth:120}}/>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      <span style={{color:C.inkMuted,fontSize:11,whiteSpace:"nowrap"}}>二次</span>
+                      <input type="date" value={batchDate2} onChange={e=>setBatchDate2(e.target.value)}
+                        style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 6px",fontSize:12,minWidth:120}}/>
+                    </div>
+                  </div>
+                  <button onClick={applyBatch} disabled={!batchDate1&&!batchDate2}
+                    style={{background:(batchDate1||batchDate2)?C.stamp:"#ccc",color:"#fff",border:"none",borderRadius:8,padding:"6px 14px",fontSize:13,fontWeight:600,cursor:(batchDate1||batchDate2)?"pointer":"default",whiteSpace:"nowrap"}}>
+                    套用
+                  </button>
+                  <button onClick={()=>{setBatchSel(new Set());setBatchDate1("");setBatchDate2("");}}
+                    style={{color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:8,padding:"6px 8px",fontSize:12,cursor:"pointer"}}>
+                    取消
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         )}
 
@@ -512,19 +570,19 @@ function App(){
         ):(
           displayed.map((it,idx)=>{
             const prev=displayed[idx-1];
-            const showDivider=idx===0||(prev&&sortPriority(prev)!==sortPriority(it));
-            const groupLabel=sortPriority(it)===1?"📋 未訂貨":sortPriority(it)===2?"🚚 已訂貨，待到貨":"✅ 已到貨";
+            const showDivider=idx===0||(prev&&sortPri(prev)!==sortPri(it));
             return(
               <React.Fragment key={it.id}>
                 {showDivider&&(
-                  <div style={{color:C.inkMuted,fontSize:12,fontWeight:600,padding:"4px 2px 8px",marginTop:idx===0?0:8}}>
-                    {groupLabel}
+                  <div style={{color:C.inkMuted,fontSize:12,fontWeight:700,padding:"4px 2px 8px",marginTop:idx===0?0:12,letterSpacing:0.3}}>
+                    {GROUP_LABEL[sortPri(it)]}
                   </div>
                 )}
                 <ItemCard it={it} sel={batchSel.has(it.id)}
-                  onToggleSel={()=>toggleSel(it.id)}
-                  onUpdate={(field,val)=>update(it.id,field,val)}
-                  onToggleArrived={checked=>toggleArrived(it.id,checked)}/>
+                  onToggleSel={()=>{
+                    setBatchSel(prev=>{const n=new Set(prev);n.has(it.id)?n.delete(it.id):n.add(it.id);return n;});
+                  }}
+                  onUpdate={(field,value)=>updateField(it.id,field,value)}/>
               </React.Fragment>
             );
           })
