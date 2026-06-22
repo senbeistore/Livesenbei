@@ -37,6 +37,9 @@ const GIST_FILE="stock-tracker-data.json";
 // ── 工具 ──
 function genId(){return Math.random().toString(36).slice(2)+Date.now().toString(36);}
 function itemKey(it){return[it.product,it.color,it.size,it.style].join("|||");}
+// 正規化 key：把 / 和多餘空白統一，用於跨 CSV 格式比對
+function nkStr(s){return String(s||"").replace(/\//g," ").replace(/\s+/g," ").trim();}
+function normalizedKey(it){return[it.product,it.color,it.size,it.style].map(nkStr).join("|||");}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function fmtSavedTime(d){if(!d)return"";return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}
 function fmtTs(ts){if(!ts)return"";const d=new Date(ts);return`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}
@@ -110,7 +113,7 @@ function parseSenbeiAOA(aoa){
 function computeAlloc(parsed,stockItems){
   const{customers,orders}=parsed;
   const stock={};
-  stockItems.forEach(it=>{stock[itemKey(it)]=Math.max(0,(it.arrivedQty||0)-(it.shippedQty||0));});
+  stockItems.forEach(it=>{const nk=normalizedKey(it);stock[nk]=(stock[nk]||0)+Math.max(0,(it.arrivedQty||0)-(it.shippedQty||0));});
   // 依客人總金額排序訂單
   const sorted=[...orders].sort((a,b)=>(customers[b.customerKey]?.totalAmount||0)-(customers[a.customerKey]?.totalAmount||0));
   const result={};
@@ -118,7 +121,7 @@ function computeAlloc(parsed,stockItems){
     const oKey=makeOrderKey(o.customerKey,o.items);
     const allocItems=[],waitingItems=[];
     o.items.forEach(item=>{
-      const k=itemKey(item);const rem=stock[k]||0;
+      const k=normalizedKey(item);const rem=stock[k]||0;
       const give=Math.min(item.qty,rem);stock[k]=Math.max(0,rem-give);
       if(give>0)allocItems.push({...item,orderedQty:item.qty,allocatedQty:give});
       if(give<item.qty)waitingItems.push({...item,orderedQty:item.qty,allocatedQty:0});
@@ -140,10 +143,10 @@ function computeAlloc(parsed,stockItems){
 function computeProportionalAlloc(parsed,stockItems){
   const{customers,orders}=parsed;
   const stock={};
-  stockItems.forEach(it=>{stock[itemKey(it)]=Math.max(0,(it.arrivedQty||0)-(it.shippedQty||0));});
+  stockItems.forEach(it=>{const nk=normalizedKey(it);stock[nk]=(stock[nk]||0)+Math.max(0,(it.arrivedQty||0)-(it.shippedQty||0));});
   // 計算每個SKU的總訂購量
   const totalOrdered={};
-  orders.forEach(o=>{o.items.forEach(item=>{const k=itemKey(item);totalOrdered[k]=(totalOrdered[k]||0)+item.qty;});});
+  orders.forEach(o=>{o.items.forEach(item=>{const k=normalizedKey(item);totalOrdered[k]=(totalOrdered[k]||0)+item.qty;});});
   // 計算每個SKU的到貨比例（上限1）
   const ratio={};
   Object.keys(totalOrdered).forEach(k=>{ratio[k]=Math.min(1,(stock[k]||0)/(totalOrdered[k]||1));});
@@ -154,7 +157,7 @@ function computeProportionalAlloc(parsed,stockItems){
     const oKey=makeOrderKey(o.customerKey,o.items);
     orderFloors[oKey]={};
     o.items.forEach(item=>{
-      const k=itemKey(item);const r=ratio[k]||0;
+      const k=normalizedKey(item);const r=ratio[k]||0;
       const exact=item.qty*r;const base=Math.floor(exact);const frac=exact-base;
       orderFloors[oKey][k]={base,frac,item};
       baseSum[k]=(baseSum[k]||0)+base;
@@ -188,7 +191,7 @@ function computeProportionalAlloc(parsed,stockItems){
 function recalculateAlloc(currentAlloc,parsed,stockItems,method){
   const{customers,orders}=parsed;
   const stock={};
-  stockItems.forEach(it=>{stock[itemKey(it)]=Math.max(0,(it.arrivedQty||0)-(it.shippedQty||0));});
+  stockItems.forEach(it=>{const nk=normalizedKey(it);stock[nk]=(stock[nk]||0)+Math.max(0,(it.arrivedQty||0)-(it.shippedQty||0));});
   const shippedArr=[],unshippedArr=[];
   orders.forEach(o=>{
     const oKey=makeOrderKey(o.customerKey,o.items);
@@ -402,7 +405,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
   ];
   function shipColor(idx){return SHIP_COLORS[Math.min(idx,SHIP_COLORS.length-1)];}
   const stockMap=useMemo(()=>{
-    const m={};items.forEach(it=>{m[itemKey(it)]=Math.max(0,(it.arrivedQty||0)-(it.shippedQty||0));});return m;
+    const m={};items.forEach(it=>{const nk=normalizedKey(it);m[nk]=(m[nk]||0)+Math.max(0,(it.arrivedQty||0)-(it.shippedQty||0));});return m;
   },[items]);
 
   // 計算目前editAlloc中每個SKU已分配出去的總數
@@ -410,7 +413,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
     const usage={};
     Object.entries(alloc||{}).forEach(([k,o])=>{
       if(k===excludeKey)return;
-      o.allocItems.forEach(it=>{const sk=itemKey(it);usage[sk]=(usage[sk]||0)+it.allocatedQty;});
+      o.allocItems.forEach(it=>{const sk=normalizedKey(it);usage[sk]=(usage[sk]||0)+it.allocatedQty;});
     });
     return usage;
   }
@@ -434,14 +437,14 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
 
   function updateAllocQty(oKey,sku,delta){
     const usage=computeAllocUsage(editAlloc,oKey);
-    const available=Math.max(0,(stockMap[sku]||0)-(usage[sku]||0));
+    const available=Math.max(0,(stockMap[sku]||0)-(usage[sku]||0)); // sku 是 normalizedKey
     setEditAlloc(prev=>{
       const order={...prev[oKey]};
       let allocItems=[...order.allocItems];
-      let item=allocItems.find(it=>itemKey(it)===sku);
+      let item=allocItems.find(it=>normalizedKey(it)===sku||itemKey(it)===sku);
       // 如果 allocItems 沒有此 SKU（例如已釋放或從未分配），從 waitingItems 補進來
       if(!item&&delta>0){
-        const wi=order.waitingItems.find(it=>itemKey(it)===sku);
+        const wi=order.waitingItems.find(it=>normalizedKey(it)===sku||itemKey(it)===sku);
         if(wi){item={...wi,allocatedQty:0};allocItems=[...allocItems,item];order.allocItems=allocItems;}
       }
       if(!item)return prev;
@@ -655,7 +658,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
                   <div style={{marginBottom:6}}>
                     <div style={{fontSize:11,color:C.success,fontWeight:700,marginBottom:4}}>✅ 可出貨{hasShipments?"（新一批）":""}</div>
                     {o.allocItems.filter(it=>it.allocatedQty>0).map((it,i)=>{
-                      const sku=itemKey(it);
+                      const sku=normalizedKey(it); // 用於庫存查詢
                       const otherUsage=usage[sku]||0;
                       const available=Math.max(0,(stockMap[sku]||0)-otherUsage);
                       const isEditing=editingKey===o.oKey;
@@ -691,7 +694,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
                   <div style={{marginBottom:6}}>
                     <div style={{fontSize:11,color:C.orange,fontWeight:700,marginBottom:4}}>⏳ 待補貨</div>
                     {o.waitingItems.filter(it=>(it.orderedQty||it.qty)>0).map((it,i)=>{
-                      const sku=itemKey(it);const otherUsage=usage[sku]||0;
+                      const sku=normalizedKey(it);
+                      const otherUsage=usage[sku]||0;
                       const available=Math.max(0,(stockMap[sku]||0)-otherUsage);
                       const waitQty=it.orderedQty||it.qty;
                       return(
