@@ -534,44 +534,21 @@ function App(){
           <div style={{color:C.info,fontSize:12,marginBottom:8}}>找到 {displayed.length} 筆 ——勾選後可批次設訂購日</div>
         )}
 
-        {/* 批次工具列 */}
+        {/* 批次工具列（上方只顯示全選） */}
         {displayed.length>0&&(
-          <div style={{background:C.surface,border:`1px solid ${C.line}`,borderRadius:10,padding:"8px 12px",marginBottom:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <input type="checkbox" checked={allSel}
-                onChange={e=>{
-                  if(e.target.checked)setBatchSel(new Set([...batchSel,...displayed.map(it=>it.id)]));
-                  else setBatchSel(prev=>{const n=new Set(prev);displayed.forEach(it=>n.delete(it.id));return n;});
-                }}
-                style={{width:20,height:20,accentColor:C.info,cursor:"pointer"}}/>
-              <span style={{color:C.inkMuted,fontSize:13,minWidth:60}}>
-                {batchSel.size>0?`已選 ${batchSel.size} 筆`:"全選"}
-              </span>
-              {batchSel.size>0&&(
-                <>
-                  <div style={{display:"flex",alignItems:"center",flex:1,flexWrap:"wrap",gap:6}}>
-                    <div style={{display:"flex",alignItems:"center",gap:4}}>
-                      <span style={{color:C.inkMuted,fontSize:11,whiteSpace:"nowrap"}}>首次</span>
-                      <input type="date" value={batchDate1} onChange={e=>setBatchDate1(e.target.value)}
-                        style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 6px",fontSize:12,minWidth:120}}/>
-                    </div>
-                    <div style={{display:"flex",alignItems:"center",gap:4}}>
-                      <span style={{color:C.inkMuted,fontSize:11,whiteSpace:"nowrap"}}>二次</span>
-                      <input type="date" value={batchDate2} onChange={e=>setBatchDate2(e.target.value)}
-                        style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 6px",fontSize:12,minWidth:120}}/>
-                    </div>
-                  </div>
-                  <button onClick={applyBatch} disabled={!batchDate1&&!batchDate2}
-                    style={{background:(batchDate1||batchDate2)?C.stamp:"#ccc",color:"#fff",border:"none",borderRadius:8,padding:"6px 14px",fontSize:13,fontWeight:600,cursor:(batchDate1||batchDate2)?"pointer":"default",whiteSpace:"nowrap"}}>
-                    套用
-                  </button>
-                  <button onClick={()=>{setBatchSel(new Set());setBatchDate1("");setBatchDate2("");}}
-                    style={{color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:8,padding:"6px 8px",fontSize:12,cursor:"pointer"}}>
-                    取消
-                  </button>
-                </>
-              )}
-            </div>
+          <div style={{background:C.surface,border:`1px solid ${C.line}`,borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}>
+            <input type="checkbox" checked={allSel}
+              onChange={e=>{
+                if(e.target.checked)setBatchSel(new Set([...batchSel,...displayed.map(it=>it.id)]));
+                else setBatchSel(prev=>{const n=new Set(prev);displayed.forEach(it=>n.delete(it.id));return n;});
+              }}
+              style={{width:22,height:22,accentColor:C.info,cursor:"pointer"}}/>
+            <span style={{color:C.inkMuted,fontSize:14}}>
+              {batchSel.size>0?<strong style={{color:C.info}}>已選 {batchSel.size} 筆</strong>:"全選"}
+            </span>
+            {batchSel.size>0&&(
+              <span style={{color:C.inkMuted,fontSize:12}}>— 在下方設定日期後按套用</span>
+            )}
           </div>
         )}
 
@@ -608,6 +585,39 @@ function App(){
           })
         )}
       </div>
+
+      {/* 批次操作底部列 */}
+      {batchSel.size>0&&(
+        <div style={{position:"fixed",bottom:0,left:0,right:0,background:C.ink,zIndex:50,padding:"14px 16px",boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
+          <div style={{maxWidth:640,margin:"0 auto"}}>
+            <div style={{color:"rgba(255,255,255,0.7)",fontSize:12,marginBottom:10}}>
+              已選 <strong style={{color:"#fff"}}>{batchSel.size}</strong> 筆，設定訂購日後按套用
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{color:"rgba(255,255,255,0.7)",fontSize:13,width:60,flexShrink:0}}>首次訂購日</span>
+                <input type="date" value={batchDate1} onChange={e=>setBatchDate1(e.target.value)}
+                  style={{flex:1,background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:8,padding:"8px 10px",fontSize:15,color:"#fff"}}/>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{color:"rgba(255,255,255,0.7)",fontSize:13,width:60,flexShrink:0}}>二次訂購日</span>
+                <input type="date" value={batchDate2} onChange={e=>setBatchDate2(e.target.value)}
+                  style={{flex:1,background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:8,padding:"8px 10px",fontSize:15,color:"#fff"}}/>
+              </div>
+              <div style={{display:"flex",gap:8,marginTop:4}}>
+                <button onClick={applyBatch} disabled={!batchDate1&&!batchDate2}
+                  style={{flex:1,background:(batchDate1||batchDate2)?C.stamp:"rgba(255,255,255,0.2)",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:16,fontWeight:700,cursor:(batchDate1||batchDate2)?"pointer":"default"}}>
+                  套用
+                </button>
+                <button onClick={()=>{setBatchSel(new Set());setBatchDate1("");setBatchDate2("");}}
+                  style={{background:"rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.8)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,padding:"12px 18px",fontSize:15,cursor:"pointer"}}>
+                  取消
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
