@@ -774,10 +774,15 @@ function LiveOrderSorter() {
   // ---------- 整理 ----------
   const baseGroups = useMemo(() => {
     const map = {};
+    // 去掉結尾無斜線的括號後綴，合併重複上架的同商品
+    // 例：「女裝899混搭優惠(內褲組也在這）」→「女裝899混搭優惠」
+    // 有斜線的括號（如「反重力背心版(粗肩/細肩）」）保留，因為是規格選項說明
+    const normProd = (s) => s.replace(/\s*[（(][^/／）)]*[）)]\s*$/, "").trim() || s;
     parsedRows.forEach((r) => {
       if (!r.product) return;
-      const key = `${compareKey(r.product)}‖${compareKey(r.color)}‖${compareKey(r.size)}‖${compareKey(r.extra || "")}`;
-      if (!map[key]) map[key] = { key, product: r.product, color: r.color, size: r.size, style: r.extra || "", qty: 0, customers: {} };
+      const np = normProd(r.product);
+      const key = `${compareKey(np)}‖${compareKey(r.color)}‖${compareKey(r.size)}‖${compareKey(r.extra || "")}`;
+      if (!map[key]) map[key] = { key, product: np, color: r.color, size: r.size, style: r.extra || "", qty: 0, customers: {} };
       map[key].qty += r.qty;
       if (r.customer) map[key].customers[r.customer] = (map[key].customers[r.customer] || 0) + r.qty;
     });
@@ -974,17 +979,6 @@ function LiveOrderSorter() {
     const imageUrl = iopenImageUrl.trim();
     const selected = customerOrderTotals.filter((c, idx) => iopenSelected.has(iopenKey(c, idx)));
 
-    // 規格行（連結到主商品，只需最少欄位）
-    function buildSpecRow(sku, mainSku, specName, specValue, price) {
-      return [
-        "", 0, 0, "", "", sku,
-        "", price, "", "",
-        mainSku, specName, specValue, "", "",
-        "", "", "", "", "", "", "", "", "", "", "",
-        "", "", "", "", "", "", "",
-        1, "",
-      ];
-    }
     function buildRow(c, sku, mainSku, specName, specValue, price, desc) {
       return [
         "", 3, 0, `直播｜（${c.account || c.name}）`, categoryCode, sku,
@@ -1004,10 +998,10 @@ function LiveOrderSorter() {
         const [small, big] = splitForCoupons(c.amount);
         const skuA = `${baseSku}-A`;
         const skuB = `${baseSku}-B`;
-        // 主商品行（主商品原始貨號留空）
+        // 主商品行（mainSku="" 宣告自己為主商品）
         rows.push(buildRow(c, skuA, "", "金額方案", `$${small}`, small, desc));
-        // 規格行（主商品原始貨號指向 skuA）
-        rows.push(buildSpecRow(skuB, skuA, "金額方案", `$${big}`, big));
+        // 規格行（mainSku=skuA 連結到主商品，使用完整 buildRow 確保所有必填欄位）
+        rows.push(buildRow(c, skuB, skuA, "金額方案", `$${big}`, big, desc));
       } else {
         rows.push(buildRow(c, baseSku, "", "", "", c.amount, desc));
       }
