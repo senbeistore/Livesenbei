@@ -1007,7 +1007,8 @@ function LiveOrderSorter() {
       }
     });
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    const formatRow = ["錯誤\n註記","數字(2)","數字(1)","文字(60)","數字(5)","文字(20)","數字(6)","數字(6)","數字(6)","數字(1)","文字(20)","文字(50)","文字(50)","文字(50)","文字(50)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(24000)","文字(24000)","文字(500)","數字(8)","數字(8)","數字(8)","數字(8)","數字(6)","數字(2)"];
+    const ws = XLSX.utils.aoa_to_sheet([header, formatRow, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, "Data_Import_Items");
     const ts = new Date();
     const pad = (n) => String(n).padStart(2, "0");
