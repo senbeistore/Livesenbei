@@ -905,11 +905,12 @@ function App(){
         const szKeys=Object.keys(sg).sort((a,b)=>sizeOrder(a)-sizeOrder(b));
         // 判斷此款式是否全部已訂完
         const grpItems=its.filter(it2=>{const v2=hasSizeField?[it2.style,it2.color].filter(Boolean).join(" "):(it2.style||it2.color||"");return v2===vk;});
+        const grpIds=grpItems.map(it2=>it2.id);
         // 全部有訂購日 = 已訂（綠色）；部分有訂購日 = 訂貨中（橘色）
         const orderedCount=grpItems.filter(it2=>it2.firstOrderDate||it2.allOrdered).length;
-        const allOrdered=grpItems.length>0&&orderedCount===grpItems.length;
+        const allOrdered=grpItems.length>0&&grpItems.every(it2=>it2.allArrived);
         const anyOrdered=orderedCount>0;
-        return{vk,szKeys,sg,total:szKeys.reduce((s,k)=>s+sg[k],0),allOrdered,anyOrdered};
+        return{vk,szKeys,sg,total:szKeys.reduce((s,k)=>s+sg[k],0),allOrdered,anyOrdered,grpIds};
       });
       return{prod,prodTotal,variants};
     });
@@ -1063,14 +1064,29 @@ function App(){
           {summaryData.map(({prod,prodTotal,variants})=>(
             <div key={prod} style={{marginBottom:12}}>
               <div style={{fontSize:11,fontWeight:700,color:C.inkMuted,marginBottom:4}}>{prod} <span style={{fontWeight:400}}>共{prodTotal}件</span></div>
-              {variants.map(({vk,szKeys,sg,total,allOrdered,anyOrdered})=>{
+              {variants.map(({vk,szKeys,sg,total,allOrdered,anyOrdered,grpIds})=>{
                 const color=allOrdered?C.success:anyOrdered?C.orange:C.ink;
                 const bg=allOrdered?"#d4edda":anyOrdered?"#fff3e0":C.stripe;
+                const canArrive=!allOrdered;
+                const handleGroupArrive=()=>{
+                  if(!window.confirm(`確認「${vk||prod}」共${total}件全數到貨？`))return;
+                  const now=new Date().toISOString();
+                  setItems(prev=>{
+                    const next=prev.map(it=>{
+                      if(!grpIds.includes(it.id))return it;
+                      const maxQ=it.orderedQty!=null?it.orderedQty:it.qty;
+                      return{...it,allArrived:true,arrivedQty:maxQ,arrivedTs:it.arrivedTs||now,firstArrivedDate:it.firstArrivedDate||now.slice(0,10)};
+                    });
+                    scheduleSave(next);
+                    return next;
+                  });
+                };
                 return(
-                  <div key={vk||"_"} style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:4,marginBottom:3,opacity:allOrdered?0.5:1}}>
+                  <div key={vk||"_"} style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:4,marginBottom:4,opacity:allOrdered?0.5:1}}>
                     {vk&&<span style={{fontSize:12,fontWeight:600,color,minWidth:80,textDecoration:allOrdered?"line-through":"none"}}>{vk}</span>}
                     {szKeys.map(sz=>(<span key={sz} style={{background:bg,borderRadius:12,padding:"2px 7px",fontSize:11,color}}>{sz}×{sg[sz]}</span>))}
                     <span style={{fontSize:11,color:C.inkMuted}}>共{total}件</span>
+                    {canArrive&&<button onClick={handleGroupArrive} style={{marginLeft:"auto",fontSize:11,padding:"2px 8px",borderRadius:10,border:`1px solid ${C.success}`,background:"#f0faf4",color:C.success,cursor:"pointer"}}>全數到貨</button>}
                   </div>
                 );
               })}
