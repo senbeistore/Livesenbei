@@ -3,87 +3,88 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>iOPEN 出貨明細解析</title>
+<title>iOPEN 出貨明細</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,sans-serif;background:#f9f6f2;color:#1a1a1a;min-height:100vh}
-header{background:#8B1A1A;color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10}
-header h1{font-size:16px;font-weight:700;flex:1}
-header a{color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;padding:4px 8px;border:1px solid rgba(255,255,255,0.3);border-radius:6px}
-.wrap{padding:14px;max-width:900px;margin:0 auto}
-.drop{background:#fff;border:2px dashed #d4b9a0;border-radius:14px;text-align:center;padding:28px 16px;cursor:pointer;transition:border-color .2s;display:block}
-.drop:active,.drop.drag{border-color:#8B1A1A;background:#fdf8f5}
-.drop .ico{font-size:34px;margin-bottom:8px}
-.drop strong{font-size:15px;display:block;margin-bottom:4px}
-.drop p{font-size:12px;color:#888}
+body{font-family:-apple-system,sans-serif;background:#f9f6f2;color:#1a1a1a;font-size:14px}
+header{background:#8B1A1A;color:#fff;padding:13px 16px;display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:9}
+header h1{font-size:15px;font-weight:700;flex:1}
+header a{color:rgba(255,255,255,0.8);font-size:12px;text-decoration:none;padding:3px 8px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;white-space:nowrap}
+.wrap{padding:12px;max-width:1000px;margin:0 auto}
+/* 上傳 */
+.drop{background:#fff;border:2px dashed #d4b9a0;border-radius:14px;text-align:center;padding:28px 16px;cursor:pointer;display:block}
+.drop:active{border-color:#8B1A1A}
+.drop .ico{font-size:32px;margin-bottom:8px}
 .sep{text-align:center;color:#aaa;font-size:13px;margin:10px 0}
-.card{background:#fff;border-radius:12px;border:1px solid #ede8e0;margin-bottom:12px}
-.card-head{padding:10px 14px;font-size:12px;font-weight:700;color:#fff;border-radius:12px 12px 0 0}
-.card-body{padding:14px}
-textarea{width:100%;border:1px solid #ede8e0;border-radius:8px;padding:10px;font-size:12px;font-family:monospace;height:110px;resize:vertical;background:#fafafa;display:block}
-.btn{display:block;width:100%;background:#8B1A1A;color:#fff;border:none;border-radius:10px;padding:12px;font-size:15px;font-weight:700;cursor:pointer;margin-top:10px;text-align:center}
-.btn-sm{display:inline-block;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none}
-.btn-green{background:#2d6a4f;color:#fff}
-.btn-outline{background:transparent;color:#8B1A1A;border:1px solid #8B1A1A}
-.err{background:#fef2f2;border:1px solid #f87171;color:#b91c1c;border-radius:10px;padding:12px;font-size:13px;margin-bottom:12px;display:none}
-.stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-.stat{background:#fff;border:1px solid #ede8e0;border-radius:10px;padding:8px 14px;font-size:13px}
-.stat-gift{background:#fffbeb;border-color:#f59e0b;color:#b45309}
-.stat-info{background:#eff6fc;border-color:#93c5fd;color:#1d4ed8}
+.card{background:#fff;border-radius:12px;border:1px solid #ede8e0;margin-bottom:12px;overflow:hidden}
+.ch{padding:10px 14px;font-size:12px;font-weight:700;color:#fff}
+.ch.red{background:#8B1A1A}
+.ch.gray{background:#555}
+.ch.green{background:#2d6a4f}
+.cb{padding:12px}
+textarea{width:100%;border:1px solid #ede8e0;border-radius:8px;padding:10px;font-size:12px;font-family:monospace;height:100px;resize:vertical;background:#fafafa}
+.btn{display:block;width:100%;background:#8B1A1A;color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;margin-top:10px}
+.btn-sm{padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none}
+.bg{background:#2d6a4f;color:#fff}
+.bo{background:transparent;color:#8B1A1A;border:1px solid #8B1A1A}
+.err{background:#fef2f2;border:1px solid #f87171;color:#b91c1c;border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:10px}
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.stat{background:#fff;border:1px solid #ede8e0;border-radius:10px;padding:7px 12px;font-size:13px}
+.stat.gift{background:#fffbeb;border-color:#f59e0b;color:#b45309}
+/* Tabs */
 .tabs{display:flex;border-bottom:1px solid #ede8e0;overflow-x:auto}
 .tab{padding:10px 14px;font-size:13px;font-weight:600;color:#888;border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;flex-shrink:0}
 .tab.on{color:#8B1A1A;border-bottom-color:#8B1A1A}
+/* Table */
+.tbl-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;padding:8px 10px;background:#fdf8f5;color:#666;font-weight:600;white-space:nowrap;position:sticky;top:0}
-td{padding:8px 10px;border-top:1px solid #f0ebe5}
-tr.gift{background:#fffbeb}
+th{text-align:left;padding:8px 10px;background:#fdf8f5;color:#555;font-weight:600;white-space:nowrap}
+td{padding:8px 10px;border-top:1px solid #f0ebe5;vertical-align:top}
+tr.gift-row td:first-child::before{content:"🎁 ";font-size:11px}
 .mono{font-family:monospace;color:#666}
-.tag{display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px;font-weight:600}
-.tag-gift{background:#fffbeb;border:1px solid #f59e0b;color:#b45309}
+.muted{color:#aaa}
+.actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .loading{text-align:center;padding:40px;color:#888}
-.act-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 </style>
 </head>
 <body>
 <header>
   <span>📦</span>
-  <h1>iOPEN 出貨明細解析</h1>
+  <h1>iOPEN 出貨明細</h1>
   <a href="./index.html">← 理貨台</a>
 </header>
 <div class="wrap">
-  <div id="errBox" class="err"></div>
+  <div id="errBox" class="err" style="display:none"></div>
 
-  <!-- 上傳區 -->
   <div id="upSec">
-    <label class="drop" id="dropArea">
+    <label class="drop">
       <input type="file" id="fileIn" multiple style="display:none">
       <div class="ico">📄</div>
-      <strong>點擊選擇 iOPEN 出貨明細 PDF</strong>
-      <p>支援多檔同時選擇</p>
+      <strong style="font-size:15px;display:block;margin-bottom:4px">點擊選擇 iOPEN PDF</strong>
+      <p style="font-size:12px;color:#888">支援多檔同時選擇</p>
     </label>
     <div class="sep">或</div>
     <div class="card">
-      <div class="card-head" style="background:#555">貼入出貨明細文字</div>
-      <div class="card-body">
-        <textarea id="pasteIn" placeholder="從 iOPEN 後台出貨明細頁複製全部文字貼入..."></textarea>
+      <div class="ch gray">貼入出貨明細文字（含揀貨單）</div>
+      <div class="cb">
+        <textarea id="pasteIn" placeholder="從 iOPEN 後台出貨明細頁全選複製後貼入..."></textarea>
         <button class="btn" onclick="fromText()">解析</button>
       </div>
     </div>
   </div>
 
-  <div id="loadBox" class="loading" style="display:none">📖 讀取 PDF 中，請稍候...</div>
+  <div id="loadBox" class="loading" style="display:none">📖 讀取中...</div>
 
-  <!-- 結果 -->
   <div id="resSec" style="display:none">
     <div id="statsBar" class="stats"></div>
     <div class="card">
       <div class="tabs" id="tabBar"></div>
-      <div id="tabBody" style="overflow-x:auto"></div>
+      <div id="tabBody"></div>
     </div>
-    <div class="act-row">
-      <button class="btn-sm btn-green" onclick="doExport()">匯出 CSV</button>
-      <button class="btn-sm btn-outline" onclick="doReset()">重新上傳</button>
+    <div class="actions">
+      <button class="btn-sm bg" onclick="exportBaku()">匯出備貨追蹤 CSV（平台商品）</button>
+      <button class="btn-sm bo" onclick="doReset()">重新上傳</button>
     </div>
   </div>
 </div>
@@ -94,38 +95,31 @@ if(typeof pdfjsLib!=='undefined'){
     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
 
-var parsed=null, curTab=0;
+var result=null, curTab=0;
 
-// ── 事件 ──
 document.getElementById('fileIn').addEventListener('change',function(e){
   var files=Array.from(e.target.files||[]);
   if(files.length) readFiles(files);
   e.target.value='';
 });
-var da=document.getElementById('dropArea');
-da.addEventListener('dragover',function(e){e.preventDefault();da.classList.add('drag');});
-da.addEventListener('dragleave',function(){da.classList.remove('drag');});
-da.addEventListener('drop',function(e){
-  e.preventDefault();da.classList.remove('drag');
-  var files=Array.from(e.dataTransfer.files||[]);
-  if(files.length) readFiles(files);
-});
 
 function readFiles(files){
   showErr('');
   show('loadBox',true); show('upSec',false);
-  Promise.all(files.map(function(f){
-    if(f.name.toLowerCase().endsWith('.pdf')||f.type==='application/pdf') return readPdf(f);
-    return readTxt(f);
-  })).then(function(texts){
+  Promise.all(files.map(readOne)).then(function(texts){
     var combined=texts.filter(Boolean).join('\n');
     show('loadBox',false);
-    if(!combined.trim()){ show('upSec',true); showErr('讀取失敗，請改用貼入文字方式'); return; }
+    if(!combined.trim()){show('upSec',true);showErr('讀取失敗，請改用貼入文字');return;}
     go(combined);
   }).catch(function(err){
-    show('loadBox',false); show('upSec',true);
-    showErr('讀取失敗：'+(err&&err.message?err.message:'未知錯誤'));
+    show('loadBox',false);show('upSec',true);
+    showErr('錯誤：'+(err&&err.message?err.message:'讀取失敗'));
   });
+}
+
+function readOne(file){
+  if(file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf')) return readPdf(file);
+  return readTxt(file);
 }
 
 function readPdf(file){
@@ -135,24 +129,22 @@ function readPdf(file){
     r.onload=function(e){
       if(typeof pdfjsLib==='undefined'){reject(new Error('PDF.js 未載入'));return;}
       try{
-        pdfjsLib.getDocument({data:new Uint8Array(e.target.result)}).promise
-          .then(function(pdf){
-            var nums=[];for(var i=1;i<=pdf.numPages;i++)nums.push(i);
-            return nums.reduce(function(ch,n){
-              return ch.then(function(acc){
-                return pdf.getPage(n).then(function(pg){return pg.getTextContent();})
-                  .then(function(tc){
-                    var txt='',lastY=null;
-                    tc.items.forEach(function(it){
-                      var y=it.transform[5];
-                      if(lastY!==null&&Math.abs(y-lastY)>3)txt+='\n';
-                      txt+=it.str; lastY=y;
-                    });
-                    return acc+txt+'\n';
-                  });
+        pdfjsLib.getDocument({data:new Uint8Array(e.target.result)}).promise.then(function(pdf){
+          var nums=[];for(var i=1;i<=pdf.numPages;i++)nums.push(i);
+          return nums.reduce(function(ch,n){
+            return ch.then(function(acc){
+              return pdf.getPage(n).then(function(pg){return pg.getTextContent();}).then(function(tc){
+                var txt='',lastY=null;
+                tc.items.forEach(function(it){
+                  var y=it.transform[5];
+                  if(lastY!==null&&Math.abs(y-lastY)>3)txt+='\n';
+                  txt+=it.str;lastY=y;
+                });
+                return acc+txt+'\n';
               });
-            },Promise.resolve(''));
-          }).then(resolve).catch(reject);
+            });
+          },Promise.resolve(''));
+        }).then(resolve).catch(reject);
       }catch(err){reject(err);}
     };
     r.readAsArrayBuffer(file);
@@ -161,8 +153,7 @@ function readPdf(file){
 
 function readTxt(file){
   return new Promise(function(resolve,reject){
-    var r=new FileReader();
-    r.onerror=reject;
+    var r=new FileReader();r.onerror=reject;
     r.onload=function(e){resolve(e.target.result);};
     r.readAsText(file,'utf-8');
   });
@@ -171,204 +162,192 @@ function readTxt(file){
 function fromText(){
   var t=document.getElementById('pasteIn').value.trim();
   if(!t){showErr('請貼入文字');return;}
-  showErr(''); go(t);
+  showErr('');go(t);
 }
 
-// ── 解析 ──
+// ── 正規化 ──
+function norm(t){
+  t=t.replace(/\uFE30/g,':');           // ︰ 在NFKC前先換（否則變..）
+  if(t.normalize)t=t.normalize('NFKC'); // 所有Kangxi變體→標準CJK，全形→半形
+  t=t.replace(/\uFE13|\u2025|\u2026/g,':');
+  return t;
+}
+
+// ── 主解析 ──
 function go(raw){
-  parsed=parse(raw);
+  result=parse(norm(raw));
   curTab=0;
   render();
 }
 
-function norm(t){
-  if(t.normalize) t=t.normalize('NFKC');
-  // NFKC 把 ︰(FE30)→‥(2025)，一起轉成冒號
-  t=t.replace(/[\u003A\uFE13\uFE30\uFF1A\u2025\u2026]/g,':');
-  return t;
-}
-
-function parse(raw){
-  var t=norm(raw);
-
-  // 找揀貨單（最後彙總）
+function parse(t){
+  // 1. 揀貨單區塊（最後一大段）
   var pickIdx=t.indexOf('揀貨單');
-  var pickSec=pickIdx>=0?t.slice(pickIdx):'';
+  var pickText=pickIdx>=0?t.slice(pickIdx):'';
   var main=pickIdx>=0?t.slice(0,pickIdx):t;
 
-  // 揀貨清單
-  var pick=[];
-  if(pickSec){
-    var pls=pickSec.split('\n');
-    for(var pi=0;pi<pls.length-1;pi++){
-      var pl=pls[pi].trim();
-      if(/^P\d{10,}$/.test(pl)){
-        var nx=(pls[pi+1]||'').trim();
-        var qm=nx.match(/ (\d+)\s*$/);
-        if(qm) pick.push({prodNo:pl,desc:nx.slice(0,nx.lastIndexOf(qm[1])).trim(),qty:parseInt(qm[1])});
-      }
+  // 2. 解析揀貨清單（所有商品）
+  var allPick=parsePick(pickText);
+
+  // 3. 解析各筆訂單（客戶資訊 + 直播帳號）
+  var orders=parseOrders(main);
+
+  // 4. 同電話累計（暫留，之後用於贈品判斷）
+  // 5. 分類
+  var live=orders.filter(function(o){return o.account;});
+  var plat=orders.filter(function(o){return !o.account;});
+
+  // 6. 揀貨清單分成直播/平台
+  var livePick=allPick.filter(function(p){return p.isLive;});
+  var platPick=allPick.filter(function(p){return !p.isLive;});
+
+  return{live:live,plat:plat,allPick:allPick,livePick:livePick,platPick:platPick};
+}
+
+function parsePick(text){
+  if(!text)return[];
+  var items=[];
+  var lines=text.split('\n');
+  for(var i=0;i<lines.length-1;i++){
+    var pl=lines[i].trim();
+    // 揀貨單格式：貨號行（P開頭，長度較短）後接描述行
+    if(/^P\d{10,}$/.test(pl)){
+      var nx=(lines[i+1]||'').trim();
+      if(!nx)continue;
+      // 結尾數字是數量
+      var qm=nx.match(/\s+(\d+)\s*$/);
+      if(!qm)continue;
+      var desc=nx.slice(0,nx.lastIndexOf(qm[1])).trim();
+      var qty=parseInt(qm[1]);
+      var isLive=/直播/.test(desc);
+      var parsed=isLive?{name:desc,color:'',size:'',style:''}:parsePlatItem(desc);
+      items.push({prodNo:pl,desc:desc,qty:qty,isLive:isLive,
+        name:parsed.name,color:parsed.color,size:parsed.size,style:parsed.style});
+      i++; // 跳過描述行
     }
   }
+  return items;
+}
 
-  // 分割訂單（每筆以「收件人：」開頭）
-  var blocks=main.split(/(?=收件人\s*[:：])/);
-  var live=[], plat=[];
+function parsePlatItem(desc){
+  // 格式：商品名 尺寸/顏色  或  商品名 (range) 尺寸/顏色
+  var m=desc.match(/^(.+?)\s+([A-Z0-9XL]{1,4}|[0-9]{2,3})\s*\/\s*(.+)$/);
+  if(m)return{name:m[1].trim(),size:m[2],color:m[3].trim(),style:''};
+  // 沒有尺寸/顏色分隔符的
+  return{name:desc,size:'',color:'',style:''};
+}
 
+function parseOrders(main){
+  var blocks=main.split(/(?=收件人\s*:)/);
+  var orders=[];
   blocks.forEach(function(block){
     block=block.trim();
     if(!block||block.indexOf('訂單編號')<0)return;
     var o={};
-
-    var nm=block.match(/收件人[\s:：]{0,5}(\S+)/);
-    if(nm) o.name=nm[1].replace(/付款方式.*/,'').trim();
-
-    var pm=block.match(/聯絡電話[^\d]*(09[\d-]+)/)||block.match(/行動電話[^\d]*(09[\d-]+)/);
-    if(pm) o.phone=pm[1].replace(/-/g,'');
-
-    // 門市
-    var sm=block.match(/門市名稱[^\n(（]{0,10}[(（](\d+)[)）]\s*([^\n]+)/);
-    if(sm){ o.storeCode=sm[1]; o.storeName=sm[2].replace(/門市電話.*/,'').trim(); }
-
-    var om=block.match(/訂單編號[^\d]*(\d+)/);
-    if(om) o.orderNum=om[1];
-    var sh=block.match(/出貨單編號[^\d]*(\d+)/);
-    if(sh) o.shipNum=sh[1];
-    var dm=block.match(/交易日期[^\d]*(\d{4}-\d{2}-\d{2})/);
-    if(dm) o.date=dm[1];
-
-    // 商品行：把換行換成空格再找 直播｜（account）
+    var nm=block.match(/收件人\s*:\s*(\S+)/);
+    if(nm)o.name=nm[1].replace(/付款方式.*/,'').trim();
+    var pm=block.match(/(?:聯絡|行動)電話\s*:\s*([\d-]+)/);
+    if(pm)o.phone=pm[1].replace(/-/g,'');
+    // 門市：找 (數字) 門市名
+    var sm=block.match(/[(（](\d{5,7})[)）]\s*([^\n:]+(?:門市|店))/);
+    if(sm){o.storeCode=sm[1];o.storeName=sm[2].trim();}
+    var om=block.match(/訂單編號\s*:\s*(\d+)/);
+    if(om)o.orderNum=om[1];
+    var sh=block.match(/出貨單編號\s*:\s*(\d+)/);
+    if(sh)o.shipNum=sh[1];
+    // 直播帳號：把換行換空格再找
     var flat=block.replace(/\n/g,' ');
-    var lp=/直播\s*[｜|]\s*[(（]([^)）]+)[)）]/g;
-    var lm=lp.exec(flat);
-    var accs=[];
-    while(lm){accs.push(lm[1]);lm=lp.exec(flat);}
-
-    if(accs.length>0){
-      o.account=accs[0].replace(/\+[^\d$]+\d+/,'').trim();
-      // 金額
-      var amts=[];
-      var ap=/\$?(\d{3,6})\s*1/g;
-      var am=ap.exec(flat);
-      while(am){
-        var v=parseInt(am[1]);
-        if(v>=300&&v<=99999) amts.push(v);
-        am=ap.exec(flat);
-      }
-      o.amount=amts.reduce(function(s,v){return s+v;},0);
-      live.push(o);
-    } else {
-      // 平台商品：解析商品列表
-      var prods=[];
-      var prodRe=/^P\d{10,}\n(.+)/gm;
-      var pm2=prodRe.exec(block);
-      while(pm2){prods.push(pm2[1].trim());pm2=prodRe.exec(block);}
-      o.products=prods;
-      o.amount=0;
-      plat.push(o);
-    }
+    var lm=flat.match(/直播[^\n(（]{0,6}[(（]([^)）\n]+)[)）]/);
+    if(lm)o.account=lm[1].replace(/\+[^\d$]+\d+/,'').trim();
+    orders.push(o);
   });
-
-  // 同電話累計
-  var ph={};
-  live.forEach(function(o){if(o.phone)ph[o.phone]=(ph[o.phone]||0)+(o.amount||0);});
-  live.forEach(function(o){o.total=ph[o.phone]||o.amount||0; o.gift=o.total>=3500;});
-
-  return{live:live,plat:plat,pick:pick};
+  return orders;
 }
 
 // ── 渲染 ──
 function render(){
-  show('upSec',false); show('resSec',true);
-  var l=parsed.live,p=parsed.plat,pk=parsed.pick;
-  var g=l.filter(function(o){return o.gift;});
+  show('upSec',false);show('resSec',true);
+  var r=result;
   var sb=document.getElementById('statsBar');
   sb.innerHTML=
-    '<div class="stat">直播 <strong>'+l.length+'</strong> 筆</div>'+
-    '<div class="stat">平台商品 <strong>'+p.length+'</strong> 筆</div>'+
-    (g.length?'<div class="stat stat-gift">🎁 滿額贈 <strong>'+g.length+'</strong> 人</div>':'')+
-    (pk.length?'<div class="stat stat-info">揀貨 <strong>'+pk.length+'</strong> 項</div>':'');
+    '<div class="stat">直播 <strong>'+r.live.length+'</strong> 筆</div>'+
+    '<div class="stat">平台商品 <strong>'+r.plat.length+'</strong> 筆</div>'+
+    '<div class="stat">揀貨 <strong>'+r.allPick.length+'</strong> 項（平台 '+r.platPick.length+'）</div>';
 
-  var tabs=[['直播訂單',l.length],['平台商品',p.length],['揀貨清單',pk.length]];
+  var tabs=['訂單列表','揀貨清單'];
   document.getElementById('tabBar').innerHTML=tabs.map(function(t,i){
-    return '<button class="tab'+(i===curTab?' on':'')+'" onclick="switchTab('+i+')">'+t[0]+' ('+t[1]+')</button>';
+    return '<button class="tab'+(i===curTab?' on':'')+'" onclick="swTab('+i+')">'+t+'</button>';
   }).join('');
-  renderTab(curTab);
+  showTab(curTab);
 }
 
-function switchTab(i){
+function swTab(i){
   curTab=i;
   document.querySelectorAll('.tab').forEach(function(t,j){t.className='tab'+(j===i?' on':'');});
-  renderTab(i);
+  showTab(i);
 }
 
-function renderTab(i){
-  var l=parsed.live,p=parsed.plat,pk=parsed.pick;
-  var h='';
+function showTab(i){
+  var r=result;
+  var h='<div class="tbl-wrap">';
   if(i===0){
-    h='<table><thead><tr><th>IG帳號</th><th>姓名</th><th>電話</th><th>門市</th><th>訂單編號</th><th>出貨單號</th><th>金額</th><th>🎁</th></tr></thead><tbody>';
-    l.forEach(function(o,j){
-      h+='<tr'+(o.gift?' class="gift"':'')+'>'
-        +'<td><strong>'+e(o.account||'—')+'</strong></td>'
-        +'<td>'+e(o.name||'—')+'</td>'
-        +'<td class="mono">'+e(o.phone||'—')+'</td>'
-        +'<td style="max-width:100px;overflow:hidden;text-overflow:ellipsis">'+e(o.storeName||'—')+'</td>'
-        +'<td class="mono">'+e(o.orderNum||'—')+'</td>'
-        +'<td class="mono" style="color:#aaa">'+e(o.shipNum||'—')+'</td>'
-        +'<td><strong>'+(o.amount?'$'+o.amount:'—')+'</strong></td>'
-        +'<td>'+(o.gift?'🎁':'—')+'</td>'
-        +'</tr>';
-    });
-    h+='</tbody></table>';
-  } else if(i===1){
-    h='<table><thead><tr><th>姓名</th><th>電話</th><th>門市</th><th>訂單編號</th><th>出貨單號</th></tr></thead><tbody>';
-    p.forEach(function(o){
+    // 所有訂單合併，標示類型
+    var all=r.live.concat(r.plat);
+    h+='<table><thead><tr><th>類型</th><th>IG帳號</th><th>姓名</th><th>電話</th><th>門市</th><th>訂單編號</th><th>出貨單號</th></tr></thead><tbody>';
+    all.forEach(function(o){
       h+='<tr>'
+        +'<td style="color:'+(o.account?'#8B1A1A':'#555')+';font-weight:700">'+(o.account?'直播':'平台')+'</td>'
+        +'<td><strong>'+e(o.account||'—')+'</strong></td>'
         +'<td>'+e(o.name||'—')+'</td>'
         +'<td class="mono">'+e(o.phone||'—')+'</td>'
         +'<td>'+e(o.storeName||'—')+'</td>'
         +'<td class="mono">'+e(o.orderNum||'—')+'</td>'
-        +'<td class="mono" style="color:#aaa">'+e(o.shipNum||'—')+'</td>'
+        +'<td class="mono muted">'+e(o.shipNum||'—')+'</td>'
         +'</tr>';
     });
     h+='</tbody></table>';
   } else {
-    h='<table><thead><tr><th>商品貨號</th><th>商品名稱/規格</th><th>數量</th></tr></thead><tbody>';
-    pk.forEach(function(p){
+    // 揀貨清單
+    h+='<table><thead><tr><th>類型</th><th>商品貨號</th><th>商品描述</th><th>數量</th></tr></thead><tbody>';
+    r.allPick.forEach(function(p){
       h+='<tr>'
-        +'<td class="mono" style="color:#aaa;font-size:10px">'+e(p.prodNo)+'</td>'
+        +'<td style="color:'+(p.isLive?'#8B1A1A':'#2d6a4f')+';font-weight:700">'+(p.isLive?'直播':'平台')+'</td>'
+        +'<td class="mono muted" style="font-size:10px">'+e(p.prodNo)+'</td>'
         +'<td>'+e(p.desc)+'</td>'
         +'<td><strong>'+p.qty+'</strong></td>'
         +'</tr>';
     });
     h+='</tbody></table>';
   }
+  h+='</div>';
   document.getElementById('tabBody').innerHTML=h;
 }
 
-function e(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-
-function doExport(){
-  if(!parsed)return;
-  var rows=[['IG帳號','姓名','電話','門市','訂單編號','出貨單號','金額','需贈品']];
-  parsed.live.forEach(function(o){
-    rows.push([o.account||'',o.name||'',o.phone||'',o.storeName||'',o.orderNum||'',o.shipNum||'',o.amount||'',o.gift?'是':'']);
+// ── 匯出備貨追蹤 CSV ──
+function exportBaku(){
+  if(!result||!result.platPick.length){alert('沒有平台商品可以匯出');return;}
+  var rows=[['商品名稱','顏色','尺寸','款式','數量']];
+  result.platPick.forEach(function(p){
+    rows.push([p.name||p.desc,p.color||'',p.size||'',p.style||'',p.qty]);
   });
   var csv=rows.map(function(r){return r.map(function(v){return'"'+String(v).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
-  var blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');a.href=url;a.download='iOPEN訂單_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
-  URL.revokeObjectURL(url);
+  dl('\uFEFF'+csv,'備貨清單_iOPEN_'+today()+'.csv','text/csv;charset=utf-8;');
 }
 
+function today(){return new Date().toISOString().slice(0,10);}
+function dl(data,name,type){
+  var b=new Blob([data],{type:type});
+  var u=URL.createObjectURL(b);
+  var a=document.createElement('a');a.href=u;a.download=name;a.click();
+  URL.revokeObjectURL(u);
+}
 function doReset(){
-  parsed=null;
-  show('upSec',true); show('resSec',false);
-  document.getElementById('pasteIn').value='';
-  showErr('');
+  result=null;show('upSec',true);show('resSec',false);
+  document.getElementById('pasteIn').value='';showErr('');
 }
-
 function show(id,v){document.getElementById(id).style.display=v?'block':'none';}
 function showErr(msg){var el=document.getElementById('errBox');el.style.display=msg?'block':'none';el.textContent=msg;}
+function e(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 </script>
 </body>
 </html>
