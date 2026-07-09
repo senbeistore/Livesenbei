@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>iOPEN 出貨明細解析</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,sans-serif;background:#f9f6f2;color:#1a1a1a;min-height:100vh}
+header{background:#8B1A1A;color:#fff;padding:16px 20px;display:flex;align-items:center;gap:10px}
+header h1{font-size:17px;font-weight:700}
+header a{color:rgba(255,255,255,0.7);font-size:12px;text-decoration:none;margin-left:auto}
+.main{padding:16px;max-width:800px;margin:0 auto}
+.upload-area{background:#fff;border:2px dashed #d4b9a0;border-radius:14px;padding:32px 20px;text-align:center;cursor:pointer;margin-bottom:16px;transition:border-color .2s}
+.upload-area:active{border-color:#8B1A1A;background:#fdf8f5}
+.upload-area .icon{font-size:36px;margin-bottom:10px}
+.upload-area p{font-size:14px;color:#666;margin-top:6px}
+.btn-primary{display:inline-block;background:#8B1A1A;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;width:100%}
+.btn-sm{display:inline-block;background:transparent;color:#8B1A1A;border:1px solid #8B1A1A;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer}
+.btn-green{background:#2d6a4f;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer}
+.error{background:#fef2f2;border:1px solid #f87171;color:#b91c1c;border-radius:10px;padding:12px 16px;font-size:13px;margin-bottom:12px}
+.card{background:#fff;border-radius:12px;border:1px solid #ede8e0;margin-bottom:12px;overflow:hidden}
+.card-header{padding:10px 14px;font-size:12px;font-weight:700;color:#fff}
+.card-header.red{background:#8B1A1A}
+.card-header.gray{background:#555}
+.card-header.green{background:#2d6a4f}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:8px 10px;background:#fdf8f5;color:#666;font-weight:600;white-space:nowrap}
+td{padding:8px 10px;border-top:1px solid #f0ebe5;white-space:nowrap}
+tr.gift{background:#fffbeb}
+tr.notInList{background:#fef2f2}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-gift{background:#fffbeb;border:1px solid #f59e0b;color:#b45309}
+.badge-warn{background:#fef2f2;border:1px solid #f87171;color:#b91c1c}
+.badge-info{background:#eff6fc;border:1px solid #93c5fd;color:#1d4ed8}
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.stat{background:#fff;border:1px solid #ede8e0;border-radius:10px;padding:8px 14px;font-size:13px}
+.mono{font-family:monospace;color:#666}
+.loading{text-align:center;padding:32px;color:#888;font-size:14px}
+.tabs{display:flex;border-bottom:1px solid #ede8e0;margin-bottom:0;overflow-x:auto}
+.tab{padding:10px 16px;font-size:13px;font-weight:600;color:#888;border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent}
+.tab.active{color:#8B1A1A;border-bottom-color:#8B1A1A}
+.tab-content{padding:0}
+.paste-area{width:100%;border:1px solid #ede8e0;border-radius:10px;padding:10px;font-size:12px;font-family:monospace;height:120px;resize:vertical;background:#fafafa}
+input[type=file]{display:none}
+</style>
+</head>
+<body>
+<header>
+  <span>📦</span>
+  <h1>iOPEN 出貨明細解析</h1>
+  <a href="./index.html">← 理貨台</a>
+</header>
+<div class="main">
+  <div id="errorBox" class="error" style="display:none"></div>
+
+  <!-- 上傳區 -->
+  <div id="uploadSection">
+    <label class="upload-area" id="dropArea">
+      <input type="file" id="pdfInput" accept="application/pdf,*/*" multiple>
+      <div class="icon">📄</div>
+      <strong style="font-size:15px">點擊選擇 iOPEN PDF</strong>
+      <p>支援多檔同時選擇</p>
+    </label>
+
+    <div style="text-align:center;margin:8px 0;color:#999;font-size:13px">或</div>
+
+    <div class="card">
+      <div style="padding:14px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px">貼入出貨明細文字</div>
+        <textarea class="paste-area" id="pasteArea" placeholder="從 iOPEN 後台出貨明細頁複製全部文字貼入..."></textarea>
+        <button class="btn-primary" style="margin-top:10px" onclick="parseFromText()">解析</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 載入中 -->
+  <div id="loadingBox" class="loading" style="display:none">📖 讀取 PDF 中...</div>
+
+  <!-- 結果 -->
+  <div id="resultSection" style="display:none">
+    <div id="statsBar" class="stats"></div>
+
+    <div class="card">
+      <div class="tabs" id="tabBar"></div>
+      <div id="tabContent"></div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn-green" onclick="exportCSV()">匯出備貨清單 CSV</button>
+      <button class="btn-sm" onclick="reset()">重新上傳</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── PDF.js 設定 ──
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+var parsed = null;
+
+// ── 檔案選擇 ──
+document.getElementById('pdfInput').addEventListener('change', function(e) {
+  var files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  readFiles(files);
+  e.target.value = '';
+});
+
+// ── 拖放 ──
+var dropArea = document.getElementById('dropArea');
+dropArea.addEventListener('dragover', function(e){ e.preventDefault(); });
+dropArea.addEventListener('drop', function(e){
+  e.preventDefault();
+  var files = Array.from(e.dataTransfer.files || []);
+  if (files.length) readFiles(files);
+});
+
+function readFiles(files) {
+  showError('');
+  showLoading(true);
+  Promise.all(files.map(readPdfOrText)).then(function(texts) {
+    var combined = texts.filter(Boolean).join('\n');
+    if (!combined.trim()) {
+      showLoading(false);
+      showError('讀取失敗，請改用貼入文字方式');
+      return;
+    }
+    processText(combined);
+  }).catch(function(err) {
+    showLoading(false);
+    showError('讀取失敗：' + (err && err.message ? err.message : '未知錯誤'));
+  });
+}
+
+function readPdfOrText(file) {
+  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+    return readPdf(file);
+  }
+  return readTextFile(file);
+}
+
+function readPdf(file) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onerror = function() { reject(new Error('檔案讀取失敗')); };
+    reader.onload = function(e) {
+      if (typeof pdfjsLib === 'undefined') {
+        reject(new Error('PDF.js 未載入，請重新整理'));
+        return;
+      }
+      var data = new Uint8Array(e.target.result);
+      pdfjsLib.getDocument({ data: data }).promise.then(function(pdf) {
+        var pages = [];
+        for (var i = 1; i <= pdf.numPages; i++) pages.push(i);
+        return pages.reduce(function(chain, num) {
+          return chain.then(function(acc) {
+            return pdf.getPage(num).then(function(page) {
+              return page.getTextContent();
+            }).then(function(tc) {
+              var text = '';
+              var lastY = null;
+              tc.items.forEach(function(item) {
+                var y = item.transform[5];
+                if (lastY !== null && Math.abs(y - lastY) > 3) text += '\n';
+                text += item.str;
+                lastY = y;
+              });
+              return acc + text + '\n';
+            });
+          });
+        }, Promise.resolve(''));
+      }).then(resolve).catch(reject);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function readTextFile(file) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = function(e) { resolve(e.target.result); };
+    reader.readAsText(file, 'utf-8');
+  });
+}
+
+function parseFromText() {
+  var text = document.getElementById('pasteArea').value.trim();
+  if (!text) { showError('請貼入文字'); return; }
+  showError('');
+  processText(text);
+}
+
+// ── 解析 ──
+function processText(text) {
+  showLoading(false);
+  parsed = parseIopenOrders(text);
+  renderResult();
+}
+
+function parseIopenOrders(rawText) {
+  var t = rawText;
+  // Kangxi 正規化
+  var km = [['\u2F08','\u4EBA'],['\u2F12','\u53E3'],['\u2F15','\u9580'],
+    ['\u2F22','\u5973'],['\u2F25','\u5C71'],['\u2F32','\u5927'],
+    ['\u2F3D','\u5C0F'],['\u2F56','\u91CC'],['\u2F95','\u884C'],['\uFE30','\uFF1A']];
+  km.forEach(function(p){ t = t.split(p[0]).join(p[1]); });
+
+  // 揀貨單
+  var pickIdx = t.indexOf('揀貨單');
+  var pickSection = pickIdx >= 0 ? t.slice(pickIdx) : '';
+  var mainText = pickIdx >= 0 ? t.slice(0, pickIdx) : t;
+  var pick = [];
+  if (pickSection) {
+    var pls = pickSection.split('\n');
+    for (var pi = 0; pi < pls.length - 1; pi++) {
+      var pl = pls[pi].trim();
+      if (/^P\d{10,}$/.test(pl)) {
+        var nxt = (pls[pi+1]||'').trim();
+        var qm = nxt.match(/ (\d+)\s*$/);
+        if (qm) pick.push({ prodNo: pl, desc: nxt.slice(0, nxt.lastIndexOf(qm[1])).trim(), qty: parseInt(qm[1]) });
+      }
+    }
+  }
+
+  // 訂單分割
+  var blocks = mainText.split(/(?=收件人[：:])/);
+  var live = [], stock = [];
+  blocks.forEach(function(block) {
+    block = block.trim();
+    if (!block || block.indexOf('訂單編號') < 0) return;
+    var o = {};
+    var nm = block.match(/收件人[：:]\s*(\S+)/);
+    if (nm) o.name = nm[1].replace(/付款方式.*/, '').trim();
+    var pm = block.match(/聯絡電話[：:]\s*([\d-]+)/) || block.match(/行動電話[：:]\s*([\d-]+)/);
+    if (pm) o.phone = pm[1].replace(/-/g,'');
+    var sm = block.match(/門市名稱[^]*?[（(](\d+)[）)]\s*([^\n門]+)/);
+    if (sm) { o.storeCode = sm[1]; o.storeName = sm[2].trim(); }
+    var om = block.match(/訂單編號[：:]\s*(\d+)/);
+    if (om) o.orderNum = om[1];
+    var sh = block.match(/出貨單編號[：:]\s*(\d+)/);
+    if (sh) o.shipNum = sh[1];
+    var dm = block.match(/交易日期[：:]\s*([\d-]+)/);
+    if (dm) o.date = dm[1];
+
+    var lp = /直播[｜|][（(]([^）)]+)[）)]/g;
+    var lm = lp.exec(block);
+    var allLive = [];
+    while (lm) { allLive.push(lm[1]); lm = lp.exec(block); }
+
+    if (allLive.length > 0) {
+      o.account = allLive[0].replace(/\+[^\d$]+\d+/,'').trim();
+      var amts = [];
+      var ap = /\$?(\d{3,5})\s*1\s*$/gm;
+      var am = ap.exec(block);
+      while (am) { amts.push(parseInt(am[1])); am = ap.exec(block); }
+      o.amount = amts.reduce(function(s,v){ return s+v; }, 0);
+      live.push(o);
+    } else {
+      o.amount = 0;
+      stock.push(o);
+    }
+  });
+
+  // 同電話累計
+  var phoneTotals = {};
+  live.forEach(function(o){ if(o.phone) phoneTotals[o.phone]=(phoneTotals[o.phone]||0)+(o.amount||0); });
+  live.forEach(function(o){ o.totalByPhone = phoneTotals[o.phone]||o.amount||0; o.needsGift = o.totalByPhone>=3500; });
+
+  return { live: live, stock: stock, pick: pick };
+}
+
+// ── 渲染 ──
+var currentTab = 0;
+
+function renderResult() {
+  document.getElementById('uploadSection').style.display = 'none';
+  document.getElementById('resultSection').style.display = 'block';
+
+  var live = parsed.live, stock = parsed.stock, pick = parsed.pick;
+  var gift = live.filter(function(o){ return o.needsGift; });
+
+  // 統計
+  var stats = document.getElementById('statsBar');
+  stats.innerHTML =
+    '<div class="stat">直播 <strong>' + live.length + '</strong> 筆</div>' +
+    '<div class="stat">現貨 <strong>' + stock.length + '</strong> 筆</div>' +
+    (gift.length ? '<div class="stat badge-gift">🎁 滿額贈 <strong>' + gift.length + '</strong> 人</div>' : '') +
+    (pick.length ? '<div class="stat badge-info">揀貨 <strong>' + pick.length + '</strong> 項</div>' : '');
+
+  // Tabs
+  var tabs = [['直播訂單', live.length], ['現貨訂單', stock.length], ['揀貨清單', pick.length]];
+  var tabBar = document.getElementById('tabBar');
+  tabBar.innerHTML = tabs.map(function(t, i) {
+    return '<button class="tab' + (i===currentTab?' active':'') + '" onclick="switchTab('+i+')">'+t[0]+' ('+t[1]+')</button>';
+  }).join('');
+
+  renderTab(currentTab);
+}
+
+function switchTab(idx) {
+  currentTab = idx;
+  document.querySelectorAll('.tab').forEach(function(t, i){ t.className = 'tab'+(i===idx?' active':''); });
+  renderTab(idx);
+}
+
+function renderTab(idx) {
+  var live = parsed.live, stock = parsed.stock, pick = parsed.pick;
+  var html = '';
+  if (idx === 0) {
+    html = '<table><thead><tr><th>IG帳號</th><th>姓名</th><th>電話</th><th>門市</th><th>訂單編號</th><th>出貨單號</th><th>金額</th><th>🎁</th></tr></thead><tbody>';
+    live.forEach(function(o, i) {
+      var cls = o.needsGift ? ' class="gift"' : '';
+      html += '<tr'+cls+'><td><strong>'+esc(o.account||'—')+'</strong></td><td>'+esc(o.name||'—')+'</td><td class="mono">'+esc(o.phone||'—')+'</td><td style="max-width:90px;overflow:hidden;text-overflow:ellipsis">'+esc(o.storeName||'—')+'</td><td class="mono">'+esc(o.orderNum||'—')+'</td><td class="mono" style="color:#aaa">'+esc(o.shipNum||'—')+'</td><td><strong>'+(o.amount?'$'+o.amount:'—')+'</strong></td><td>'+(o.needsGift?'🎁':'—')+'</td></tr>';
+    });
+    html += '</tbody></table>';
+  } else if (idx === 1) {
+    html = '<table><thead><tr><th>姓名</th><th>電話</th><th>門市</th><th>訂單編號</th><th>出貨單號</th></tr></thead><tbody>';
+    stock.forEach(function(o) {
+      html += '<tr><td>'+esc(o.name||'—')+'</td><td class="mono">'+esc(o.phone||'—')+'</td><td>'+esc(o.storeName||'—')+'</td><td class="mono">'+esc(o.orderNum||'—')+'</td><td class="mono" style="color:#aaa">'+esc(o.shipNum||'—')+'</td></tr>';
+    });
+    html += '</tbody></table>';
+  } else {
+    html = '<table><thead><tr><th>商品貨號</th><th>商品名稱/規格</th><th>數量</th></tr></thead><tbody>';
+    pick.forEach(function(p) {
+      html += '<tr><td class="mono" style="color:#aaa;font-size:10px">'+esc(p.prodNo)+'</td><td>'+esc(p.desc)+'</td><td><strong>'+p.qty+'</strong></td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  document.getElementById('tabContent').innerHTML = html;
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── 匯出 CSV ──
+function exportCSV() {
+  if (!parsed) return;
+  var rows = [['IG帳號','姓名','電話','門市','訂單編號','出貨單號','金額','需贈品']];
+  parsed.live.forEach(function(o){
+    rows.push([o.account||'',o.name||'',o.phone||'',o.storeName||'',o.orderNum||'',o.shipNum||'',o.amount||'',o.needsGift?'是':'']);
+  });
+  var csv = rows.map(function(r){ return r.map(function(v){ return '"'+String(v).replace(/"/g,'""')+'"'; }).join(','); }).join('\n');
+  download('\uFEFF'+csv, 'iOPEN訂單_'+new Date().toISOString().slice(0,10)+'.csv', 'text/csv;charset=utf-8;');
+}
+
+function download(data, filename, type) {
+  var blob = new Blob([data], {type:type});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function reset() {
+  parsed = null;
+  document.getElementById('uploadSection').style.display = 'block';
+  document.getElementById('resultSection').style.display = 'none';
+  document.getElementById('pasteArea').value = '';
+  showError('');
+}
+
+function showLoading(v) {
+  document.getElementById('loadingBox').style.display = v ? 'block' : 'none';
+  document.getElementById('uploadSection').style.display = v ? 'none' : 'block';
+}
+
+function showError(msg) {
+  var el = document.getElementById('errorBox');
+  el.style.display = msg ? 'block' : 'none';
+  el.textContent = msg;
+}
+</script>
+</body>
+</html>
