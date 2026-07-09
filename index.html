@@ -1353,6 +1353,69 @@ function LiveOrderSorter() {
           </div>
         )}
 
+        {/* iOPEN訂單匯入：不需要先上傳 CSV，隨時可用 */}
+        {stage !== "results" && (
+          <div className="mb-4">
+            <button
+              onClick={()=>setStage("iopenonly")}
+              style={{padding:"10px 18px",borderRadius:10,background:stage==="iopenonly"?"#1a1a1a":"transparent",
+                color:stage==="iopenonly"?"#fff":"#666",border:"1px solid #ddd",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+              🚚 iOPEN訂單匯入（不需先上傳CSV）
+            </button>
+          </div>
+        )}
+        {stage === "iopenonly" && (
+          <div className="rounded-xl p-4" style={{background:"#fff",border:"1px solid #e5e7eb"}}>
+            <div className="font-bold mb-2" style={{color:"#1a1a1a"}}>貼入 iOPEN 後台出貨明細文字</div>
+            <div className="text-xs mb-3" style={{color:"#888"}}>從 iOPEN 後台出貨明細頁複製全部文字，可包含多筆訂單</div>
+            <textarea value={iopenImportText} onChange={e=>setIopenImportText(e.target.value)}
+              placeholder={"收件人：王小明 付款方式：…\n訂單編號：503061375\n直播｜（帳號） $2405"}
+              rows={6}
+              style={{width:"100%",boxSizing:"border-box",padding:"10px",borderRadius:8,border:"1px solid #e5e7eb",fontSize:12,fontFamily:"monospace",resize:"vertical",background:"#fafafa"}}/>
+            <div className="flex gap-2 mt-3">
+              <button onClick={()=>{setIopenImportResult(parseIopenOrderText(iopenImportText));}}
+                style={{padding:"8px 20px",borderRadius:8,background:"#8B1A1A",color:"#fff",border:"none",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                解析訂單
+              </button>
+              {iopenImportResult&&<button onClick={()=>{setIopenImportText("");setIopenImportResult(null);}}
+                style={{padding:"8px 14px",borderRadius:8,background:"transparent",color:"#888",border:"1px solid #e5e7eb",fontSize:13,cursor:"pointer"}}>清除</button>}
+            </div>
+            {iopenImportResult&&(()=>{
+              const notIn=iopenImportResult.filter(o=>!o.inSenbei&&o.account);
+              const gift=iopenImportResult.filter(o=>o.needsGift);
+              return(<div className="mt-4">
+                <div className="flex gap-3 mb-3 flex-wrap">
+                  <span className="px-3 py-1.5 rounded-lg text-sm" style={{background:"#f3f4f6",border:"1px solid #e5e7eb"}}>共 <strong>{iopenImportResult.length}</strong> 筆</span>
+                  {gift.length>0&&<span className="px-3 py-1.5 rounded-lg text-sm" style={{background:"#fffbeb",border:"1px solid #f59e0b",color:"#b45309"}}>🎁 需贈品 <strong>{gift.length}</strong> 筆</span>}
+                  {notIn.length>0&&<span className="px-3 py-1.5 rounded-lg text-sm" style={{background:"#fef2f2",border:"1px solid #f87171",color:"#b91c1c"}}>⚠️ 不在清單 <strong>{notIn.length}</strong> 筆</span>}
+                </div>
+                <div className="rounded-xl overflow-auto" style={{border:"1px solid #e5e7eb"}}>
+                  <table className="w-full text-xs">
+                    <thead><tr style={{background:"#8B1A1A",color:"#fff"}}>
+                      <th className="text-left px-3 py-2">IG帳號</th><th className="text-left px-3 py-2">姓名</th>
+                      <th className="text-left px-3 py-2">電話</th><th className="text-left px-3 py-2">門市</th>
+                      <th className="text-left px-3 py-2">訂單編號</th><th className="text-left px-3 py-2">出貨單編號</th>
+                      <th className="text-right px-3 py-2">金額</th><th className="text-center px-3 py-2">贈品</th>
+                    </tr></thead>
+                    <tbody>{iopenImportResult.map((o,i)=>(
+                      <tr key={i} style={{background:!o.inSenbei?"#fef2f2":o.needsGift?"#fffbeb":i%2?"#f9fafb":"#fff",borderBottom:"1px solid #f3f4f6"}}>
+                        <td className="px-3 py-2 font-medium">{o.account||"—"}</td>
+                        <td className="px-3 py-2">{o.name||"—"}</td>
+                        <td className="px-3 py-2" style={{fontFamily:"monospace"}}>{o.phone||"—"}</td>
+                        <td className="px-3 py-2" style={{maxWidth:100,overflow:"hidden",textOverflow:"ellipsis"}}>{o.storeName||"—"}</td>
+                        <td className="px-3 py-2" style={{fontFamily:"monospace"}}>{o.orderNum||"—"}</td>
+                        <td className="px-3 py-2" style={{fontFamily:"monospace"}}>{o.shipNum||"—"}</td>
+                        <td className="text-right px-3 py-2 font-bold">${o.amount||0}</td>
+                        <td className="text-center px-3 py-2">{o.needsGift?"🎁":"—"}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>);
+            })()}
+          </div>
+        )}
+
         {stage === "results" && (
           <>
             <div className="flex flex-wrap gap-6 justify-center sm:justify-start mb-10">
