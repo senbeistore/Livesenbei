@@ -1406,17 +1406,26 @@ function LiveOrderSorter() {
               <Upload size={28} style={{ color: COLORS.inkMuted }} />
               <p className="font-medium">拖曳檔案到這裡，或點擊上傳</p>
               <p className="text-xs" style={{ color: COLORS.inkMuted }}>
-                支援 .csv / .xls / .xlsx / .pdf，撿貨單或訂購人明細格式都會自動偵測。
-                iOPEN 出貨明細 PDF 也可直接拖入
+                支援 .csv / .xls / .xlsx，撿貨單或訂購人明細格式都會自動偵測
               </p>
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,.xlsx,.xls,.pdf"
-              className="hidden"
-              onChange={(e) => e.target.files[0] && handleFile(e.target.files[0])}
-            />
+            <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
+              onChange={(e) => e.target.files[0] && handleFile(e.target.files[0])} />
+            {/* iOPEN PDF 專用按鈕 */}
+            <label style={{display:"inline-flex",alignItems:"center",gap:5,marginTop:10,padding:"7px 16px",borderRadius:10,background:"#f0faf4",border:"1px solid #4caf50",color:"#2d6a4f",cursor:"pointer",fontSize:13,fontWeight:600}}>
+              📄 上傳 iOPEN 出貨明細 PDF
+              <input type="file" accept="application/pdf" multiple style={{display:"none"}} onChange={e=>{
+                var files=Array.from(e.target.files||[]);
+                if(!files.length)return;
+                setError("");
+                Promise.all(files.map(function(f){return readPdfText(f);})).then(function(texts){
+                  var combined=texts.join("\n");
+                  if(combined.trim()){var r=parseIopenOrderText(combined);setIopenResult(r);setActiveTab("iopenimport");}
+                  else setError("PDF 讀取失敗，請重新整理後再試");
+                }).catch(function(err){setError("PDF 讀取失敗：" + (err&&err.message?err.message:"未知錯誤"));});
+                e.target.value="";
+              }}/>
+            </label>
             <div className="mt-6 flex gap-4 text-sm">
               <button onClick={loadSamplePicking} className="underline" style={{ color: COLORS.confirm }}>
                 試試範例撿貨單
