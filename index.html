@@ -1417,7 +1417,7 @@ function LiveOrderSorter() {
             {/* iOPEN PDF 專用按鈕 */}
             <label style={{display:"inline-flex",alignItems:"center",gap:5,marginTop:10,padding:"7px 16px",borderRadius:10,background:"#f0faf4",border:"1px solid #4caf50",color:"#2d6a4f",cursor:"pointer",fontSize:13,fontWeight:600}}>
               📄 上傳 iOPEN 出貨明細 PDF
-              <input type="file" accept="application/pdf" multiple style={{display:"none"}} onChange={e=>{
+              <input type="file" accept="*" multiple style={{display:"none"}} onChange={e=>{
                 var files=Array.from(e.target.files||[]);
                 if(!files.length)return;
                 setError("");
