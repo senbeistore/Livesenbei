@@ -267,14 +267,6 @@ const SAMPLE_PICKING_AOA = [
 ];
 
 // ---------- 基礎工具 ----------
-function Truck(props) {
-  return (
-    <Icon {...props} viewBox="0 0 24 24">
-      <path stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-        d="M1 3h15v13H1V3zM16 8h4l3 3v5h-7V8zM5.5 19a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM18.5 19a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/>
-    </Icon>
-  );
-}
 
 function normalize(s) {
   if (s === null || s === undefined) return "";
@@ -607,8 +599,6 @@ function LiveOrderSorter() {
   const [error, setError] = useState("");
 
   const [activeTab, setActiveTab] = useState("product");
-  const [iopenImportText, setIopenImportText] = useState("");
-  const [iopenImportResult, setIopenImportResult] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedKeys, setExpandedKeys] = useState(new Set());
   const [expandedCustomers, setExpandedCustomers] = useState(new Set());
@@ -1179,108 +1169,13 @@ function LiveOrderSorter() {
     missing: { icon: XCircle, color: COLORS.stamp, bg: COLORS.stampSoft, label: "官方有，我方缺漏" },
     extra: { icon: PlusCircle, color: COLORS.info, bg: COLORS.infoSoft, label: "我方有，官方沒有" },
   };
-    // ── iOPEN 訂單匯入：解析函式（支援 PDF 複製格式）──
-  function parseIopenOrderText(text) {
-    var t = text.replace(/\r/g,"").replace(/\n/g,"\n")
-      .replace(/\uFE30/g,"\uFF1A")
-      .replace(/\u2F95/g,"\u884C")
-      .replace(/\u2F08/g,"\u4EBA")
-      .replace(/\u2F56/g,"\u91CC")
-      .replace(/\u2F32/g,"\u5927")
-      .replace(/\u2F12/g,"\u53E3")
-      .replace(/\u2F22/g,"\u5973")
-      .replace(/\u2F25/g,"\u5C71")
-      .replace(/\u2F3D/g,"\u5C0F");
-
-    var pickIdx = t.indexOf("\u63C0\u8CA8\u55AE");
-    var pickSection = pickIdx >= 0 ? t.slice(pickIdx) : "";
-    var mainText = pickIdx >= 0 ? t.slice(0, pickIdx) : t;
-
-    var pickItems = [];
-    if (pickSection) {
-      var pls = pickSection.split("\n");
-      for (var pi = 0; pi < pls.length - 1; pi++) {
-        var pl = pls[pi].trim();
-        if (/^P\d{10,}/.test(pl) && pl.length < 20) {
-          var nxt = pls[pi+1] ? pls[pi+1].trim() : "";
-          var qm = nxt.match(/ (\d+)\s*$/);
-          if (qm) {
-            var desc = nxt.slice(0, nxt.lastIndexOf(qm[1])).trim();
-            pickItems.push({ prodNo: pl, desc: desc, qty: parseInt(qm[1]) });
-          }
-        }
-      }
-    }
-
-    var rawBlocks = mainText.split(/(?=\u6536\u4EF6\u4EBA[\uFF1A:])/);
-    var liveOrders = [];
-    var stockOrders = [];
-
-    for (var bi = 0; bi < rawBlocks.length; bi++) {
-      var block = rawBlocks[bi].trim();
-      if (!block || block.indexOf("\u8A02\u55AE\u7DE8\u865F") < 0) continue;
-      var o = {};
-      var nm = block.match(/\u6536\u4EF6\u4EBA[\uFF1A:]\s*(\S+)/);
-      if (nm) o.name = nm[1].replace(/\u4ED8\u6B3E\u65B9\u5F0F.*/, "").trim();
-      var pm = block.match(/\u806F\u7D61\u96FB\u8A71[\uFF1A:]\s*([\d-]+)/) || block.match(/\u884C\u52D5\u96FB\u8A71[\uFF1A:]\s*([\d-]+)/);
-      if (pm) o.phone = pm[1].replace(/-/g,"");
-      var sm = block.match(/\u9580\u5E02\u540D\u7A31[^]*?[\uFF08(](\d+)[\uFF09)]\s*([^\n\u9580]+)/);
-      if (sm) { o.storeCode = sm[1]; o.storeName = sm[2].trim(); }
-      var om2 = block.match(/\u8A02\u55AE\u7DE8\u865F[\uFF1A:]\s*(\d+)/);
-      if (om2) o.orderNum = om2[1];
-      var shm = block.match(/\u51FA\u8CA8\u55AE\u7DE8\u865F[\uFF1A:]\s*(\d+)/);
-      if (shm) o.shipNum = shm[1];
-      var dm = block.match(/\u4EA4\u6613\u65E5\u671F[\uFF1A:]\s*([\d-]+)/);
-      if (dm) o.date = dm[1];
-
-      var lp = /\u76F4\u64AD[\uFF5C|][\uFF08(]([^\uFF09)]+)[\uFF09)]/g;
-      var lm = lp.exec(block);
-      var allLive = [];
-      while (lm) { allLive.push(lm[1]); lm = lp.exec(block); }
-
-      if (allLive.length > 0) {
-        o.account = allLive[0].replace(/\+[^$\d]+\d+/, "").trim();
-        var ap = /\$?(\d{3,5})\s*\d\s*$/gm;
-        var am = ap.exec(block);
-        var tot = 0;
-        while (am) { tot += parseInt(am[1]); am = ap.exec(block); }
-        o.amount = tot;
-        liveOrders.push(o);
-      } else {
-        o.amount = 0;
-        stockOrders.push(o);
-      }
-    }
-
-    var phoneTotals = {};
-    for (var li = 0; li < liveOrders.length; li++) {
-      var lo = liveOrders[li];
-      if (lo.phone) phoneTotals[lo.phone] = (phoneTotals[lo.phone] || 0) + (lo.amount || 0);
-    }
-    var known = {};
-    if (customerOrderTotals) {
-      for (var ki = 0; ki < customerOrderTotals.length; ki++) {
-        known[customerOrderTotals[ki].account] = true;
-      }
-    }
-    var live = liveOrders.map(function(o) {
-      return Object.assign({}, o, { type:"live",
-        totalByPhone: phoneTotals[o.phone] || o.amount || 0,
-        needsGift: (phoneTotals[o.phone] || o.amount || 0) >= 3500,
-        inSenbei: !!known[o.account] });
-    });
-    var stock = stockOrders.map(function(o) {
-      return Object.assign({}, o, {type:"stock", needsGift:false, inSenbei:true});
-    });
-    return { live: live, stock: stock, pick: pickItems };
-  }
+  
 
   const tabs = [
     ["product", "依商品整理", Package],
     ...(hasCustomerData ? [["customer", "依客人整理", Users]] : []),
     ["check", "核對撿貨單", ClipboardList],
     ...(customerOrderTotals.length > 0 ? [["iopen", "匯出iOPEN Mall", Store]] : []),
-    ["iopenimport", "iOPEN訂單", Truck],
     ["raw", "原始資料", FileSpreadsheet],
   ];
 
@@ -1406,110 +1301,7 @@ function LiveOrderSorter() {
               開始整理 →
             </button>
           </div>
-        )}
-
-        {/* iOPEN訂單匯入：不需要先上傳 CSV，隨時可用 */}
-        {stage !== "results" && (
-          <div className="mb-4">
-            <button
-              onClick={()=>setStage("iopenonly")}
-              style={{padding:"10px 18px",borderRadius:10,background:stage==="iopenonly"?"#1a1a1a":"transparent",
-                color:stage==="iopenonly"?"#fff":"#666",border:"1px solid #ddd",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
-              🚚 iOPEN訂單匯入（不需先上傳CSV）
-            </button>
-          </div>
-        )}
-        {stage === "iopenonly" && (
-          <div className="rounded-xl p-4" style={{background:"#fff",border:"1px solid #e5e7eb"}}>
-            <div className="font-bold mb-2" style={{color:"#1a1a1a"}}>上傳 iOPEN 出貨明細 PDF</div>
-            <div className="text-xs mb-3" style={{color:"#888"}}>可直接上傳 PDF 檔（支援多檔），或貼入複製的文字</div>
-            <textarea value={iopenImportText} onChange={e=>setIopenImportText(e.target.value)}
-              placeholder={"收件人：王小明 付款方式：…\n訂單編號：503061375\n直播｜（帳號） $2405"}
-              rows={6}
-              style={{width:"100%",boxSizing:"border-box",padding:"10px",borderRadius:8,border:"1px solid #e5e7eb",fontSize:12,fontFamily:"monospace",resize:"vertical",background:"#fafafa"}}/>
-            <div className="flex gap-2 mt-3">
-              <button onClick={()=>{setIopenImportResult(parseIopenOrderText(iopenImportText));}}
-                style={{padding:"8px 20px",borderRadius:8,background:"#8B1A1A",color:"#fff",border:"none",fontWeight:700,fontSize:13,cursor:"pointer"}}>
-                解析訂單
-              </button>
-              {iopenImportResult&&<button onClick={()=>{setIopenImportText("");setIopenImportResult(null);}}
-                style={{padding:"8px 14px",borderRadius:8,background:"transparent",color:"#888",border:"1px solid #e5e7eb",fontSize:13,cursor:"pointer"}}>清除</button>}
-            </div>
-            {iopenImportResult&&(()=>{
-              const {live=[],stock=[],pick=[]} = iopenImportResult;
-              const gift=live.filter(o=>o.needsGift);
-              const notIn=live.filter(o=>!o.inSenbei);
-              return(<div className="mt-4">
-                <div className="flex gap-2 mb-3 flex-wrap text-sm font-medium" style={{color:"#555"}}>
-                  <span style={{background:"#f3f4f6",border:"1px solid #e5e7eb",padding:"4px 12px",borderRadius:20}}>直播 <strong>{live.length}</strong> 筆</span>
-                  <span style={{background:"#f3f4f6",border:"1px solid #e5e7eb",padding:"4px 12px",borderRadius:20}}>現貨 <strong>{stock.length}</strong> 筆</span>
-                  {gift.length>0&&<span style={{background:"#fffbeb",border:"1px solid #f59e0b",color:"#b45309",padding:"4px 12px",borderRadius:20}}>🎁 滿額贈 <strong>{gift.length}</strong> 人</span>}
-                  {notIn.length>0&&<span style={{background:"#fef2f2",border:"1px solid #f87171",color:"#b91c1c",padding:"4px 12px",borderRadius:20}}>⚠️ 不在清單 <strong>{notIn.length}</strong> 筆</span>}
-                </div>
-                {/* 直播訂單表 */}
-                {live.length>0&&<div className="rounded-xl overflow-auto mb-4" style={{border:"1px solid #e5e7eb"}}>
-                  <div className="px-3 py-2 text-xs font-bold" style={{background:"#8B1A1A",color:"#fff"}}>直播訂單</div>
-                  <table className="w-full text-xs">
-                    <thead><tr style={{background:"#f9f0f0",color:"#555"}}>
-                      <th className="text-left px-3 py-2">IG帳號</th><th className="text-left px-3 py-2">姓名</th>
-                      <th className="text-left px-3 py-2">電話</th><th className="text-left px-3 py-2">門市</th>
-                      <th className="text-left px-3 py-2">訂單編號</th><th className="text-left px-3 py-2">出貨單號</th>
-                      <th className="text-right px-3 py-2">金額</th><th className="text-center px-3 py-2">贈品</th>
-                    </tr></thead>
-                    <tbody>{live.map((o,i)=>(
-                      <tr key={i} style={{background:!o.inSenbei?"#fef2f2":o.needsGift?"#fffbeb":i%2?"#f9fafb":"#fff",borderBottom:"1px solid #f3f4f6"}}>
-                        <td className="px-3 py-2 font-medium">{o.account||"—"}</td>
-                        <td className="px-3 py-2">{o.name||"—"}</td>
-                        <td className="px-3 py-2" style={{fontFamily:"monospace"}}>{o.phone||"—"}</td>
-                        <td className="px-3 py-2" style={{fontSize:10}}>{o.storeName||"—"}</td>
-                        <td className="px-3 py-2" style={{fontFamily:"monospace"}}>{o.orderNum||"—"}</td>
-                        <td className="px-3 py-2" style={{fontFamily:"monospace",color:"#aaa"}}>{o.shipNum||"—"}</td>
-                        <td className="text-right px-3 py-2 font-bold">{o.amount?`$${o.amount}`:"—"}</td>
-                        <td className="text-center px-3 py-2">{o.needsGift?"🎁":"—"}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>}
-                {/* 現貨訂單表 */}
-                {stock.length>0&&<div className="rounded-xl overflow-auto mb-4" style={{border:"1px solid #e5e7eb"}}>
-                  <div className="px-3 py-2 text-xs font-bold" style={{background:"#555",color:"#fff"}}>現貨訂單</div>
-                  <table className="w-full text-xs">
-                    <thead><tr style={{background:"#f5f5f5",color:"#555"}}>
-                      <th className="text-left px-3 py-2">姓名</th><th className="text-left px-3 py-2">電話</th>
-                      <th className="text-left px-3 py-2">門市</th><th className="text-left px-3 py-2">訂單編號</th>
-                      <th className="text-left px-3 py-2">出貨單號</th>
-                    </tr></thead>
-                    <tbody>{stock.map((o,i)=>(
-                      <tr key={i} style={{background:i%2?"#f9fafb":"#fff",borderBottom:"1px solid #f3f4f6"}}>
-                        <td className="px-3 py-2">{o.name||"—"}</td>
-                        <td className="px-3 py-2" style={{fontFamily:"monospace"}}>{o.phone||"—"}</td>
-                        <td className="px-3 py-2" style={{fontSize:10}}>{o.storeName||"—"}</td>
-                        <td className="px-3 py-2" style={{fontFamily:"monospace"}}>{o.orderNum||"—"}</td>
-                        <td className="px-3 py-2" style={{fontFamily:"monospace",color:"#aaa"}}>{o.shipNum||"—"}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>}
-                {/* 揀貨清單 */}
-                {pick.length>0&&<div className="rounded-xl overflow-auto" style={{border:"1px solid #e5e7eb"}}>
-                  <div className="px-3 py-2 text-xs font-bold" style={{background:"#2d6a4f",color:"#fff"}}>揀貨清單</div>
-                  <table className="w-full text-xs">
-                    <thead><tr style={{background:"#f0faf4",color:"#555"}}>
-                      <th className="text-left px-3 py-2">商品貨號</th>
-                      <th className="text-left px-3 py-2">商品名稱/規格</th>
-                      <th className="text-right px-3 py-2">數量</th>
-                    </tr></thead>
-                    <tbody>{pick.map((p,i)=>(
-                      <tr key={i} style={{background:i%2?"#f9fafb":"#fff",borderBottom:"1px solid #f3f4f6"}}>
-                        <td className="px-3 py-2" style={{fontFamily:"monospace",fontSize:10,color:"#aaa"}}>{p.prodNo}</td>
-                        <td className="px-3 py-2">{p.desc}</td>
-                        <td className="text-right px-3 py-2 font-bold">{p.qty}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>}
-              </div>);
-            })()}
+        )}()}
           </div>
         )}
 
@@ -2008,100 +1800,6 @@ function LiveOrderSorter() {
               </div>
             )}
 
-            {activeTab === "iopenimport" && (
-              <div>
-                <div className="mb-4 p-4 rounded-xl" style={{background:COLORS.surface,border:`1px solid ${COLORS.line}`}}>
-                  <div className="font-bold mb-2" style={{color:COLORS.ink}}>上傳 iOPEN 出貨明細 PDF</div>
-                  <div className="text-xs mb-3" style={{color:COLORS.inkMuted}}>直接上傳 PDF（可多選），或貼入文字</div>
-                  <textarea
-                    value={iopenImportText}
-                    onChange={e=>setIopenImportText(e.target.value)}
-                    placeholder={"收件人：王小明 付款方式：…\n訂單編號：503061375\n直播｜（帳號） $2405"}
-                    rows={6}
-                    style={{width:"100%",boxSizing:"border-box",padding:"10px",borderRadius:8,border:`1px solid ${COLORS.line}`,fontSize:12,fontFamily:"monospace",resize:"vertical",background:COLORS.bg}}
-                  />
-                  <div className="flex gap-2 mt-3">
-                    <button onClick={()=>{
-                      const result = parseIopenOrderText(iopenImportText);
-                      setIopenImportResult(result);
-                    }} style={{padding:"8px 20px",borderRadius:8,background:COLORS.stamp,color:"#fff",border:"none",fontWeight:700,fontSize:13,cursor:"pointer"}}>
-                      解析訂單
-                    </button>
-                    {iopenImportResult && (
-                      <button onClick={()=>{setIopenImportText("");setIopenImportResult(null);}}
-                        style={{padding:"8px 14px",borderRadius:8,background:"transparent",color:COLORS.inkMuted,border:`1px solid ${COLORS.line}`,fontSize:13,cursor:"pointer"}}>
-                        清除
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {iopenImportResult && (() => {
-                  const {live=[],stock=[],pick=[]} = iopenImportResult;
-                  const needGift = live.filter(o=>o.needsGift);
-                  const notInSenbei = live.filter(o=>!o.inSenbei);
-                  return (
-                    <div>
-                      <div className="flex gap-3 mb-4 flex-wrap">
-                        <div className="px-4 py-2 rounded-lg text-sm" style={{background:COLORS.surface,border:`1px solid ${COLORS.line}`}}>直播 <strong>{live.length}</strong> 筆・現貨 <strong>{stock.length}</strong> 筆</div>
-                        {needGift.length>0&&<div className="px-4 py-2 rounded-lg text-sm" style={{background:"#fff3e0",border:"1px solid #f59e0b",color:"#b45309"}}>🎁 需贈品 <strong>{needGift.length}</strong> 人</div>}
-                        {notInSenbei.length>0&&<div className="px-4 py-2 rounded-lg text-sm" style={{background:"#fef2f2",border:"1px solid #f87171",color:"#b91c1c"}}>⚠️ 不在清單 <strong>{notInSenbei.length}</strong> 筆</div>}
-                      </div>
-                      {live.length>0&&<div className="rounded-xl overflow-auto mb-4" style={{border:`1px solid ${COLORS.line}`}}>
-                        <div style={{background:COLORS.stamp,color:"#fff",padding:"6px 12px",fontSize:12,fontWeight:700}}>直播訂單</div>
-                        <table className="w-full text-xs"><thead><tr style={{background:COLORS.stripe}}>
-                          <th className="text-left px-3 py-2">IG帳號</th><th className="text-left px-3 py-2">姓名</th><th className="text-left px-3 py-2">電話</th>
-                          <th className="text-left px-3 py-2">門市</th><th className="text-left px-3 py-2">訂單編號</th><th className="text-left px-3 py-2">出貨單號</th>
-                          <th className="text-right px-3 py-2">金額</th><th className="text-center px-3 py-2">贈品</th>
-                        </tr></thead><tbody>
-                        {live.map((o,i)=>(
-                          <tr key={i} style={{background:!o.inSenbei?"#fef2f2":o.needsGift?"#fffbeb":i%2?COLORS.stripe:COLORS.surface,borderBottom:`1px solid ${COLORS.line}`}}>
-                            <td className="px-3 py-2 font-medium">{o.account||"—"}</td>
-                            <td className="px-3 py-2">{o.name||"—"}</td>
-                            <td className="px-3 py-2" style={{fontFamily:"monospace"}}>{o.phone||"—"}</td>
-                            <td className="px-3 py-2" style={{fontSize:10}}>{o.storeName||"—"}</td>
-                            <td className="px-3 py-2" style={{fontFamily:"monospace"}}>{o.orderNum||"—"}</td>
-                            <td className="px-3 py-2" style={{fontFamily:"monospace",color:COLORS.inkMuted}}>{o.shipNum||"—"}</td>
-                            <td className="text-right px-3 py-2 font-bold">{o.amount?`$${o.amount}`:"—"}</td>
-                            <td className="text-center px-3 py-2">{o.needsGift?"🎁":"—"}</td>
-                          </tr>
-                        ))}
-                        </tbody></table>
-                      </div>}
-                      {stock.length>0&&<div className="rounded-xl overflow-auto mb-4" style={{border:`1px solid ${COLORS.line}`}}>
-                        <div style={{background:"#555",color:"#fff",padding:"6px 12px",fontSize:12,fontWeight:700}}>現貨訂單</div>
-                        <table className="w-full text-xs"><thead><tr style={{background:COLORS.stripe}}>
-                          <th className="text-left px-3 py-2">姓名</th><th className="text-left px-3 py-2">電話</th>
-                          <th className="text-left px-3 py-2">門市</th><th className="text-left px-3 py-2">訂單編號</th><th className="text-left px-3 py-2">出貨單號</th>
-                        </tr></thead><tbody>
-                        {stock.map((o,i)=>(
-                          <tr key={i} style={{background:i%2?COLORS.stripe:COLORS.surface,borderBottom:`1px solid ${COLORS.line}`}}>
-                            <td className="px-3 py-2">{o.name||"—"}</td>
-                            <td className="px-3 py-2" style={{fontFamily:"monospace"}}>{o.phone||"—"}</td>
-                            <td className="px-3 py-2" style={{fontSize:10}}>{o.storeName||"—"}</td>
-                            <td className="px-3 py-2" style={{fontFamily:"monospace"}}>{o.orderNum||"—"}</td>
-                            <td className="px-3 py-2" style={{fontFamily:"monospace",color:COLORS.inkMuted}}>{o.shipNum||"—"}</td>
-                          </tr>
-                        ))}
-                        </tbody></table>
-                      </div>}
-                      {pick.length>0&&<div className="rounded-xl overflow-auto" style={{border:`1px solid ${COLORS.line}`}}>
-                        <div style={{background:"#2d6a4f",color:"#fff",padding:"6px 12px",fontSize:12,fontWeight:700}}>揀貨清單</div>
-                        <table className="w-full text-xs"><thead><tr style={{background:COLORS.stripe}}>
-                          <th className="text-left px-3 py-2">商品貨號</th><th className="text-left px-3 py-2">商品名稱/規格</th><th className="text-right px-3 py-2">數量</th>
-                        </tr></thead><tbody>
-                        {pick.map((p,i)=>(
-                          <tr key={i} style={{background:i%2?COLORS.stripe:COLORS.surface,borderBottom:`1px solid ${COLORS.line}`}}>
-                            <td className="px-3 py-2" style={{fontFamily:"monospace",fontSize:10,color:COLORS.inkMuted}}>{p.prodNo}</td>
-                            <td className="px-3 py-2">{p.desc}</td>
-                            <td className="text-right px-3 py-2 font-bold">{p.qty}</td>
-                          </tr>
-                        ))}
-                        </tbody></table>
-                      </div>}
-                    </div>
-                  )
-            )}
 
             {activeTab === "raw" && (
               <div className="rounded-xl overflow-auto" style={{ border: `1px solid ${COLORS.line}`, maxHeight: "70vh" }}>
