@@ -1183,29 +1183,30 @@ function LiveOrderSorter() {
   };
 
   // ── iOPEN 訂單匯入：PDF 直接讀取 ──
-  async function extractPdfText(file) {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await window.pdfjsLib.getDocument({data: arrayBuffer}).promise;
-    let fullText = '';
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const tc = await page.getTextContent();
-      // 依 Y 座標分組，重組成行
-      const items = tc.items;
-      let lastY = null;
-      for (const item of items) {
-        const y = item.transform[5];
-        if (lastY !== null && Math.abs(y - lastY) > 3) {
-          fullText += '
+  function extractPdfText(file) {
+    return file.arrayBuffer().then(function(buf) {
+      return window.pdfjsLib.getDocument({data: buf}).promise;
+    }).then(function(pdf) {
+      var pageNums = [];
+      for (var i = 1; i <= pdf.numPages; i++) pageNums.push(i);
+      return pageNums.reduce(function(chain, i) {
+        return chain.then(function(acc) {
+          return pdf.getPage(i).then(function(page) {
+            return page.getTextContent();
+          }).then(function(tc) {
+            var text = ''; var lastY = null;
+            tc.items.forEach(function(item) {
+              var y = item.transform[5];
+              if (lastY !== null && Math.abs(y - lastY) > 3) text += '
 ';
-        }
-        fullText += item.str;
-        lastY = y;
-      }
-      fullText += '
+              text += item.str; lastY = y;
+            });
+            return acc + text + '
 ';
-    }
-    return fullText;
+          });
+        });
+      }, Promise.resolve(''));
+    });
   }
 
     // ── iOPEN 訂單匯入：解析函式（支援 PDF 複製格式）──
@@ -1485,17 +1486,18 @@ function LiveOrderSorter() {
             <div className="mb-3">
               <label style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 16px",borderRadius:8,background:"#f0faf4",border:"1px solid #4caf50",color:"#2d6a4f",cursor:"pointer",fontSize:13,fontWeight:600}}>
                 📄 選擇 PDF 檔案（可多選）
-                <input type="file" accept=".pdf" multiple style={{display:"none"}} onChange={async e=>{
-                  const files=[...e.target.files];
+                <input type="file" accept=".pdf" multiple style={{display:"none"}} onChange={e=>{
+                  var files=[].slice.call(e.target.files);
                   if(!files.length)return;
-                  let combined='';
-                  for(const f of files){
-                    try{const t=await extractPdfText(f);combined+=t+'
-';}
-                    catch(err){console.error(err);}
-                  }
-                  setIopenImportText(prev=>prev?prev+'
-'+combined:combined);
+                  files.reduce(function(chain,f){
+                    return chain.then(function(acc){
+                      return extractPdfText(f).then(function(t){return acc+t+'
+';}).catch(function(){return acc;});
+                    });
+                  },Promise.resolve('')).then(function(combined){
+                    setIopenImportText(function(prev){return prev?prev+'
+'+combined:combined;});
+                  });
                   e.target.value='';
                 }}/>
               </label>
@@ -2094,19 +2096,20 @@ function LiveOrderSorter() {
                   <div className="mb-3">
                     <label style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,background:"#f0faf4",border:"1px solid #4caf50",color:"#2d6a4f",cursor:"pointer",fontSize:12,fontWeight:600}}>
                       📄 選擇 PDF（可多選）
-                      <input type="file" accept=".pdf" multiple style={{display:"none"}} onChange={async e=>{
-                        const files=[...e.target.files];
-                        if(!files.length)return;
-                        let combined='';
-                        for(const f of files){
-                          try{const t=await extractPdfText(f);combined+=t+'
-';}
-                          catch(err){console.error(err);}
-                        }
-                        setIopenImportText(prev=>prev?prev+'
-'+combined:combined);
-                        e.target.value='';
-                      }}/>
+                      <input type="file" accept=".pdf" multiple style={{display:"none"}} onChange={e=>{
+                  var files=[].slice.call(e.target.files);
+                  if(!files.length)return;
+                  files.reduce(function(chain,f){
+                    return chain.then(function(acc){
+                      return extractPdfText(f).then(function(t){return acc+t+'
+';}).catch(function(){return acc;});
+                    });
+                  },Promise.resolve('')).then(function(combined){
+                    setIopenImportText(function(prev){return prev?prev+'
+'+combined:combined;});
+                  });
+                  e.target.value='';
+                }}/>
                     </label>
                   </div>
                   <div className="text-xs mb-1" style={{color:COLORS.inkMuted}}>或貼入文字：</div>
