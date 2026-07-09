@@ -1181,128 +1181,98 @@ function LiveOrderSorter() {
   };
     // ── iOPEN 訂單匯入：解析函式（支援 PDF 複製格式）──
   function parseIopenOrderText(text) {
-    // 1. 正規化 PDF 的 Kangxi 變體字元和特殊符號
-    const norm = s => s
-      .normalize('NFKC')
-      .replace(/︰/g,'：').replace(/⾏/g,'行').replace(/⾨/g,'門')
-      .replace(/⼈/g,'人').replace(/⾥/g,'里').replace(/⻄/g,'西')
-      .replace(/⺠/g,'民').replace(/⼤/g,'大').replace(/⼩/g,'小')
-      .replace(/⻑/g,'長').replace(/⼒/g,'力').replace(/⼆/g,'二')
-      .replace(/⼀/g,'一').replace(/⼭/g,'山').replace(/⼝/g,'口')
-      .replace(/⼥/g,'女').replace(/⼦/g,'子').replace(/⽔/g,'水')
-      .replace(/⽇/g,'日').replace(/⽉/g,'月').replace(/⾁/g,'肉')
-      .replace(/\r/g,'');
-    const t = norm(text);
+    var t = text.replace(/\r/g,"").replace(/\n/g,"\n")
+      .replace(/\uFE30/g,"\uFF1A")
+      .replace(/\u2F95/g,"\u884C")
+      .replace(/\u2F08/g,"\u4EBA")
+      .replace(/\u2F56/g,"\u91CC")
+      .replace(/\u2F32/g,"\u5927")
+      .replace(/\u2F12/g,"\u53E3")
+      .replace(/\u2F22/g,"\u5973")
+      .replace(/\u2F25/g,"\u5C71")
+      .replace(/\u2F3D/g,"\u5C0F");
 
-    // 2. 取出揀貨單部分（最後的彙總）
-    const pickIdx = t.indexOf('揀貨單');
-    const pickSection = pickIdx >= 0 ? t.slice(pickIdx) : '';
-    const mainText = pickIdx >= 0 ? t.slice(0, pickIdx) : t;
+    var pickIdx = t.indexOf("\u63C0\u8CA8\u55AE");
+    var pickSection = pickIdx >= 0 ? t.slice(pickIdx) : "";
+    var mainText = pickIdx >= 0 ? t.slice(0, pickIdx) : t;
 
-    // 3. 解析揀貨清單
-    const pickItems = [];
+    var pickItems = [];
     if (pickSection) {
-      const lines = pickSection.split('\n').map(l=>l.trim()).filter(Boolean);
-      for (let i = 0; i < lines.length; i++) {
-        const l = lines[i];
-        if (/^P\d{10,}/.test(l)) {
-          // 下一行是商品描述
-          const next = lines[i+1] || '';
-          const qtyM = next.match(/\s(\d+)\s*$/);
-          if (qtyM) {
-            const desc = next.slice(0, next.lastIndexOf(qtyM[1])).trim();
-            const prodNo = l.trim();
-            pickItems.push({ prodNo, desc, qty: parseInt(qtyM[1]) });
+      var pls = pickSection.split("\n");
+      for (var pi = 0; pi < pls.length - 1; pi++) {
+        var pl = pls[pi].trim();
+        if (/^P\d{10,}/.test(pl) && pl.length < 20) {
+          var nxt = pls[pi+1] ? pls[pi+1].trim() : "";
+          var qm = nxt.match(/ (\d+)\s*$/);
+          if (qm) {
+            var desc = nxt.slice(0, nxt.lastIndexOf(qm[1])).trim();
+            pickItems.push({ prodNo: pl, desc: desc, qty: parseInt(qm[1]) });
           }
         }
       }
     }
 
-    // 4. 分割各筆訂單（以「收件人：」為邊界）
-    const blocks = mainText.split(/(?=收件人[：:])/).map(b=>b.trim()).filter(Boolean);
-    const liveOrders = [];
-    const stockOrders = [];
+    var rawBlocks = mainText.split(/(?=\u6536\u4EF6\u4EBA[\uFF1A:])/);
+    var liveOrders = [];
+    var stockOrders = [];
 
-    for (const block of blocks) {
-      if (!block.includes('訂單編號')) continue;
-      const o = {};
+    for (var bi = 0; bi < rawBlocks.length; bi++) {
+      var block = rawBlocks[bi].trim();
+      if (!block || block.indexOf("\u8A02\u55AE\u7DE8\u865F") < 0) continue;
+      var o = {};
+      var nm = block.match(/\u6536\u4EF6\u4EBA[\uFF1A:]\s*(\S+)/);
+      if (nm) o.name = nm[1].replace(/\u4ED8\u6B3E\u65B9\u5F0F.*/, "").trim();
+      var pm = block.match(/\u806F\u7D61\u96FB\u8A71[\uFF1A:]\s*([\d-]+)/) || block.match(/\u884C\u52D5\u96FB\u8A71[\uFF1A:]\s*([\d-]+)/);
+      if (pm) o.phone = pm[1].replace(/-/g,"");
+      var sm = block.match(/\u9580\u5E02\u540D\u7A31[^]*?[\uFF08(](\d+)[\uFF09)]\s*([^\n\u9580]+)/);
+      if (sm) { o.storeCode = sm[1]; o.storeName = sm[2].trim(); }
+      var om2 = block.match(/\u8A02\u55AE\u7DE8\u865F[\uFF1A:]\s*(\d+)/);
+      if (om2) o.orderNum = om2[1];
+      var shm = block.match(/\u51FA\u8CA8\u55AE\u7DE8\u865F[\uFF1A:]\s*(\d+)/);
+      if (shm) o.shipNum = shm[1];
+      var dm = block.match(/\u4EA4\u6613\u65E5\u671F[\uFF1A:]\s*([\d-]+)/);
+      if (dm) o.date = dm[1];
 
-      // 姓名
-      const nameM = block.match(/收件人[：:]\s*(\S+)/);
-      if (nameM) o.name = nameM[1].replace(/付款方式.*/, '').trim();
+      var lp = /\u76F4\u64AD[\uFF5C|][\uFF08(]([^\uFF09)]+)[\uFF09)]/g;
+      var lm = lp.exec(block);
+      var allLive = [];
+      while (lm) { allLive.push(lm[1]); lm = lp.exec(block); }
 
-      // 電話（優先聯絡電話，其次行動電話）
-      const phoneM = block.match(/聯絡電話[：:]\s*([\d-]+)/) || block.match(/行動電話[：:]\s*([\d-]+)/);
-      if (phoneM) o.phone = phoneM[1].replace(/-/g,'');
-
-      // 門市
-      const storeM = block.match(/門市名稱[︰：:][^（(]*[（(](\d+)[）)]\s*([^\n門]+)/);
-      if (storeM) { o.storeCode = storeM[1]; o.storeName = storeM[2].trim(); }
-
-      // 訂單/出貨編號/日期
-      const orderM = block.match(/訂單編號[：:]\s*(\d+)/);
-      if (orderM) o.orderNum = orderM[1];
-      const shipM = block.match(/出貨單編號[：:]\s*(\d+)/);
-      if (shipM) o.shipNum = shipM[1];
-      const dateM = block.match(/交易日期[：:]\s*([\d-]+)/);
-      if (dateM) o.date = dateM[1];
-
-      // 商品：直播｜（帳號）格式
-      // 帳號結尾可能是 ）或 )，後面可能有 +客製化...
-      const liveRe = /直播[｜|][（(]([^）)]+)[）)]/g;
-      const liveMatches = [...block.matchAll(liveRe)];
-
-      if (liveMatches.length > 0) {
-        // 直播訂單
-        let account = liveMatches[0][1].replace(/\+客製化商品金額\d+/,'').trim();
-        o.account = account;
-        // 金額：找所有 $數字 或 純數字（在直播商品行）
-        const amtRe = /直播[｜|][（(][^）)]+[）)][^$\d\n]*\$?(\d{3,5})/g;
-        const amts = [...block.matchAll(amtRe)];
-        o.amount = amts.reduce((s,m)=>s+parseInt(m[1]),0);
+      if (allLive.length > 0) {
+        o.account = allLive[0].replace(/\+[^$\d]+\d+/, "").trim();
+        var ap = /\$?(\d{3,5})\s*\d\s*$/gm;
+        var am = ap.exec(block);
+        var tot = 0;
+        while (am) { tot += parseInt(am[1]); am = ap.exec(block); }
+        o.amount = tot;
         liveOrders.push(o);
       } else {
-        // 現貨訂單
-        const stockProds = [];
-        const lines = block.split('\n').map(l=>l.trim()).filter(Boolean);
-        for (let i=0; i<lines.length; i++) {
-          if (/^P\d{10,}/.test(lines[i]) && i+1<lines.length) {
-            const next = lines[i+1];
-            if (/^P\d{10,}/.test(next)) {
-              // 下一行是 貨號+商品描述
-              const rest = next.replace(/^P\d{10,}\s*/,'');
-              const qtyM = rest.match(/\s(\d+)\s*$/);
-              if (qtyM) {
-                stockProds.push({
-                  desc: rest.slice(0, rest.lastIndexOf(qtyM[1])).trim(),
-                  qty: parseInt(qtyM[1])
-                });
-              }
-            }
-          }
-        }
-        o.products = stockProds;
         o.amount = 0;
         stockOrders.push(o);
       }
     }
 
-    // 5. 同電話累計（直播）
-    const phoneTotals = {};
-    liveOrders.forEach(o=>{
-      if(o.phone) phoneTotals[o.phone]=(phoneTotals[o.phone]||0)+(o.amount||0);
+    var phoneTotals = {};
+    for (var li = 0; li < liveOrders.length; li++) {
+      var lo = liveOrders[li];
+      if (lo.phone) phoneTotals[lo.phone] = (phoneTotals[lo.phone] || 0) + (lo.amount || 0);
+    }
+    var known = {};
+    if (customerOrderTotals) {
+      for (var ki = 0; ki < customerOrderTotals.length; ki++) {
+        known[customerOrderTotals[ki].account] = true;
+      }
+    }
+    var live = liveOrders.map(function(o) {
+      return Object.assign({}, o, { type:"live",
+        totalByPhone: phoneTotals[o.phone] || o.amount || 0,
+        needsGift: (phoneTotals[o.phone] || o.amount || 0) >= 3500,
+        inSenbei: !!known[o.account] });
     });
-    const knownAccounts = new Set((customerOrderTotals||[]).map(c=>c.account));
-
-    const live = liveOrders.map(o=>({
-      ...o, type:'live',
-      totalByPhone: phoneTotals[o.phone]||o.amount||0,
-      needsGift: (phoneTotals[o.phone]||o.amount||0)>=3500,
-      inSenbei: knownAccounts.has(o.account),
-    }));
-    const stock = stockOrders.map(o=>({...o,type:'stock',needsGift:false,inSenbei:true}));
-
-    return { live, stock, pick: pickItems };
+    var stock = stockOrders.map(function(o) {
+      return Object.assign({}, o, {type:"stock", needsGift:false, inSenbei:true});
+    });
+    return { live: live, stock: stock, pick: pickItems };
   }
 
   const tabs = [
