@@ -17,6 +17,9 @@
 <link rel="icon" href="data:,">
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script>if(typeof pdfjsLib!=="undefined"){pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}</script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
@@ -1201,6 +1204,38 @@ function LiveOrderSorter() {
   };
   
 
+  function readPdfText(file) {
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var typedArray = new Uint8Array(e.target.result);
+        window.pdfjsLib.getDocument(typedArray).promise.then(function(pdf) {
+          var pagePromises = [];
+          for (var i = 1; i <= pdf.numPages; i++) {
+            pagePromises.push(pdf.getPage(i).then(function(page) {
+              return page.getTextContent().then(function(tc) {
+                var text = "";
+                var lastY = null;
+                tc.items.forEach(function(item) {
+                  var y = item.transform[5];
+                  if (lastY !== null && Math.abs(y - lastY) > 3) text += "\n";
+                  text += item.str;
+                  lastY = y;
+                });
+                return text;
+              });
+            }));
+          }
+          return Promise.all(pagePromises);
+        }).then(function(pages) {
+          resolve(pages.join("\n"));
+        }).catch(reject);
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
   // ── iOPEN 訂單匯入：解析函式 ──
   function parseIopenOrderText(text) {
     var t = text;
@@ -1926,8 +1961,21 @@ function LiveOrderSorter() {
             {activeTab === "iopenimport" && (
               <div>
                 <div className="mb-4 p-4 rounded-xl" style={{background:COLORS.surface,border:`1px solid ${COLORS.line}`}}>
-                  <div className="font-bold mb-1" style={{color:COLORS.ink}}>貼入 iOPEN 出貨明細文字</div>
-                  <div className="text-xs mb-3" style={{color:COLORS.inkMuted}}>從 iOPEN 後台出貨明細複製全部文字（可含多筆）</div>
+                  <div className="font-bold mb-1" style={{color:COLORS.ink}}>上傳 iOPEN 出貨明細</div>
+                  <div className="text-xs mb-2" style={{color:COLORS.inkMuted}}>直接上傳 PDF（可多選），或貼入複製的文字</div>
+                  <label style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",marginBottom:10,borderRadius:8,background:"#f0faf4",border:"1px solid #4caf50",color:"#2d6a4f",cursor:"pointer",fontSize:13,fontWeight:600}}>
+                    📄 選擇 PDF（可多選）
+                    <input type="file" accept=".pdf" multiple style={{display:"none"}} onChange={e=>{
+                      var files=Array.from(e.target.files||[]);
+                      if(!files.length)return;
+                      Promise.all(files.map(function(f){return readPdfText(f).catch(function(){return "";});})).then(function(texts){
+                        var combined=texts.join("\n");
+                        setIopenText(function(prev){return prev?prev+"\n"+combined:combined;});
+                      });
+                      e.target.value="";
+                    }}/>
+                  </label>
+                  <div className="text-xs mb-1" style={{color:COLORS.inkMuted}}>或貼入文字：</div>
                   <textarea value={iopenText} onChange={e=>setIopenText(e.target.value)}
                     rows={6} style={{width:"100%",boxSizing:"border-box",padding:10,borderRadius:8,border:`1px solid ${COLORS.line}`,fontSize:12,fontFamily:"monospace",resize:"vertical",background:COLORS.bg}} />
                   <div style={{display:"flex",gap:8,marginTop:10}}>
