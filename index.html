@@ -17,8 +17,6 @@
 <link rel="icon" href="data:,">
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>if(typeof pdfjsLib!=='undefined')pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
@@ -1181,34 +1179,6 @@ function LiveOrderSorter() {
     missing: { icon: XCircle, color: COLORS.stamp, bg: COLORS.stampSoft, label: "官方有，我方缺漏" },
     extra: { icon: PlusCircle, color: COLORS.info, bg: COLORS.infoSoft, label: "我方有，官方沒有" },
   };
-
-  // ── iOPEN 訂單匯入：PDF 直接讀取 ──
-  function extractPdfText(file) {
-    return file.arrayBuffer().then(function(buf) {
-      return window.pdfjsLib.getDocument({data: buf}).promise;
-    }).then(function(pdf) {
-      var pageNums = [];
-      for (var i = 1; i <= pdf.numPages; i++) pageNums.push(i);
-      return pageNums.reduce(function(chain, i) {
-        return chain.then(function(acc) {
-          return pdf.getPage(i).then(function(page) {
-            return page.getTextContent();
-          }).then(function(tc) {
-            var text = ''; var lastY = null;
-            tc.items.forEach(function(item) {
-              var y = item.transform[5];
-              if (lastY !== null && Math.abs(y - lastY) > 3) text += '
-';
-              text += item.str; lastY = y;
-            });
-            return acc + text + '
-';
-          });
-        });
-      }, Promise.resolve(''));
-    });
-  }
-
     // ── iOPEN 訂單匯入：解析函式（支援 PDF 複製格式）──
   function parseIopenOrderText(text) {
     // 1. 正規化 PDF 的 Kangxi 變體字元和特殊符號
@@ -1483,26 +1453,6 @@ function LiveOrderSorter() {
           <div className="rounded-xl p-4" style={{background:"#fff",border:"1px solid #e5e7eb"}}>
             <div className="font-bold mb-2" style={{color:"#1a1a1a"}}>上傳 iOPEN 出貨明細 PDF</div>
             <div className="text-xs mb-3" style={{color:"#888"}}>可直接上傳 PDF 檔（支援多檔），或貼入複製的文字</div>
-            <div className="mb-3">
-              <label style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 16px",borderRadius:8,background:"#f0faf4",border:"1px solid #4caf50",color:"#2d6a4f",cursor:"pointer",fontSize:13,fontWeight:600}}>
-                📄 選擇 PDF 檔案（可多選）
-                <input type="file" accept=".pdf" multiple style={{display:"none"}} onChange={e=>{
-                  var files=[].slice.call(e.target.files);
-                  if(!files.length)return;
-                  files.reduce(function(chain,f){
-                    return chain.then(function(acc){
-                      return extractPdfText(f).then(function(t){return acc+t+'
-';}).catch(function(){return acc;});
-                    });
-                  },Promise.resolve('')).then(function(combined){
-                    setIopenImportText(function(prev){return prev?prev+'
-'+combined:combined;});
-                  });
-                  e.target.value='';
-                }}/>
-              </label>
-            </div>
-            <div className="text-xs mb-1" style={{color:"#aaa"}}>或貼入文字：</div>
             <textarea value={iopenImportText} onChange={e=>setIopenImportText(e.target.value)}
               placeholder={"收件人：王小明 付款方式：…\n訂單編號：503061375\n直播｜（帳號） $2405"}
               rows={6}
@@ -2093,26 +2043,6 @@ function LiveOrderSorter() {
                 <div className="mb-4 p-4 rounded-xl" style={{background:COLORS.surface,border:`1px solid ${COLORS.line}`}}>
                   <div className="font-bold mb-2" style={{color:COLORS.ink}}>上傳 iOPEN 出貨明細 PDF</div>
                   <div className="text-xs mb-3" style={{color:COLORS.inkMuted}}>直接上傳 PDF（可多選），或貼入文字</div>
-                  <div className="mb-3">
-                    <label style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,background:"#f0faf4",border:"1px solid #4caf50",color:"#2d6a4f",cursor:"pointer",fontSize:12,fontWeight:600}}>
-                      📄 選擇 PDF（可多選）
-                      <input type="file" accept=".pdf" multiple style={{display:"none"}} onChange={e=>{
-                  var files=[].slice.call(e.target.files);
-                  if(!files.length)return;
-                  files.reduce(function(chain,f){
-                    return chain.then(function(acc){
-                      return extractPdfText(f).then(function(t){return acc+t+'
-';}).catch(function(){return acc;});
-                    });
-                  },Promise.resolve('')).then(function(combined){
-                    setIopenImportText(function(prev){return prev?prev+'
-'+combined:combined;});
-                  });
-                  e.target.value='';
-                }}/>
-                    </label>
-                  </div>
-                  <div className="text-xs mb-1" style={{color:COLORS.inkMuted}}>或貼入文字：</div>
                   <textarea
                     value={iopenImportText}
                     onChange={e=>setIopenImportText(e.target.value)}
