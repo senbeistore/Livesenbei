@@ -182,10 +182,9 @@ function go(raw){
 }
 
 function norm(t){
-  // NFKC 一次搞定所有 Kangxi 變體字元
   if(t.normalize) t=t.normalize('NFKC');
-  // 補充常見不在 NFKC 的特殊冒號
-  t=t.replace(/\uFE30/g,'：').replace(/\uFF1A/g,'：');
+  // NFKC 把 ︰(FE30)→‥(2025)，一起轉成冒號
+  t=t.replace(/[\u003A\uFE13\uFE30\uFF1A\u2025\u2026]/g,':');
   return t;
 }
 
@@ -212,7 +211,7 @@ function parse(raw){
   }
 
   // 分割訂單（每筆以「收件人：」開頭）
-  var blocks=main.split(/(?=收件人[：:])/);
+  var blocks=main.split(/(?=收件人\s*[:：])/);
   var live=[], plat=[];
 
   blocks.forEach(function(block){
@@ -220,26 +219,26 @@ function parse(raw){
     if(!block||block.indexOf('訂單編號')<0)return;
     var o={};
 
-    var nm=block.match(/收件人[：:]\s*(\S+)/);
+    var nm=block.match(/收件人[\s:：]{0,5}(\S+)/);
     if(nm) o.name=nm[1].replace(/付款方式.*/,'').trim();
 
-    var pm=block.match(/聯絡電話[：:]\s*([\d-]+)/)||block.match(/行動電話[：:]\s*([\d-]+)/);
+    var pm=block.match(/聯絡電話[^\d]*(09[\d-]+)/)||block.match(/行動電話[^\d]*(09[\d-]+)/);
     if(pm) o.phone=pm[1].replace(/-/g,'');
 
     // 門市
-    var sm=block.match(/門市名稱[：:][^\n]*?[（(](\d+)[）)]\s*([^\n]+)/);
+    var sm=block.match(/門市名稱[^\n(（]{0,10}[(（](\d+)[)）]\s*([^\n]+)/);
     if(sm){ o.storeCode=sm[1]; o.storeName=sm[2].replace(/門市電話.*/,'').trim(); }
 
-    var om=block.match(/訂單編號[：:]\s*(\d+)/);
+    var om=block.match(/訂單編號[^\d]*(\d+)/);
     if(om) o.orderNum=om[1];
-    var sh=block.match(/出貨單編號[：:]\s*(\d+)/);
+    var sh=block.match(/出貨單編號[^\d]*(\d+)/);
     if(sh) o.shipNum=sh[1];
-    var dm=block.match(/交易日期[：:]\s*([\d-]+)/);
+    var dm=block.match(/交易日期[^\d]*(\d{4}-\d{2}-\d{2})/);
     if(dm) o.date=dm[1];
 
     // 商品行：把換行換成空格再找 直播｜（account）
     var flat=block.replace(/\n/g,' ');
-    var lp=/直播[｜|]\s*[（(]([^）)]+)[）)]/g;
+    var lp=/直播\s*[｜|]\s*[(（]([^)）]+)[)）]/g;
     var lm=lp.exec(flat);
     var accs=[];
     while(lm){accs.push(lm[1]);lm=lp.exec(flat);}
