@@ -753,6 +753,20 @@ function LiveOrderSorter() {
   }
 
   function handleFile(file) {
+    if (file.name.toLowerCase().endsWith(".pdf")) {
+      if (typeof pdfjsLib === "undefined") {
+        setError("PDF.js 尚未載入，請重新整理頁面再試。");
+        return;
+      }
+      readPdfText(file).then(function(text) {
+        var result = parseIopenOrderText(text);
+        setIopenResult(result);
+        setActiveTab("iopenimport");
+      }).catch(function() {
+        setError("PDF 讀取失敗，請確認是有效的 iOPEN 出貨明細 PDF。");
+      });
+      return;
+    }
     readFileSmart(file, processMain, setError);
   }
   function handleDrop(e) {
@@ -1388,13 +1402,14 @@ function LiveOrderSorter() {
               <Upload size={28} style={{ color: COLORS.inkMuted }} />
               <p className="font-medium">拖曳檔案到這裡，或點擊上傳</p>
               <p className="text-xs" style={{ color: COLORS.inkMuted }}>
-                支援 .csv / .xls / .xlsx，撿貨單或訂購人明細格式都會自動偵測
+                支援 .csv / .xls / .xlsx / .pdf，撿貨單或訂購人明細格式都會自動偵測。
+                iOPEN 出貨明細 PDF 也可直接拖入
               </p>
             </div>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv,.xlsx,.xls"
+              accept=".csv,.xlsx,.xls,.pdf"
               className="hidden"
               onChange={(e) => e.target.files[0] && handleFile(e.target.files[0])}
             />
@@ -1701,13 +1716,13 @@ function LiveOrderSorter() {
                       <ClipboardList size={28} style={{ color: COLORS.inkMuted }} />
                       <p className="font-medium">上傳另一份撿貨單／清單來核對有沒有少算或算錯</p>
                       <p className="text-xs" style={{ color: COLORS.inkMuted }}>
-                        支援 .csv / .xls / .xlsx
+                        支援 .csv / .xls / .xlsx / .pdf
                       </p>
                     </div>
                     <input
                       ref={refFileInputRef}
                       type="file"
-                      accept=".csv,.xlsx,.xls"
+                      accept=".csv,.xlsx,.xls,.pdf"
                       className="hidden"
                       onChange={(e) => e.target.files[0] && handleReferenceFile(e.target.files[0])}
                     />
