@@ -18,8 +18,7 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
-<script>if(typeof pdfjsLib!=="undefined"){pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}</script>
+<script>window.pdfjsWorkerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";</script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
@@ -762,8 +761,8 @@ function LiveOrderSorter() {
         var result = parseIopenOrderText(text);
         setIopenResult(result);
         setActiveTab("iopenimport");
-      }).catch(function() {
-        setError("PDF 讀取失敗，請確認是有效的 iOPEN 出貨明細 PDF。");
+      }).catch(function(err) {
+        setError("PDF 讀取失敗：" + (err && err.message ? err.message : "請確認是有效的 iOPEN 出貨明細 PDF"));
       });
       return;
     }
@@ -1220,14 +1219,22 @@ function LiveOrderSorter() {
 
   function readPdfText(file) {
     return new Promise(function(resolve, reject) {
+      // 設定 workerSrc（iOS Safari 需要）
+      if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = window.pdfjsWorkerSrc || "";
+      }
       var reader = new FileReader();
       reader.onload = function(e) {
         var typedArray = new Uint8Array(e.target.result);
-        window.pdfjsLib.getDocument(typedArray).promise.then(function(pdf) {
-          var pagePromises = [];
-          for (var i = 1; i <= pdf.numPages; i++) {
-            pagePromises.push(pdf.getPage(i).then(function(page) {
-              return page.getTextContent().then(function(tc) {
+        var loadingTask = window.pdfjsLib.getDocument({ data: typedArray, disableWorker: true });
+        loadingTask.promise.then(function(pdf) {
+          var nums = [];
+          for (var i = 1; i <= pdf.numPages; i++) nums.push(i);
+          return nums.reduce(function(chain, num) {
+            return chain.then(function(acc) {
+              return pdf.getPage(num).then(function(page) {
+                return page.getTextContent();
+              }).then(function(tc) {
                 var text = "";
                 var lastY = null;
                 tc.items.forEach(function(item) {
@@ -1236,14 +1243,11 @@ function LiveOrderSorter() {
                   text += item.str;
                   lastY = y;
                 });
-                return text;
+                return acc + text + "\n";
               });
-            }));
-          }
-          return Promise.all(pagePromises);
-        }).then(function(pages) {
-          resolve(pages.join("\n"));
-        }).catch(reject);
+            });
+          }, Promise.resolve(""));
+        }).then(resolve).catch(reject);
       };
       reader.onerror = reject;
       reader.readAsArrayBuffer(file);
