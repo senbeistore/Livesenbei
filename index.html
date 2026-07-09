@@ -1219,37 +1219,40 @@ function LiveOrderSorter() {
 
   function readPdfText(file) {
     return new Promise(function(resolve, reject) {
-      // 設定 workerSrc（iOS Safari 需要）
-      if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = window.pdfjsWorkerSrc || "";
-      }
+      var lib = window.pdfjsLib;
+      if (!lib) { reject(new Error("PDF.js 未載入")); return; }
+      // 設定 workerSrc
+      try {
+        lib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      } catch(e) {}
       var reader = new FileReader();
+      reader.onerror = function(e) { reject(new Error("檔案讀取失敗")); };
       reader.onload = function(e) {
-        var typedArray = new Uint8Array(e.target.result);
-        var loadingTask = window.pdfjsLib.getDocument({ data: typedArray, disableWorker: true });
-        loadingTask.promise.then(function(pdf) {
-          var nums = [];
-          for (var i = 1; i <= pdf.numPages; i++) nums.push(i);
-          return nums.reduce(function(chain, num) {
-            return chain.then(function(acc) {
-              return pdf.getPage(num).then(function(page) {
-                return page.getTextContent();
-              }).then(function(tc) {
-                var text = "";
-                var lastY = null;
-                tc.items.forEach(function(item) {
-                  var y = item.transform[5];
-                  if (lastY !== null && Math.abs(y - lastY) > 3) text += "\n";
-                  text += item.str;
-                  lastY = y;
+        try {
+          var typedArray = new Uint8Array(e.target.result);
+          lib.getDocument({ data: typedArray }).promise.then(function(pdf) {
+            var nums = [];
+            for (var i = 1; i <= pdf.numPages; i++) nums.push(i);
+            return nums.reduce(function(chain, num) {
+              return chain.then(function(acc) {
+                return pdf.getPage(num).then(function(page) {
+                  return page.getTextContent();
+                }).then(function(tc) {
+                  var text = "";
+                  var lastY = null;
+                  tc.items.forEach(function(item) {
+                    var y = item.transform[5];
+                    if (lastY !== null && Math.abs(y - lastY) > 3) text += "\n";
+                    text += item.str;
+                    lastY = y;
+                  });
+                  return acc + text + "\n";
                 });
-                return acc + text + "\n";
               });
-            });
-          }, Promise.resolve(""));
-        }).then(resolve).catch(reject);
+            }, Promise.resolve(""));
+          }).then(resolve).catch(reject);
+        } catch(err) { reject(err); }
       };
-      reader.onerror = reject;
       reader.readAsArrayBuffer(file);
     });
   }
