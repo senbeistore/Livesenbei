@@ -283,18 +283,24 @@ function parseIopenXLS(aoa){
   if(!aoa||aoa.length<2)return{};
   const hdr=aoa[0].map(h=>String(h||''));
   const col=k=>hdr.findIndex(h=>h.includes(k));
-  const CO=col('訂單編號'),CN=col('備註'),CS=col('出貨單編號'),CA=col('訂單金額'),CM=col('門市名稱');
+  const CO=col('訂單編號'),CP=col('商品名稱'),CS=col('出貨單編號'),CA=col('訂單金額'),CM=col('門市名稱'),CST=col('訂單狀態');
   const byIg={},oAmt={},seen=new Set();
   for(let i=1;i<aoa.length;i++){
     const r=aoa[i];
-    const ig=String(r[CN]||'').trim();
+    const st=String(r[CST]||'');if(st.includes('取消')||st.includes('退款')||st.includes('退貨'))continue;
+    const prod=String(r[CP]||'');
+    // 從商品名稱提取 IG：直播｜（riaccs）
+    const igM=prod.match(/直\s*播\s*[｜|]\s*[（(]([^）)\s
+
+]+)[）)]/);
+    if(!igM)continue;
+    const ig=igM[1].trim();
     const orderNo=String(r[CO]||'').trim();
     const shipNo=String(r[CS]||'').trim();
     const store=String(r[CM]||'').trim();
     const amt=parseFloat(r[CA])||0;
-    if(orderNo&&!oAmt[orderNo])oAmt[orderNo]=amt;
-    if(!ig||!orderNo)continue;
-    if(ig.includes('網路安全規範'))continue;
+    if(!orderNo||!ig)continue;
+    if(oAmt[orderNo]===undefined)oAmt[orderNo]=amt;
     const key=orderNo+'|'+ig;
     if(seen.has(key))continue;
     seen.add(key);
@@ -609,19 +615,36 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
     onSaveAlloc(next);
   }
 
-  function handleIopenXLS(file){
-    if(!file)return;
-    setIopenXlsFile(file);
-    const reader=new FileReader();
-    reader.onload=e=>{
-      try{
-        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
-        const ws=wb.Sheets[wb.SheetNames[0]];
-        const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-        setIopenData(parseIopenXLS(aoa));
-      }catch(err){alert('XLS讀取失敗：'+err.message);}
-    };
-    reader.readAsArrayBuffer(file);
+  function handleIopenXLS(files){
+    if(!files||!files.length)return;
+    const arr=Array.from(files);
+    setIopenXlsFile(arr.map(f=>f.name).join('、'));
+    let pending=arr.length;
+    const merged={};
+    arr.forEach(file=>{
+      const reader=new FileReader();
+      reader.onload=e=>{
+        try{
+          const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+          const ws=wb.Sheets[wb.SheetNames[0]];
+          const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+          const part=parseIopenXLS(aoa);
+          // 合併：同一 IG 帳號的訂單合併，避免重複
+          Object.keys(part).forEach(ig=>{
+            if(!merged[ig]){merged[ig]=part[ig];}
+            else{
+              const existNos=new Set(merged[ig].orders.map(o=>o.orderNo));
+              part[ig].orders.forEach(o=>{if(!existNos.has(o.orderNo))merged[ig].orders.push(o);});
+              merged[ig].totalSpend+=part[ig].totalSpend;
+              merged[ig].needGift=merged[ig].totalSpend>=3500;
+            }
+          });
+        }catch(err){alert(file.name+' 讀取失敗：'+err.message);}
+        pending--;
+        if(pending===0)setIopenData({...merged});
+      };
+      reader.readAsArrayBuffer(file);
+    });
   }
 
   function exportCSV(){
@@ -717,11 +740,11 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
         {showIopen&&(<div>
           <div style={{fontSize:12,color:C.inkMuted,marginBottom:10}}>上傳 iOPEN 後台匯出的訂單 XLS，自動帶入出貨訂單號與滿額贈標記</div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <button onClick={()=>iopenFileRef.current.click()} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>選擇 XLS 檔案</button>
-            {iopenXlsFile&&<span style={{fontSize:12,color:C.inkMuted}}>{iopenXlsFile.name}</span>}
+            <button onClick={()=>iopenFileRef.current.click()} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>選擇 XLS（可多選）</button>
+            {iopenXlsFile&&<span style={{fontSize:12,color:C.inkMuted,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block"}}>{iopenXlsFile}</span>}
             {Object.keys(iopenData).length>0&&<button onClick={()=>{setIopenData({});setIopenXlsFile(null);}} style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"3px 8px",cursor:"pointer"}}>清除</button>}
           </div>
-          <input ref={iopenFileRef} type="file" accept=".xls,.xlsx" style={{display:"none"}} onChange={e=>handleIopenXLS(e.target.files[0])}/>
+          <input ref={iopenFileRef} type="file" accept=".xls,.xlsx" multiple style={{display:"none"}} onChange={e=>handleIopenXLS(e.target.files)}/>
         </div>)}
       </div>
 
