@@ -290,9 +290,7 @@ function parseIopenXLS(aoa){
     const st=String(r[CST]||'');if(st.includes('取消')||st.includes('退款')||st.includes('退貨'))continue;
     const prod=String(r[CP]||'');
     // 從商品名稱提取 IG：直播｜（riaccs）
-    const igM=prod.match(/直\s*播\s*[｜|]\s*[（(]([^）)\s
-
-]+)[）)]/);
+    const igM=prod.match(/直播[｜|][（(]([^)）]+)[）)]/)
     if(!igM)continue;
     const ig=igM[1].trim();
     const orderNo=String(r[CO]||'').trim();
