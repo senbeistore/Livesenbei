@@ -874,6 +874,29 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
                   </div>
                 )}
 
+                {/* iOPEN 出貨單號（永遠顯示，有單號就顯示） */}
+                {iopenInfo?.orders?.length>0&&(
+                  <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6,marginBottom:4}}>
+                    {iopenInfo.orders.map((ord,idx)=>{
+                      const used=idx<shipments.length;
+                      return(
+                        <button key={idx}
+                          onClick={()=>{
+                            if(canShip){setShipInputs(p=>({...p,[o.oKey]:ord.orderNo}));}
+                            else{navigator.clipboard.writeText(ord.orderNo).catch(()=>{});}
+                          }}
+                          style={{fontSize:12,
+                            color:used?C.inkMuted:C.info,
+                            border:`1px solid ${used?C.line:C.info}`,
+                            background:used?"transparent":C.infoSoft,
+                            borderRadius:7,padding:"5px 12px",cursor:"pointer",
+                            textDecoration:used?"line-through":"none",opacity:used?0.5:1}}>
+                          出貨訂單編號{["①","②","③","④"][Math.min(idx,3)]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 {/* 出貨操作列（有可出貨品項就顯示） */}
                 {canShip&&(
                   <div style={{marginTop:6}}>
@@ -882,16 +905,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
                         {editingKey===o.oKey?"完成調整":"調整配貨"}
                       </button>
                     </div>
-                    {iopenInfo?.orders?.length>0&&(
-                      <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>
-                        {iopenInfo.orders.map((ord,idx)=>(
-                          <button key={idx} onClick={()=>setShipInputs(p=>({...p,[o.oKey]:ord.orderNo}))}
-                            style={{fontSize:12,color:C.info,border:`1px solid ${C.info}`,background:C.infoSoft,borderRadius:7,padding:"5px 12px",cursor:"pointer"}}>
-                            出貨訂單編號{["①","②","③","④"][Math.min(idx,3)]}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    
                     <div style={{display:"flex",gap:6}}>
                       <input type="text" value={shipInputs[o.oKey]||""} onChange={e=>setShipInputs(p=>({...p,[o.oKey]:e.target.value}))}
                         placeholder={iopenInfo?.orders?.[shipments.length]?.orderNo||(hasShipments?"填入第二次出貨單號":"填入出貨單號")}
