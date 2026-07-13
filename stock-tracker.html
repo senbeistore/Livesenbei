@@ -1037,7 +1037,6 @@ function App(){
   function handleIopenAppXLS(files){
     if(!files||!files.length)return;
     var arr=Array.from(files);
-    setIopenXlsFile(arr.map(function(f){return f.name;}).join('、'));
     var pending=arr.length,merged=[];
     arr.forEach(function(file){
       var reader=new FileReader();
