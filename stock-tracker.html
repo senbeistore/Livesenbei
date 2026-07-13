@@ -283,16 +283,18 @@ function parseIopenXLS(aoa){
   if(!aoa||aoa.length<2)return{};
   const hdr=aoa[0].map(h=>String(h||''));
   const col=k=>hdr.findIndex(h=>h.includes(k));
-  const CO=col('訂單編號'),CP=col('商品名稱'),CS=col('出貨單編號'),CA=col('訂單金額'),CM=col('門市名稱'),CST=col('訂單狀態');
+  const CO=col('訂單編號'),CP=col('商品名稱'),CS=col('出貨單編號'),CA=col('訂單金額'),CM=col('門市名稱'),CST=col('訂單狀態'),CN=col('備註');
   const byIg={},oAmt={},seen=new Set();
   for(let i=1;i<aoa.length;i++){
     const r=aoa[i];
     const st=String(r[CST]||'');if(st.includes('取消')||st.includes('退款')||st.includes('退貨'))continue;
     const prod=String(r[CP]||'');
-    // 從商品名稱提取 IG：直播｜（riaccs）
-    const igM=prod.match(/直播[｜|][（(]([^)）]+)[）)]/)
-    if(!igM)continue;
-    const ig=igM[1].trim();
+    const note=String(r[CN]||'').trim();
+    // IG 來源1：商品名稱 直播｜（ig）
+    const igM=prod.match(/直播[｜|][（(]([^)）]+)[）)]/);
+    // IG 來源2：備註欄（現貨/平台商品）
+    const ig=igM?igM[1].trim():(note&&!/[\s，,。]/.test(note)&&note.length<=30?note:'');
+    if(!ig)continue;
     const orderNo=String(r[CO]||'').trim();
     const shipNo=String(r[CS]||'').trim();
     const store=String(r[CM]||'').trim();
@@ -476,6 +478,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
   const fileRef=useRef(null);
   const iopenFileRef=useRef(null);
   const[iopenData,setIopenData]=useState({});
+  const[iopenCustom,setIopenCustom]=useState([]);
   const[iopenXlsFile,setIopenXlsFile]=useState(null);
   const[showIopen,setShowIopen]=useState(false);
 
@@ -618,7 +621,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
     const arr=Array.from(files);
     setIopenXlsFile(arr.map(f=>f.name).join('、'));
     let pending=arr.length;
-    const merged={};
+    const mergedIg={},mergedCustom=[];
     arr.forEach(file=>{
       const reader=new FileReader();
       reader.onload=e=>{
@@ -626,20 +629,25 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
           const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
           const ws=wb.Sheets[wb.SheetNames[0]];
           const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-          const part=parseIopenXLS(aoa);
-          // 合併：同一 IG 帳號的訂單合併，避免重複
-          Object.keys(part).forEach(ig=>{
-            if(!merged[ig]){merged[ig]=part[ig];}
+          const {byIg,allCustom}=parseIopenXLS(aoa);
+          // 合併 byIg
+          Object.keys(byIg).forEach(ig=>{
+            if(!mergedIg[ig]){mergedIg[ig]=byIg[ig];}
             else{
-              const existNos=new Set(merged[ig].orders.map(o=>o.orderNo));
-              part[ig].orders.forEach(o=>{if(!existNos.has(o.orderNo))merged[ig].orders.push(o);});
-              merged[ig].totalSpend+=part[ig].totalSpend;
-              merged[ig].needGift=merged[ig].totalSpend>=3500;
+              const existNos=new Set(mergedIg[ig].orders.map(o=>o.orderNo));
+              byIg[ig].orders.forEach(o=>{if(!existNos.has(o.orderNo))mergedIg[ig].orders.push(o);});
+              const existKeys=new Set(mergedIg[ig].customItems.map(c=>c.orderNo+'|'+c.prod));
+              byIg[ig].customItems.forEach(c=>{if(!existKeys.has(c.orderNo+'|'+c.prod))mergedIg[ig].customItems.push(c);});
+              mergedIg[ig].totalSpend+=byIg[ig].totalSpend;
+              mergedIg[ig].needGift=mergedIg[ig].totalSpend>=3500;
             }
           });
+          // 合併 allCustom（去重）
+          const customSet=new Set(mergedCustom.map(c=>c.orderNo+'|'+c.prod));
+          allCustom.forEach(c=>{if(!customSet.has(c.orderNo+'|'+c.prod))mergedCustom.push(c);});
         }catch(err){alert(file.name+' 讀取失敗：'+err.message);}
         pending--;
-        if(pending===0)setIopenData({...merged});
+        if(pending===0){setIopenData({...mergedIg});setIopenCustom([...mergedCustom]);}
       };
       reader.readAsArrayBuffer(file);
     });
@@ -740,11 +748,42 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <button onClick={()=>iopenFileRef.current.click()} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>選擇 XLS（可多選）</button>
             {iopenXlsFile&&<span style={{fontSize:12,color:C.inkMuted,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block"}}>{iopenXlsFile}</span>}
-            {Object.keys(iopenData).length>0&&<button onClick={()=>{setIopenData({});setIopenXlsFile(null);}} style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"3px 8px",cursor:"pointer"}}>清除</button>}
+            {Object.keys(iopenData).length>0&&<button onClick={()=>{setIopenData({});setIopenCustom([]);setIopenXlsFile(null);}} style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"3px 8px",cursor:"pointer"}}>清除</button>}
           </div>
           <input ref={iopenFileRef} type="file" accept=".xls,.xlsx" multiple style={{display:"none"}} onChange={e=>handleIopenXLS(e.target.files)}/>
         </div>)}
       </div>
+
+      {/* 客訂彙總（備貨叫貨用） */}
+      {iopenCustom.length>0&&(
+        <div style={{background:"#F5F0FF",border:"1px solid #D4B8FF",borderRadius:12,padding:14,marginBottom:12}}>
+          <div style={{fontSize:13,fontWeight:600,color:"#6B21A8",marginBottom:10}}>
+            🎯 客訂彙總（共 {iopenCustom.length} 項，叫貨用）
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead>
+                <tr style={{borderBottom:"1px solid #D4B8FF"}}>
+                  {["IG帳號","商品","規格1","規格2","訂單號"].map(h=>(
+                    <th key={h} style={{padding:"4px 8px",textAlign:"left",color:"#7C3AED",fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {iopenCustom.map((item,idx)=>(
+                  <tr key={idx} style={{borderBottom:"1px solid #EDE9FE"}}>
+                    <td style={{padding:"5px 8px",color:"#4C1D95",fontWeight:600}}>{item.ig}</td>
+                    <td style={{padding:"5px 8px",color:"#1F2937"}}>{item.prod}</td>
+                    <td style={{padding:"5px 8px",color:"#374151"}}>{item.spec1}</td>
+                    <td style={{padding:"5px 8px",color:"#374151"}}>{item.spec2}</td>
+                    <td style={{padding:"5px 8px",fontFamily:"monospace",fontSize:11,color:"#6B7280"}}>{item.orderNo}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {!editAlloc&&items.filter(it=>Math.max(0,(it.arrivedQty||0)-(it.shippedQty||0))>0).length===0&&items.length>0&&(
         <div style={{background:C.warningSoft,border:`1px solid ${C.warning}`,borderRadius:12,padding:14,fontSize:12,color:C.warning,marginBottom:12}}>
@@ -765,12 +804,23 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div>
               <span style={{fontWeight:700,fontSize:14,color:C.ink}}>{c.account||c.name}</span>
-              {c.name&&c.account&&<span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>{c.name}</span>}{iopenInfo?.phone&&<span style={{marginLeft:6,fontSize:11,color:C.info,border:`1px solid ${C.info}`,borderRadius:10,padding:"1px 7px"}}>📱 {iopenInfo.phone}</span>}{iopenInfo?.needGift&&<span style={{marginLeft:6,fontSize:11,background:"#FFF5F5",color:"#C0392B",border:"1px solid #C0392B",borderRadius:10,padding:"1px 7px"}}>🎁 滿額贈</span>}
+              {c.name&&c.account&&<span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>{c.name}</span>}{iopenInfo?.phone&&<span style={{marginLeft:6,fontSize:11,color:C.info,border:`1px solid ${C.info}`,borderRadius:10,padding:"1px 7px"}}>📱 {iopenInfo.phone}</span>}{iopenInfo?.needGift&&<span style={{marginLeft:6,fontSize:11,background:"#FFF5F5",color:"#C0392B",border:"1px solid #C0392B",borderRadius:10,padding:"1px 7px"}}>🎁 滿額贈</span>}{iopenInfo?.orders?.length>0&&iopenInfo.orders.map((ord,idx)=>{const totalShipped=c.orders.reduce((s,o)=>s+(o.shipments?.length||0),0);const used=idx<totalShipped;const targetKey=c.orders[0]?.oKey;return(<button key={idx} onClick={()=>{if(targetKey&&!used){setShipInputs(p=>({...p,[targetKey]:ord.orderNo}));}else{navigator.clipboard.writeText(ord.orderNo).catch(()=>{});}}} style={{marginLeft:6,fontSize:11,color:used?C.inkMuted:C.info,border:`1px solid ${used?C.line:C.info}`,background:used?"transparent":C.infoSoft,borderRadius:10,padding:"1px 7px",cursor:"pointer",textDecoration:used?"line-through":"none",opacity:used?0.5:1}}>出貨單{["①","②","③","④"][Math.min(idx,3)]}</button>);})}
             </div>
             <span style={{fontSize:12,fontFamily:"monospace",color:C.inkMuted}}>NT${c.totalAmount.toLocaleString()}</span>
           </div>
 
-          {c.orders.map((o,oi)=>{
+          {/* 客訂品項 */}
+        {(()=>{const ci=iopenInfo?.customItems||[];if(!ci.length)return null;return(
+          <div style={{marginBottom:8,padding:"8px 10px",background:"#F5F0FF",border:"1px solid #D4B8FF",borderRadius:10}}>
+            <div style={{fontSize:11,fontWeight:600,color:"#6B21A8",marginBottom:6}}>🎯 客訂品項</div>
+            {ci.map((item,idx)=>(
+              <div key={idx} style={{fontSize:12,color:"#4C1D95",padding:"3px 0",borderBottom:idx<ci.length-1?"1px solid #E9D5FF":"none"}}>
+                {item.prod}{item.spec1?" · "+item.spec1:""}{item.spec2?" · "+item.spec2:""}
+              </div>
+            ))}
+          </div>
+        );})()}
+        {c.orders.map((o,oi)=>{
             const canShip=o.allocItems.some(it=>it.allocatedQty>0);
             const shipments=o.shipments||(o.shippedAt?[{orderNo:o.shippedOrderNo,shippedAt:o.shippedAt}]:[]);
             const hasShipments=shipments.length>0;
@@ -874,29 +924,6 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
                   </div>
                 )}
 
-                {/* iOPEN 出貨單號（永遠顯示，有單號就顯示） */}
-                {iopenInfo?.orders?.length>0&&(
-                  <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6,marginBottom:4}}>
-                    {iopenInfo.orders.map((ord,idx)=>{
-                      const used=idx<shipments.length;
-                      return(
-                        <button key={idx}
-                          onClick={()=>{
-                            if(canShip){setShipInputs(p=>({...p,[o.oKey]:ord.orderNo}));}
-                            else{navigator.clipboard.writeText(ord.orderNo).catch(()=>{});}
-                          }}
-                          style={{fontSize:12,
-                            color:used?C.inkMuted:C.info,
-                            border:`1px solid ${used?C.line:C.info}`,
-                            background:used?"transparent":C.infoSoft,
-                            borderRadius:7,padding:"5px 12px",cursor:"pointer",
-                            textDecoration:used?"line-through":"none",opacity:used?0.5:1}}>
-                          出貨訂單編號{["①","②","③","④"][Math.min(idx,3)]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
                 {/* 出貨操作列（有可出貨品項就顯示） */}
                 {canShip&&(
                   <div style={{marginTop:6}}>
