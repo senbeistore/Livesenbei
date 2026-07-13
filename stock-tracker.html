@@ -280,38 +280,64 @@ function recalculateAlloc(currentAlloc,parsed,stockItems,method){
 
 // ── iOPEN XLS 解析 ──
 function parseIopenXLS(aoa){
-  if(!aoa||aoa.length<2)return{};
-  const hdr=aoa[0].map(h=>String(h||''));
-  const col=k=>hdr.findIndex(h=>h.includes(k));
-  const CO=col('訂單編號'),CP=col('商品名稱'),CS=col('出貨單編號'),CA=col('訂單金額'),CM=col('門市名稱'),CST=col('訂單狀態'),CN=col('備註');
-  const byIg={},oAmt={},seen=new Set();
-  for(let i=1;i<aoa.length;i++){
-    const r=aoa[i];
-    const st=String(r[CST]||'');if(st.includes('取消')||st.includes('退款')||st.includes('退貨'))continue;
-    const prod=String(r[CP]||'');
-    const note=String(r[CN]||'').trim();
-    // IG 來源1：商品名稱 直播｜（ig）
-    const igM=prod.match(/直播[｜|][（(]([^)）]+)[）)]/);
-    // IG 來源2：備註欄（現貨/平台商品）
-    const ig=igM?igM[1].trim():(note&&!/[\s，,。]/.test(note)&&note.length<=30?note:'');
-    if(!ig)continue;
-    const orderNo=String(r[CO]||'').trim();
-    const shipNo=String(r[CS]||'').trim();
-    const store=String(r[CM]||'').trim();
-    const amt=parseFloat(r[CA])||0;
-    if(!orderNo||!ig)continue;
-    if(oAmt[orderNo]===undefined)oAmt[orderNo]=amt;
-    const key=orderNo+'|'+ig;
-    if(seen.has(key))continue;
-    seen.add(key);
-    if(!byIg[ig])byIg[ig]={orders:[],totalSpend:0,needGift:false};
-    byIg[ig].orders.push({orderNo,shipNo,store});
-  }
-  Object.keys(byIg).forEach(ig=>{
-    const tot=byIg[ig].orders.reduce((s,o)=>s+(oAmt[o.orderNo]||0),0);
-    byIg[ig].totalSpend=tot;byIg[ig].needGift=tot>=3500;
-  });
-  return byIg;
+  try{
+    if(!aoa||aoa.length<2)return{byIg:{},allCustom:[]};
+    const hdr=aoa[0].map(function(h){return String(h||'');});
+    var coIdx=function(k){return hdr.findIndex(function(h){return h.includes(k);});};
+    var CO=coIdx('訂單編號'),CP=coIdx('商品名稱'),CS=coIdx('出貨單編號');
+    var CA=coIdx('訂單金額'),CM=coIdx('門市名稱'),CST=coIdx('訂單狀態'),CN=coIdx('備註');
+    var CS1=hdr.findIndex(function(h){return h==='規格1';}),CS2=hdr.findIndex(function(h){return h==='規格2';});
+    var byIg={},oAmt={},seen={},allCustom=[];
+    for(var i=1;i<aoa.length;i++){
+      var r=aoa[i];
+      var st=String(r[CST]||'');
+      if(st.indexOf('取消')>-1||st.indexOf('退款')>-1||st.indexOf('退貨')>-1)continue;
+      var prod=String(r[CP]||'').trim();
+      var note=String(r[CN]||'').trim();
+      var orderNo=String(r[CO]||'').trim();
+      var shipNo=String(r[CS]||'').trim();
+      var store=String(r[CM]||'').trim();
+      var amt=parseFloat(r[CA])||0;
+      var spec1=CS1>=0?String(r[CS1]||'').trim():'';
+      var spec2=CS2>=0?String(r[CS2]||'').trim():'';
+      if(!orderNo)continue;
+      if(oAmt[orderNo]===undefined)oAmt[orderNo]=amt;
+      // 判斷是否直播商品
+      var igFromProd='',igFromNote='';
+      var liveIdx=prod.indexOf('直播');
+      if(liveIdx>-1){
+        var lp=prod.indexOf('（',liveIdx),lp2=prod.indexOf('(',liveIdx);
+        var rp=prod.indexOf('）'),rp2=prod.indexOf(')');
+        var ls=(lp>-1&&lp<lp2)||lp2===-1?lp:lp2;
+        var rs=(rp>-1&&rp<rp2)||rp2===-1?rp:rp2;
+        if(ls>-1&&rs>ls)igFromProd=prod.substring(ls+1,rs).trim();
+      }
+      if(!igFromProd&&note&&note.length<=30&&note.indexOf(' ')===-1&&note.indexOf('，')===-1&&note.indexOf(',')===-1)
+        igFromNote=note;
+      var ig=igFromProd||igFromNote;
+      if(!ig)continue;
+      var isLive=igFromProd.length>0;
+      var key=orderNo+'|'+ig+'|'+prod;
+      if(seen[key])continue;
+      seen[key]=1;
+      if(!byIg[ig])byIg[ig]={orders:[],customItems:[],totalSpend:0,needGift:false};
+      if(!byIg[ig].orders.some(function(o){return o.orderNo===orderNo;}))
+        byIg[ig].orders.push({orderNo:orderNo,shipNo:shipNo,store:store});
+      if(!isLive&&prod){
+        var item={ig:ig,orderNo:orderNo,shipNo:shipNo,prod:prod,spec1:spec1,spec2:spec2};
+        byIg[ig].customItems.push(item);
+        allCustom.push(item);
+      }
+    }
+    var igs=Object.keys(byIg);
+    for(var j=0;j<igs.length;j++){
+      var ig2=igs[j],d=byIg[ig2];
+      var tot=0;
+      for(var k=0;k<d.orders.length;k++)tot+=oAmt[d.orders[k].orderNo]||0;
+      d.totalSpend=tot;d.needGift=tot>=3500;
+    }
+    return{byIg:byIg,allCustom:allCustom};
+  }catch(e){console.error('parseIopenXLS error:',e);return{byIg:{},allCustom:[]};}
 }
 
 async function gFetch(token,gistId){
@@ -618,36 +644,45 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
 
   function handleIopenXLS(files){
     if(!files||!files.length)return;
-    const arr=Array.from(files);
-    setIopenXlsFile(arr.map(f=>f.name).join('、'));
-    let pending=arr.length;
-    const mergedIg={},mergedCustom=[];
-    arr.forEach(file=>{
-      const reader=new FileReader();
-      reader.onload=e=>{
+    var arr=Array.from(files);
+    setIopenXlsFile(arr.map(function(f){return f.name;}).join('、'));
+    var pending=arr.length;
+    var mergedIg={},mergedCustom=[];
+    arr.forEach(function(file){
+      var reader=new FileReader();
+      reader.onload=function(ev){
         try{
-          const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
-          const ws=wb.Sheets[wb.SheetNames[0]];
-          const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-          const {byIg,allCustom}=parseIopenXLS(aoa);
+          var wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+          var ws=wb.Sheets[wb.SheetNames[0]];
+          if(!ws)throw new Error('找不到工作表');
+          var aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+          var result=parseIopenXLS(aoa);
+          var byIg=result.byIg||{};
+          var allCustom=result.allCustom||[];
           // 合併 byIg
-          Object.keys(byIg).forEach(ig=>{
-            if(!mergedIg[ig]){mergedIg[ig]=byIg[ig];}
-            else{
-              const existNos=new Set(mergedIg[ig].orders.map(o=>o.orderNo));
-              byIg[ig].orders.forEach(o=>{if(!existNos.has(o.orderNo))mergedIg[ig].orders.push(o);});
-              const existKeys=new Set(mergedIg[ig].customItems.map(c=>c.orderNo+'|'+c.prod));
-              byIg[ig].customItems.forEach(c=>{if(!existKeys.has(c.orderNo+'|'+c.prod))mergedIg[ig].customItems.push(c);});
-              mergedIg[ig].totalSpend+=byIg[ig].totalSpend;
-              mergedIg[ig].needGift=mergedIg[ig].totalSpend>=3500;
+          var igs=Object.keys(byIg);
+          for(var i=0;i<igs.length;i++){
+            var ig=igs[i];
+            if(!mergedIg[ig]){
+              mergedIg[ig]={orders:[],customItems:[],totalSpend:0,needGift:false};
             }
-          });
-          // 合併 allCustom（去重）
-          const customSet=new Set(mergedCustom.map(c=>c.orderNo+'|'+c.prod));
-          allCustom.forEach(c=>{if(!customSet.has(c.orderNo+'|'+c.prod))mergedCustom.push(c);});
+            var src=byIg[ig];
+            var existNos={};
+            mergedIg[ig].orders.forEach(function(o){existNos[o.orderNo]=1;});
+            src.orders.forEach(function(o){if(!existNos[o.orderNo])mergedIg[ig].orders.push(o);});
+            var existCust={};
+            mergedIg[ig].customItems.forEach(function(c){existCust[c.orderNo+'|'+c.prod]=1;});
+            src.customItems.forEach(function(c){if(!existCust[c.orderNo+'|'+c.prod])mergedIg[ig].customItems.push(c);});
+            mergedIg[ig].totalSpend+=src.totalSpend;
+            mergedIg[ig].needGift=mergedIg[ig].totalSpend>=3500;
+          }
+          // 合併 allCustom
+          var custSet={};
+          mergedCustom.forEach(function(c){custSet[c.orderNo+'|'+c.prod]=1;});
+          allCustom.forEach(function(c){if(!custSet[c.orderNo+'|'+c.prod])mergedCustom.push(c);});
         }catch(err){alert(file.name+' 讀取失敗：'+err.message);}
         pending--;
-        if(pending===0){setIopenData({...mergedIg});setIopenCustom([...mergedCustom]);}
+        if(pending===0){setIopenData(Object.assign({},mergedIg));setIopenCustom(mergedCustom.slice());}
       };
       reader.readAsArrayBuffer(file);
     });
