@@ -356,7 +356,7 @@ async function gCreate(token){
   return(await r.json()).id;
 }
 function migrateItem(it){
-  return{...it,firstOrderDate:it.firstOrderDate||it.supplierOrderDate||"",secondOrderDate:it.secondOrderDate||"",allOrdered:it.allOrdered||false,orderedQty:it.orderedQty!=null?it.orderedQty:it.qty,arrivedQty:it.arrivedQty!=null?it.arrivedQty:(it.arrived?it.qty:0),shippedQty:it.shippedQty||0,allArrived:it.allArrived||it.arrived||false,arrivedTs:it.arrivedTs||"",firstArrivedTs:it.firstArrivedTs||"",importedAt:it.importedAt||it.orderDate||todayStr()};
+  return{...it,stockQty:it.stockQty||0,firstOrderDate:it.firstOrderDate||it.supplierOrderDate||"",secondOrderDate:it.secondOrderDate||"",allOrdered:it.allOrdered||false,orderedQty:it.orderedQty!=null?it.orderedQty:it.qty,arrivedQty:it.arrivedQty!=null?it.arrivedQty:(it.arrived?it.qty:0),shippedQty:it.shippedQty||0,allArrived:it.allArrived||it.arrived||false,arrivedTs:it.arrivedTs||"",firstArrivedTs:it.firstArrivedTs||"",importedAt:it.importedAt||it.orderDate||todayStr()};
 }
 
 // ── Setup ──
@@ -448,6 +448,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
               <span style={{background:C.stripe,color:C.inkMuted,borderRadius:20,padding:"2px 8px",fontSize:12}}>x{it.qty}</span>
               <span style={{color:C.inkMuted,fontSize:11}}>訂購</span>
               <input type="number" min="0" value={it.orderedQty!=null?it.orderedQty:it.qty} onChange={e=>onUpdate("orderedQty",Math.max(0,parseInt(e.target.value,10)||0))} style={{width:50,border:`1px solid ${C.info}`,borderRadius:8,padding:"2px 5px",fontSize:13,textAlign:"center",background:"#EFF6FC",color:C.info,fontWeight:600}}/>
+              {(()=>{const oq=it.orderedQty!=null?it.orderedQty:it.qty;const sq=it.stockQty||0;const diff=(oq+sq)-it.qty;if(diff===0)return null;return <span style={{fontSize:11,fontWeight:600,padding:"2px 7px",borderRadius:10,marginLeft:4,background:diff>0?"#FFF3CD":"#FFE4E4",color:diff>0?"#B45309":"#DC2626"}}>{diff>0?`多${diff}件`:`少${Math.abs(diff)}件`}{sq>0&&<span style={{fontSize:10,opacity:0.75}}> (含現貨{sq})</span>}</span>;})()}
             </div>
           </div>
           {(it.color||it.size||it.style)&&<div style={{color:C.inkMuted,fontSize:12,marginTop:2}}>{it.product}</div>}
@@ -475,7 +476,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
       <div style={{paddingLeft:32,borderTop:`1px solid ${C.line}`,paddingTop:10}}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <span style={{color:C.inkMuted,fontSize:12}}>已到貨</span>
+            <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{color:"#059669",fontSize:12}}>現貨</span><input type="number" min="0" value={it.stockQty||0} onChange={e=>onUpdate("stockQty",Math.max(0,parseInt(e.target.value,10)||0))} style={{width:46,border:"1px solid #059669",borderRadius:8,padding:"5px 4px",fontSize:13,textAlign:"center",background:"#F0FFF4",color:"#059669",fontWeight:600}}/></div><span style={{color:C.inkMuted,fontSize:11,margin:"0 4px"}}>|</span><span style={{color:C.inkMuted,fontSize:12}}>已到貨</span>
             <input type="number" min="0" value={it.arrivedQty||0} onChange={e=>handleArrivedQty(e.target.value)} style={{width:52,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 6px",fontSize:14,textAlign:"center",background:C.bg,color:C.ink}}/>
             <span style={{color:C.inkMuted,fontSize:12}}>/ {it.orderedQty!=null?it.orderedQty:it.qty} 件</span>
           </div>
@@ -1124,7 +1125,7 @@ function App(){
     });
   },[items]);
 
-  const displayed=items.filter(it=>{if(filter==="unordered")return(it.arrivedQty||0)===0&&!it.firstOrderDate;if(filter==="ordered")return(it.arrivedQty||0)===0&&!!it.firstOrderDate;if(filter==="arrived")return(it.arrivedQty||0)>0;return true;}).filter(it=>!search.trim()||it.product.includes(search.trim())).slice().sort((a,b)=>{
+  const displayed=items.filter(it=>{if(filter==="unordered")return(it.arrivedQty||0)===0&&(it.stockQty||0)===0&&!it.firstOrderDate;if(filter==="ordered")return(it.arrivedQty||0)===0&&(it.stockQty||0)===0&&!!it.firstOrderDate;if(filter==="arrived")return(it.arrivedQty||0)>0||(it.stockQty||0)>0;return true;}).filter(it=>!search.trim()||it.product.includes(search.trim())).slice().sort((a,b)=>{
   const pd=sortPri(a)-sortPri(b);if(pd!==0)return pd;
   const gka=getGroupKey(a),gkb=getGroupKey(b);
   const cd=gka.localeCompare(gkb);if(cd!==0)return cd;
@@ -1183,6 +1184,13 @@ function App(){
               <span>Gist ID：<code style={{fontSize:11,color:C.ink}}>{gistId}</code></span>
               <button onClick={()=>{try{navigator.clipboard.writeText(gistId);}catch{}}} style={{border:`1px solid ${C.line}`,padding:"2px 8px",borderRadius:6,cursor:"pointer"}}>複製</button>
               <button onClick={resetSetup} style={{color:C.stamp,border:`1px solid ${C.stamp}`,padding:"2px 8px",borderRadius:6,cursor:"pointer"}}>重置所有設定</button>
+              <button onClick={()=>{
+                if(!window.confirm("將所有已到貨數量轉為現貨？（arrivedQty → stockQty，已到貨歸零）"))return;
+                setItems(prev=>{
+                  const next=prev.map(it=>(it.arrivedQty||0)>0?{...it,stockQty:(it.stockQty||0)+(it.arrivedQty||0),arrivedQty:0,allArrived:false,arrivedTs:"",firstArrivedTs:""}:it);
+                  scheduleSave(next);return next;
+                });
+              }} style={{color:"#059669",border:"1px solid #059669",padding:"2px 8px",borderRadius:6,cursor:"pointer",background:"transparent",fontSize:12}}>已到貨→現貨</button>
             </div>
           </div>
         )}
