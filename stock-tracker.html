@@ -1037,6 +1037,7 @@ function App(){
   function handleIopenAppXLS(files){
     if(!files||!files.length)return;
     var arr=Array.from(files);
+    setIopenXlsFile(arr.map(function(f){return f.name;}).join('、'));
     var pending=arr.length,merged=[];
     arr.forEach(function(file){
       var reader=new FileReader();
@@ -1060,17 +1061,36 @@ function App(){
           });
           iopenCustomRef.current=filtered.slice();
           setIopenCustom(filtered.slice());
-          // 直接存 Gist（避免 useCallback 舊值問題）
-          if(token&&gistId){
-            setSaving(true);
-            gSave(token,gistId,items,savedAlloc,filtered).then(()=>{setSaving(false);setLastSaved(new Date());}).catch(e=>{setSaving(false);setGlobalErr("儲存失敗："+e.message);});
-          }
+          // 聚合成商品卡加入備貨追蹤（以商品名+規格為 key）
+          var grp={};
+          filtered.forEach(function(c){
+            var k=[c.prod,c.spec1,c.spec2,''].join('|||');
+            if(!grp[k])grp[k]={product:c.prod,color:c.spec1,size:c.spec2,style:'',qty:0,isCustom:true};
+            grp[k].qty++;
+          });
+          var newCustomItems=Object.values(grp);
+          setItems(function(prev){
+            var oldMap={};
+            prev.filter(function(it){return it.isCustom;}).forEach(function(it){oldMap[itemKey(it)]=it;});
+            var keep=prev.filter(function(it){return !it.isCustom;});
+            var add=newCustomItems.map(function(p){
+              var k=itemKey(p);
+              if(oldMap[k])return Object.assign({},oldMap[k],{qty:p.qty});
+              return Object.assign({},p,{id:genId(),importedAt:todayStr(),firstOrderDate:'',secondOrderDate:'',allOrdered:false,orderedQty:p.qty,arrivedQty:0,shippedQty:0,allArrived:false,arrivedTs:'',firstArrivedTs:''});
+            });
+            var final=keep.concat(add);
+            // 存 Gist（含 iopenCustom）
+            if(token&&gistId){
+              setSaving(true);
+              gSave(token,gistId,final,savedAllocRef.current,filtered).then(function(){setSaving(false);setLastSaved(new Date());}).catch(function(e){setSaving(false);setGlobalErr("儲存失敗："+e.message);});
+            }
+            return final;
+          });
         }
       };
       reader.readAsArrayBuffer(file);
     });
   }
-
   // 需求彙總資料（useMemo 預先計算）
   const summaryData=useMemo(()=>{
     const prodGroups={};
@@ -1169,48 +1189,7 @@ function App(){
         )}
       </div>
 
-      {/* 客訂清單（叫貨用）*/}
-      {(function(){
-        if(!iopenCustom.length)return null;
-        // 以商品為主聚合
-        var groups={};
-        iopenCustom.forEach(function(c){
-          var key=c.prod+'||'+c.spec1+'||'+c.spec2;
-          if(!groups[key])groups[key]={prod:c.prod,spec1:c.spec1,spec2:c.spec2,count:0,customers:[]};
-          groups[key].count++;
-          if(groups[key].customers.indexOf(c.ig)===-1)groups[key].customers.push(c.ig);
-        });
-        var cards=Object.values(groups).sort(function(a,b){return a.prod.localeCompare(b.prod);});
-        return(
-          <div style={{padding:"0 12px 4px"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0 8px"}}>
-              <span style={{fontSize:13,fontWeight:600,color:"#6B21A8"}}>🎯 客訂清單（共 {cards.length} 款）</span>
-              <button onClick={function(){setIopenCustom([]);iopenCustomRef.current=[];}} style={{fontSize:11,color:"#9333EA",border:"1px solid #D4B8FF",background:"transparent",borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>清除</button>
-            </div>
-            {cards.map(function(g,idx){
-              var specs=[g.spec1,g.spec2].filter(Boolean).join(' · ');
-              return(
-                <div key={idx} style={{background:C.surface,border:"1px solid #D4B8FF",borderRadius:12,marginBottom:8,padding:"12px 14px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                    <div style={{flex:1}}>
-                      <div style={{fontWeight:700,fontSize:14,color:"#4C1D95",marginBottom:2}}>{g.prod}</div>
-                      {specs&&<div style={{fontSize:12,color:"#7C3AED",marginBottom:4}}>{specs}</div>}
-                      <div style={{fontSize:11,color:C.inkMuted}}>{g.customers.join('、')}</div>
-                    </div>
-                    <div style={{marginLeft:12,textAlign:"center"}}>
-                      <div style={{fontSize:11,color:"#7C3AED"}}>需</div>
-                      <div style={{fontSize:20,fontWeight:700,color:"#4C1D95",lineHeight:1.2}}>{g.count}</div>
-                      <div style={{fontSize:11,color:"#7C3AED"}}>件</div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        );
-      })()}
-
-      {allocMode&&<AllocationView items={items} savedAlloc={savedAlloc} onClose={()=>setAllocMode(false)}
+            {allocMode&&<AllocationView items={items} savedAlloc={savedAlloc} onClose={()=>setAllocMode(false)}
         onSaveAlloc={(newAlloc)=>{setSavedAlloc(newAlloc);scheduleSave(items,newAlloc);}}
         onConfirmShipment={(oKey,shippedItems,newAlloc)=>{
           // 扣除庫存，並明確傳遞最新 alloc 避免閉包舊值問題
