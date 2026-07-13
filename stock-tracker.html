@@ -1124,7 +1124,7 @@ function App(){
     });
   },[items]);
 
-  const displayed=items.filter(it=>{if(filter==="unordered")return!it.allArrived&&!it.firstOrderDate;if(filter==="ordered")return!it.allArrived&&!!it.firstOrderDate;if(filter==="arrived")return it.allArrived;return true;}).filter(it=>!search.trim()||it.product.includes(search.trim())).slice().sort((a,b)=>{
+  const displayed=items.filter(it=>{if(filter==="unordered")return(it.arrivedQty||0)===0&&!it.firstOrderDate;if(filter==="ordered")return(it.arrivedQty||0)===0&&!!it.firstOrderDate;if(filter==="arrived")return(it.arrivedQty||0)>0;return true;}).filter(it=>!search.trim()||it.product.includes(search.trim())).slice().sort((a,b)=>{
   const pd=sortPri(a)-sortPri(b);if(pd!==0)return pd;
   const gka=getGroupKey(a),gkb=getGroupKey(b);
   const cd=gka.localeCompare(gkb);if(cd!==0)return cd;
