@@ -448,7 +448,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
               <span style={{background:C.stripe,color:C.inkMuted,borderRadius:20,padding:"2px 8px",fontSize:12}}>x{it.qty}</span>
               <span style={{color:C.inkMuted,fontSize:11}}>訂購</span>
               <input type="number" min="0" value={it.orderedQty!=null?it.orderedQty:it.qty} onChange={e=>onUpdate("orderedQty",Math.max(0,parseInt(e.target.value,10)||0))} style={{width:50,border:`1px solid ${C.info}`,borderRadius:8,padding:"2px 5px",fontSize:13,textAlign:"center",background:"#EFF6FC",color:C.info,fontWeight:600}}/>
-              {(()=>{const oq=it.orderedQty!=null?it.orderedQty:it.qty;const sq=it.stockQty||0;const diff=(oq+sq)-it.qty;if(diff===0)return null;return <span style={{fontSize:11,fontWeight:600,padding:"2px 7px",borderRadius:10,marginLeft:4,background:diff>0?"#FFF3CD":"#FFE4E4",color:diff>0?"#B45309":"#DC2626"}}>{diff>0?`多${diff}件`:`少${Math.abs(diff)}件`}{sq>0&&<span style={{fontSize:10,opacity:0.75}}> (含現貨{sq})</span>}</span>;})()}
+              {(()=>{const oq=it.orderedQty!=null?it.orderedQty:it.qty;const sq=it.stockQty||0;const need=Math.max(0,it.qty-sq);const diff=oq-need;if(diff===0)return null;return <span style={{fontSize:11,fontWeight:600,padding:"2px 7px",borderRadius:10,marginLeft:4,background:diff>0?"#FFF3CD":"#FFE4E4",color:diff>0?"#B45309":"#DC2626"}}>{diff>0?`多${diff}件`:`少${Math.abs(diff)}件`}{sq>0&&<span style={{fontSize:10,opacity:0.75}}> (含現貨{sq})</span>}</span>;})()}
             </div>
           </div>
           {(it.color||it.size||it.style)&&<div style={{color:C.inkMuted,fontSize:12,marginTop:2}}>{it.product}</div>}
