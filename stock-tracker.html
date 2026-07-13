@@ -1055,7 +1055,8 @@ function App(){
         if(pending===0){
           // 過濾運費和空商品
           var filtered=merged.filter(function(c){
-            return c.prod&&c.prod!=='運費'&&c.prod.trim()!=='';
+            var p=c.prod&&c.prod.trim();
+            return p&&p!=='運費'&&p.indexOf('湊卷')===-1&&p.indexOf('自願使用無退款')===-1;
           });
           iopenCustomRef.current=filtered.slice();
           setIopenCustom(filtered.slice());
@@ -1169,34 +1170,45 @@ function App(){
       </div>
 
       {/* 客訂清單（叫貨用）*/}
-      {iopenCustom.length>0&&(
-        <div style={{margin:"12px 12px 4px",background:"#F5F0FF",border:"1px solid #D4B8FF",borderRadius:12,padding:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <span style={{fontSize:13,fontWeight:600,color:"#6B21A8"}}>🎯 客訂清單（共 {iopenCustom.length} 項）</span>
-            <button onClick={()=>setIopenCustom([])} style={{fontSize:11,color:"#9333EA",border:"1px solid #D4B8FF",background:"transparent",borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>清除</button>
+      {(function(){
+        if(!iopenCustom.length)return null;
+        // 以商品為主聚合
+        var groups={};
+        iopenCustom.forEach(function(c){
+          var key=c.prod+'||'+c.spec1+'||'+c.spec2;
+          if(!groups[key])groups[key]={prod:c.prod,spec1:c.spec1,spec2:c.spec2,count:0,customers:[]};
+          groups[key].count++;
+          if(groups[key].customers.indexOf(c.ig)===-1)groups[key].customers.push(c.ig);
+        });
+        var cards=Object.values(groups).sort(function(a,b){return a.prod.localeCompare(b.prod);});
+        return(
+          <div style={{padding:"0 12px 4px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0 8px"}}>
+              <span style={{fontSize:13,fontWeight:600,color:"#6B21A8"}}>🎯 客訂清單（共 {cards.length} 款）</span>
+              <button onClick={function(){setIopenCustom([]);iopenCustomRef.current=[];}} style={{fontSize:11,color:"#9333EA",border:"1px solid #D4B8FF",background:"transparent",borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>清除</button>
+            </div>
+            {cards.map(function(g,idx){
+              var specs=[g.spec1,g.spec2].filter(Boolean).join(' · ');
+              return(
+                <div key={idx} style={{background:C.surface,border:"1px solid #D4B8FF",borderRadius:12,marginBottom:8,padding:"12px 14px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:700,fontSize:14,color:"#4C1D95",marginBottom:2}}>{g.prod}</div>
+                      {specs&&<div style={{fontSize:12,color:"#7C3AED",marginBottom:4}}>{specs}</div>}
+                      <div style={{fontSize:11,color:C.inkMuted}}>{g.customers.join('、')}</div>
+                    </div>
+                    <div style={{marginLeft:12,textAlign:"center"}}>
+                      <div style={{fontSize:11,color:"#7C3AED"}}>需</div>
+                      <div style={{fontSize:20,fontWeight:700,color:"#4C1D95",lineHeight:1.2}}>{g.count}</div>
+                      <div style={{fontSize:11,color:"#7C3AED"}}>件</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-              <thead><tr style={{borderBottom:"1px solid #D4B8FF"}}>
-                {["IG帳號","商品","規格1","規格2","訂單號"].map(function(h){return(
-                  <th key={h} style={{padding:"4px 8px",textAlign:"left",color:"#7C3AED",fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
-                );})}
-              </tr></thead>
-              <tbody>
-                {iopenCustom.map(function(item,idx){return(
-                  <tr key={idx} style={{borderBottom:"1px solid #EDE9FE"}}>
-                    <td style={{padding:"5px 8px",color:"#4C1D95",fontWeight:600}}>{item.ig}</td>
-                    <td style={{padding:"5px 8px",color:"#1F2937"}}>{item.prod}</td>
-                    <td style={{padding:"5px 8px",color:"#374151"}}>{item.spec1}</td>
-                    <td style={{padding:"5px 8px",color:"#374151"}}>{item.spec2}</td>
-                    <td style={{padding:"5px 8px",fontFamily:"monospace",fontSize:11,color:"#6B7280"}}>{item.orderNo}</td>
-                  </tr>
-                );})}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {allocMode&&<AllocationView items={items} savedAlloc={savedAlloc} onClose={()=>setAllocMode(false)}
         onSaveAlloc={(newAlloc)=>{setSavedAlloc(newAlloc);scheduleSave(items,newAlloc);}}
