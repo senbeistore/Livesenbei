@@ -346,12 +346,12 @@ async function gFetch(token,gistId){
   const d=await r.json();const content=d.files[GIST_FILE]?.content;
   try{const p=JSON.parse(content||"{}");return{items:(p.items||[]).map(migrateItem),savedAlloc:p.savedAlloc||null};}catch{return{items:[],savedAlloc:null};}
 }
-async function gSave(token,gistId,items,savedAlloc){
-  const r=await fetch(`https://api.github.com/gists/${gistId}`,{method:"PATCH",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify({items,savedAlloc},null,2)}}})});
+async function gSave(token,gistId,items,savedAlloc,iopenCustom){
+  const r=await fetch(`https://api.github.com/gists/${gistId}`,{method:"PATCH",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify({items,savedAlloc,iopenCustom:iopenCustom||[]},null,2)}}})});
   if(!r.ok)throw new Error(`儲存失敗 (HTTP ${r.status})`);
 }
 async function gCreate(token){
-  const r=await fetch("https://api.github.com/gists",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({description:"備貨追蹤 - 理貨台",public:false,files:{[GIST_FILE]:{content:JSON.stringify({items:[],savedAlloc:null})}}})});
+  const r=await fetch("https://api.github.com/gists",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({description:"備貨追蹤 - 理貨台",public:false,files:{[GIST_FILE]:{content:JSON.stringify({items:[],savedAlloc:null,iopenCustom:[]})}}})});
   if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(`建立失敗 (${r.status})：${e.message||"請確認Token是否有gist權限"}`);}
   return(await r.json()).id;
 }
@@ -789,36 +789,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
         </div>)}
       </div>
 
-      {/* 客訂彙總（備貨叫貨用） */}
-      {iopenCustom.length>0&&(
-        <div style={{background:"#F5F0FF",border:"1px solid #D4B8FF",borderRadius:12,padding:14,marginBottom:12}}>
-          <div style={{fontSize:13,fontWeight:600,color:"#6B21A8",marginBottom:10}}>
-            🎯 客訂彙總（共 {iopenCustom.length} 項，叫貨用）
-          </div>
-          <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-              <thead>
-                <tr style={{borderBottom:"1px solid #D4B8FF"}}>
-                  {["IG帳號","商品","規格1","規格2","訂單號"].map(h=>(
-                    <th key={h} style={{padding:"4px 8px",textAlign:"left",color:"#7C3AED",fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {iopenCustom.map((item,idx)=>(
-                  <tr key={idx} style={{borderBottom:"1px solid #EDE9FE"}}>
-                    <td style={{padding:"5px 8px",color:"#4C1D95",fontWeight:600}}>{item.ig}</td>
-                    <td style={{padding:"5px 8px",color:"#1F2937"}}>{item.prod}</td>
-                    <td style={{padding:"5px 8px",color:"#374151"}}>{item.spec1}</td>
-                    <td style={{padding:"5px 8px",color:"#374151"}}>{item.spec2}</td>
-                    <td style={{padding:"5px 8px",fontFamily:"monospace",fontSize:11,color:"#6B7280"}}>{item.orderNo}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+
 
       {!editAlloc&&items.filter(it=>Math.max(0,(it.arrivedQty||0)-(it.shippedQty||0))>0).length===0&&items.length>0&&(
         <div style={{background:C.warningSoft,border:`1px solid ${C.warning}`,borderRadius:12,padding:14,fontSize:12,color:C.warning,marginBottom:12}}>
@@ -992,6 +963,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
 // ── 主應用 ──
 function App(){
   const[token,setToken]=useState(()=>localStorage.getItem("st_token")||"");
+  const[iopenCustom,setIopenCustom]=useState([]);
+  const iopenAppRef=useRef(null);
   const[workspaces,setWorkspaces]=useState(()=>{const raw=localStorage.getItem("st_workspaces");if(raw){try{return JSON.parse(raw);}catch{}}const oldGist=localStorage.getItem("st_gist_id");if(oldGist)return[{name:"第一場次",gistId:oldGist}];return[];});
   const[activeIdx,setActiveIdx]=useState(()=>{const i=parseInt(localStorage.getItem("st_active")||"0",10);return isNaN(i)?0:i;});
   const gistId=workspaces[activeIdx]?.gistId||"";
@@ -1005,11 +978,11 @@ function App(){
   const[showSettings,setShowSettings]=useState(false);
   const[batchSel,setBatchSel]=useState(new Set());const[batchDate1,setBatchDate1]=useState("");const[batchDate2,setBatchDate2]=useState("");
   const[allocMode,setAllocMode]=useState(false);
-  const fileRef=useRef(null);const saveTimer=useRef(null);
+  const fileRef=useRef(null);const saveTimer=useRef(null);const iopenCustomRef=useRef([]);
 
   useEffect(()=>{savedAllocRef.current=savedAlloc;},[savedAlloc]);
   useEffect(()=>{
-    if(!setupMode&&token&&gistId){setLoading(true);gFetch(token,gistId).then(({items:its,savedAlloc:sa})=>{setItems(its);setSavedAlloc(sa);setLoading(false);}).catch(e=>{setGlobalErr(e.message);setLoading(false);});}
+    if(!setupMode&&token&&gistId){setLoading(true);gFetch(token,gistId).then(({items:its,savedAlloc:sa,iopenCustom:ic})=>{setItems(its);setSavedAlloc(sa);if(ic&&ic.length){iopenCustomRef.current=ic;setIopenCustom(ic);}setLoading(false);}).catch(e=>{setGlobalErr(e.message);setLoading(false);});}
   },[]);
 
   const scheduleSave=useCallback((newItems,newAlloc)=>{
@@ -1018,7 +991,7 @@ function App(){
       // 用 ref 讀最新值，避免閉包舊值覆蓋出貨記錄
       const allocToSave=newAlloc!==undefined?newAlloc:savedAllocRef.current;
       setSaving(true);
-      gSave(token,gistId,newItems,allocToSave).then(()=>{setSaving(false);setLastSaved(new Date());}).catch(e=>{setSaving(false);setGlobalErr("自動儲存失敗："+e.message);});
+      gSave(token,gistId,newItems,allocToSave,iopenCustomRef.current).then(()=>{setSaving(false);setLastSaved(new Date());}).catch(e=>{setSaving(false);setGlobalErr("自動儲存失敗："+e.message);});
     },800);
   },[token,gistId]);
 
@@ -1059,6 +1032,43 @@ function App(){
   }
 
   if(setupMode)return<Setup onDone={(t,g,name)=>{setToken(t);const ws=[{name:name||"第一場次",gistId:g}];setWorkspaces(ws);setActiveIdx(0);saveWorkspaces(ws,0);localStorage.setItem("st_token",t);setSetupMode(false);gFetch(t,g).then(({items:its,savedAlloc:sa})=>{setItems(its);setSavedAlloc(sa);}).catch(e=>setGlobalErr(e.message));}}/>;
+
+  // iOPEN 客訂 XLS（主視圖用）
+  function handleIopenAppXLS(files){
+    if(!files||!files.length)return;
+    var arr=Array.from(files);
+    var pending=arr.length,merged=[];
+    arr.forEach(function(file){
+      var reader=new FileReader();
+      reader.onload=function(ev){
+        try{
+          var wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+          var ws=wb.Sheets[wb.SheetNames[0]];
+          var aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+          var result=parseIopenXLS(aoa);
+          var allCustom=(result&&result.allCustom)||[];
+          var seen={};
+          merged.forEach(function(c){seen[c.orderNo+'|'+c.prod]=1;});
+          allCustom.forEach(function(c){if(!seen[c.orderNo+'|'+c.prod])merged.push(c);});
+        }catch(e){alert(file.name+' 讀取失敗：'+e.message);}
+        pending--;
+        if(pending===0){
+          // 過濾運費和空商品
+          var filtered=merged.filter(function(c){
+            return c.prod&&c.prod!=='運費'&&c.prod.trim()!=='';
+          });
+          iopenCustomRef.current=filtered.slice();
+          setIopenCustom(filtered.slice());
+          // 直接存 Gist（避免 useCallback 舊值問題）
+          if(token&&gistId){
+            setSaving(true);
+            gSave(token,gistId,items,savedAlloc,filtered).then(()=>{setSaving(false);setLastSaved(new Date());}).catch(e=>{setSaving(false);setGlobalErr("儲存失敗："+e.message);});
+          }
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
 
   // 需求彙總資料（useMemo 預先計算）
   const summaryData=useMemo(()=>{
@@ -1119,6 +1129,8 @@ function App(){
             {saving&&<span style={{color:C.inkMuted,fontSize:11}}>儲存中…</span>}
             {lastSaved&&!saving&&<span style={{color:C.inkMuted,fontSize:11}}>已儲存 {fmtSavedTime(lastSaved)}</span>}
             {!allocMode&&<button onClick={()=>fileRef.current.click()} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>匯入備貨清單</button>}
+            {!allocMode&&<button onClick={()=>iopenAppRef.current.click()} style={{background:"#7C3AED",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>客訂XLS</button>}
+            <input ref={iopenAppRef} type="file" accept=".xls,.xlsx" multiple style={{display:"none"}} onChange={e=>handleIopenAppXLS(e.target.files)}/>
             <input ref={fileRef} type="file" accept=".csv" multiple style={{display:"none"}} onChange={handleCSV}/>
             <button onClick={()=>{setAllocMode(!allocMode);setShowWorkspaces(false);setShowSettings(false);}} style={{background:allocMode?C.info:C.surface,color:allocMode?"#fff":C.inkMuted,border:`1px solid ${allocMode?C.info:C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,fontWeight:allocMode?"600":"400",cursor:"pointer"}}>配貨</button>
             <button onClick={()=>{setShowSettings(!showSettings);setShowWorkspaces(false);}} style={{border:`1px solid ${C.line}`,background:C.surface,color:C.inkMuted,borderRadius:8,padding:"7px 10px",fontSize:14,cursor:"pointer"}}>⚙</button>
@@ -1155,6 +1167,36 @@ function App(){
           </div>
         )}
       </div>
+
+      {/* 客訂清單（叫貨用）*/}
+      {iopenCustom.length>0&&(
+        <div style={{margin:"12px 12px 4px",background:"#F5F0FF",border:"1px solid #D4B8FF",borderRadius:12,padding:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <span style={{fontSize:13,fontWeight:600,color:"#6B21A8"}}>🎯 客訂清單（共 {iopenCustom.length} 項）</span>
+            <button onClick={()=>setIopenCustom([])} style={{fontSize:11,color:"#9333EA",border:"1px solid #D4B8FF",background:"transparent",borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>清除</button>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr style={{borderBottom:"1px solid #D4B8FF"}}>
+                {["IG帳號","商品","規格1","規格2","訂單號"].map(function(h){return(
+                  <th key={h} style={{padding:"4px 8px",textAlign:"left",color:"#7C3AED",fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+                );})}
+              </tr></thead>
+              <tbody>
+                {iopenCustom.map(function(item,idx){return(
+                  <tr key={idx} style={{borderBottom:"1px solid #EDE9FE"}}>
+                    <td style={{padding:"5px 8px",color:"#4C1D95",fontWeight:600}}>{item.ig}</td>
+                    <td style={{padding:"5px 8px",color:"#1F2937"}}>{item.prod}</td>
+                    <td style={{padding:"5px 8px",color:"#374151"}}>{item.spec1}</td>
+                    <td style={{padding:"5px 8px",color:"#374151"}}>{item.spec2}</td>
+                    <td style={{padding:"5px 8px",fontFamily:"monospace",fontSize:11,color:"#6B7280"}}>{item.orderNo}</td>
+                  </tr>
+                );})}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {allocMode&&<AllocationView items={items} savedAlloc={savedAlloc} onClose={()=>setAllocMode(false)}
         onSaveAlloc={(newAlloc)=>{setSavedAlloc(newAlloc);scheduleSave(items,newAlloc);}}
