@@ -356,7 +356,7 @@ async function gCreate(token){
   return(await r.json()).id;
 }
 function migrateItem(it){
-  return{...it,stockQty:it.stockQty||0,firstOrderDate:it.firstOrderDate||it.supplierOrderDate||"",secondOrderDate:it.secondOrderDate||"",allOrdered:it.allOrdered||false,orderedQty:it.orderedQty!=null?it.orderedQty:it.qty,arrivedQty:(()=>{const r=it.arrivedQty!=null?it.arrivedQty:(it.arrived?it.qty:0);return r>0?r:(it.allArrived?(it.orderedQty!=null?it.orderedQty:it.qty):0);})(),shippedQty:it.shippedQty||0,allArrived:it.allArrived||it.arrived||false,arrivedTs:it.arrivedTs||"",firstArrivedTs:it.firstArrivedTs||"",importedAt:it.importedAt||it.orderDate||todayStr()};
+  return{...it,stockQty:it.stockQty||0,firstOrderDate:it.firstOrderDate||it.supplierOrderDate||"",secondOrderDate:it.secondOrderDate||"",allOrdered:it.allOrdered||false,orderedQty:it.orderedQty!=null?it.orderedQty:it.qty,arrivedQty:it.arrivedQty>0?it.arrivedQty:(it.allArrived?(it.orderedQty!=null?it.orderedQty:it.qty):(it.arrived?it.qty:0)),shippedQty:it.shippedQty||0,allArrived:it.allArrived||it.arrived||false,arrivedTs:it.arrivedTs||"",firstArrivedTs:it.firstArrivedTs||"",importedAt:it.importedAt||it.orderDate||todayStr()};
 }
 
 // ── Setup ──
