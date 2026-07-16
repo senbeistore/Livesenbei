@@ -6,7 +6,8 @@
 <title>備貨追蹤</title>
 <script>
 window.onerror=function(msg,src,line,col,err){
-  document.body.innerHTML='<div style="white-space:pre-wrap;padding:20px;color:#b91c1c;font-family:monospace;font-size:13px;">錯誤：\n'+String(msg)+'\n第'+line+'行\n'+(err&&err.stack?String(err.stack):'')+' </div>';
+  var info='錯誤：\n'+String(msg)+'\n來源：'+String(src)+'\n第'+line+'行 第'+col+'欄\n'+(err&&err.stack?String(err.stack):'無stack');
+  document.body.innerHTML='<div style="white-space:pre-wrap;padding:20px;color:#b91c1c;font-family:monospace;font-size:12px;">'+info+'</div>';
 };
 </script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
