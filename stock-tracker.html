@@ -97,8 +97,31 @@ function getBaseStyle(style){
   for(const c of COLOR_SUFFIXES){if(style.endsWith(c))return style.slice(0,-c.length);}
   return style;
 }
-func
-function App(){return <div style={{padding:20,color:"green"}}>前3%OK</div>;}
-try{ReactDOM.createRoot(document.getElementById("root")).render(<App/>);}catch(e){document.body.innerHTML="前3%錯誤："+e.message;}</script>
+function getGroupKey(it){
+  if(!it.size)return it.product+"|||"+getBaseStyle(it.style||it.color||"");
+  return it.product+"|||"+[it.style,it.color].filter(Boolean).join("·");
+}
+function getGroupLabel(it){
+  if(!it.size)return getBaseStyle(it.style||it.color||"")||it.product;
+  return [it.style,it.color].filter(Boolean).join(" ")||it.product;
+}
+function getSortSize(it){return sizeOrder(it.size||it.color);}
+function sortPri(it){if(it.allArrived)return 4;if(it.allOrdered)return 3;if(it.firstOrderDate)return 2;return 1;}
+const GROUP_LABEL={1:"📋 未開始訂貨",2:"🚚 訂貨中",3:"📦 全數訂完，待到貨",4:"✅ 已到貨"};
+function makeOrderKey(customerKey,items){return customerKey+"||"+items.map(it=>itemKey(it)+"x"+it.qty).sort().join("|");}
+
+// ── CSV 解析 ──
+function parseLine(line){const out=[];let cur="",q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++;}else q=!q;}else if(ch===','&&!q){out.push(cur);cur="";}else cur+=ch;}out.push(cur);return out;}
+function parseBakuCSV(text){
+  if(text.charCodeAt(0)===0xFEFF)text=text.slice(1);
+  const lines=text.replace(/\r/g,"").split("\n").filter(Boolean);
+  if(lines.length<2)return[];
+  const hdr=parseLine(lines[0]).map(h=>h.trim());
+  const ix=k=>hdr.findIndex(h=>h===k);
+  const[pi,ci,si,sti,qi]=["商品名稱","顏色","尺寸","款式","數量"].map(ix);
+  // 去掉商品名結尾無斜線的括號備注（如「商品名(內褲組也在這）」→「商品名」）
+  const normProd=s=>s.replace(/\s
+function App(){return <div style={{padding:20,color:"green"}}>前4150OK</div>;}
+try{ReactDOM.createRoot(document.getElementById("root")).render(<App/>);}catch(e){document.body.innerHTML="前4150錯誤："+e.message;}</script>
 </body>
 </html>
