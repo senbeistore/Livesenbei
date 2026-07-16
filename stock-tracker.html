@@ -156,7 +156,7 @@ function parseSenbeiAOA(aoa){
 function computeAlloc(parsed,stockItems){
   const{customers,orders}=parsed;
   const stock={};
-  stockItems.forEach(it=>{const fk=flatKey(it);stock[fk]=(stock[fk]||0)+Math.max(0,(it.(it.arrivedQty||0)+(it.stockQty||0)-(it.shippedQty||0);
+  stockItems.forEach(it=>{const fk=flatKey(it);stock[fk]=(stock[fk]||0)+Math.max(0,(it.arrivedQty||0)+(it.stockQty||0)-(it.shippedQty||0));
   // 依客人總金額排序訂單
   const sorted=[...orders].sort((a,b)=>(customers[b.customerKey]?.totalAmount||0)-(customers[a.customerKey]?.totalAmount||0));
   const result={};
