@@ -83,7 +83,7 @@ function getGroupLabel(it){
   return [it.style,it.color].filter(Boolean).join(" ")||it.product;
 }
 function getSortSize(it){return sizeOrder(it.size||it.color);}
-function sortPri(it){if(it.allArrived||(it.stockQty||0)>0||(it.arrivedQty||0)>0)return 4;if(it.allOrdered)return 3;if(it.firstOrderDate)return 2;return 1;}
+function sortPri(it){if(it.allArrived)return 4;if(it.allOrdered)return 3;if(it.firstOrderDate)return 2;return 1;}
 const GROUP_LABEL={1:"📋 未開始訂貨",2:"🚚 訂貨中",3:"📦 全數訂完，待到貨",4:"✅ 已到貨"};
 function makeOrderKey(customerKey,items){return customerKey+"||"+items.map(it=>itemKey(it)+"x"+it.qty).sort().join("|");}
 
@@ -406,7 +406,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
   const late3=isLateOrder(it);const late14=isLateArrival(it);
   const days3=late3?daysSince(it.importedAt):null;const days14=late14?daysSince(it.firstOrderDate):null;
   let borderColor=C.line,bgColor=C.surface;
-  if(it.allArrived||(it.stockQty||0)>0||(it.arrivedQty||0)>0){bgColor=C.successSoft;borderColor=C.success;}
+  if(it.allArrived){bgColor=C.successSoft;borderColor=C.success;}
   else if(late14){bgColor=C.warningSoft;borderColor=C.warning;}
   if(sel&&!it.allArrived){borderColor=C.info;}
   const shippedQty=it.shippedQty||0;
