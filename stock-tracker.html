@@ -280,10 +280,10 @@ async function gFetch(token,gistId){
   const r=await fetch(`https://api.github.com/gists/${gistId}`,{headers:{Authorization:`Bearer ${token}`,Accept:"application/vnd.github.v3+json"}});
   if(!r.ok)throw new Error(`無法讀取 (HTTP ${r.status})`);
   const d=await r.json();const content=d.files[GIST_FILE]?.content;
-  try{const p=JSON.parse(content||"{}");return{items:(p.items||[]).map(migrateItem),savedAlloc:p.savedAlloc||null};}catch{return{items:[],savedAlloc:null};}
+  try{const p=JSON.parse(content||"{}");return{items:(p.items||[]).map(migrateItem),savedAlloc:p.savedAlloc||null,iopenCustom:p.iopenCustom||[]};}catch{return{items:[],savedAlloc:null,iopenCustom:[]};}
 }
-async function gSave(token,gistId,items,savedAlloc){
-  const r=await fetch(`https://api.github.com/gists/${gistId}`,{method:"PATCH",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify({items,savedAlloc},null,2)}}})});
+async function gSave(token,gistId,items,savedAlloc,iopenCustom){
+  const r=await fetch(`https://api.github.com/gists/${gistId}`,{method:"PATCH",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify({items,savedAlloc,iopenCustom:iopenCustom||[]},null,2)}}})});
   if(!r.ok)throw new Error(`儲存失敗 (HTTP ${r.status})`);
 }
 async function gCreate(token){
@@ -341,7 +341,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
   const late3=isLateOrder(it);const late14=isLateArrival(it);
   const days3=late3?daysSince(it.importedAt):null;const days14=late14?daysSince(it.firstOrderDate):null;
   let borderColor=C.line,bgColor=C.surface;
-  if(it.allArrived){bgColor=C.successSoft;borderColor=C.success;}
+  if(it.allArrived||(it.stockQty||0)>0||(it.arrivedQty||0)>0){bgColor=C.successSoft;borderColor=C.success;}
   else if(late14){bgColor=C.warningSoft;borderColor=C.warning;}
   if(sel&&!it.allArrived){borderColor=C.info;}
   const shippedQty=it.shippedQty||0;
@@ -814,6 +814,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
 // ── 主應用 ──
 function App(){
   const[token,setToken]=useState(()=>localStorage.getItem("st_token")||"");
+  const[iopenCustom,setIopenCustom]=useState([]);
+  const iopenAppRef=useRef(null);
   const[workspaces,setWorkspaces]=useState(()=>{const raw=localStorage.getItem("st_workspaces");if(raw){try{return JSON.parse(raw);}catch{}}const oldGist=localStorage.getItem("st_gist_id");if(oldGist)return[{name:"第一場次",gistId:oldGist}];return[];});
   const[activeIdx,setActiveIdx]=useState(()=>{const i=parseInt(localStorage.getItem("st_active")||"0",10);return isNaN(i)?0:i;});
   const gistId=workspaces[activeIdx]?.gistId||"";
@@ -831,7 +833,7 @@ function App(){
 
   useEffect(()=>{savedAllocRef.current=savedAlloc;},[savedAlloc]);
   useEffect(()=>{
-    if(!setupMode&&token&&gistId){setLoading(true);gFetch(token,gistId).then(({items:its,savedAlloc:sa})=>{setItems(its);setSavedAlloc(sa);setLoading(false);}).catch(e=>{setGlobalErr(e.message);setLoading(false);});}
+    if(!setupMode&&token&&gistId){setLoading(true);gFetch(token,gistId).then(({items:its,savedAlloc:sa,iopenCustom:ic})=>{setItems(its);setSavedAlloc(sa);if(ic&&ic.length)setIopenCustom(ic);setLoading(false);}).catch(e=>{setGlobalErr(e.message);setLoading(false);});}
   },[]);
 
   const scheduleSave=useCallback((newItems,newAlloc)=>{
@@ -881,6 +883,34 @@ function App(){
   }
 
   if(setupMode)return<Setup onDone={(t,g,name)=>{setToken(t);const ws=[{name:name||"第一場次",gistId:g}];setWorkspaces(ws);setActiveIdx(0);saveWorkspaces(ws,0);localStorage.setItem("st_token",t);setSetupMode(false);gFetch(t,g).then(({items:its,savedAlloc:sa})=>{setItems(its);setSavedAlloc(sa);}).catch(e=>setGlobalErr(e.message));}}/>;
+
+  function handleIopenAppXLS(files){
+    if(!files||!files.length)return;
+    var arr=Array.from(files);
+    var pending=arr.length,merged=[];
+    arr.forEach(function(file){
+      var reader=new FileReader();
+      reader.onload=function(ev){
+        try{
+          var wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+          var ws=wb.Sheets[wb.SheetNames[0]];
+          var aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+          var result=parseIopenXLS(aoa);
+          var allCustom=(result&&result.allCustom)||[];
+          var seen={};
+          merged.forEach(function(c){seen[c.orderNo+'|'+c.prod]=1;});
+          allCustom.forEach(function(c){if(!seen[c.orderNo+'|'+c.prod])merged.push(c);});
+        }catch(e){alert(file.name+' 讀取失敗：'+e.message);}
+        pending--;
+        if(pending===0){
+          var filtered=merged.filter(function(c){var p=c.prod&&c.prod.trim();return p&&p!=='運費'&&p.indexOf('湊卷')===-1&&p.indexOf('自願使用無退款')===-1;});
+          setIopenCustom(filtered.slice());
+          if(token&&gistId){setSaving(true);gSave(token,gistId,items,savedAlloc,filtered).then(function(){setSaving(false);setLastSaved(new Date());}).catch(function(e){setSaving(false);setGlobalErr("儲存失敗："+e.message);});}
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
 
   // 需求彙總資料（useMemo 預先計算）
   const summaryData=useMemo(()=>{
@@ -941,6 +971,8 @@ function App(){
             {saving&&<span style={{color:C.inkMuted,fontSize:11}}>儲存中…</span>}
             {lastSaved&&!saving&&<span style={{color:C.inkMuted,fontSize:11}}>已儲存 {fmtSavedTime(lastSaved)}</span>}
             {!allocMode&&<button onClick={()=>fileRef.current.click()} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>匯入備貨清單</button>}
+            {!allocMode&&<button onClick={()=>iopenAppRef.current.click()} style={{background:"#7C3AED",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>客訂XLS</button>}
+            <input ref={iopenAppRef} type="file" accept=".xls,.xlsx" multiple style={{display:"none"}} onChange={e=>handleIopenAppXLS(e.target.files)}/>
             <input ref={fileRef} type="file" accept=".csv" multiple style={{display:"none"}} onChange={handleCSV}/>
             <button onClick={()=>{setAllocMode(!allocMode);setShowWorkspaces(false);setShowSettings(false);}} style={{background:allocMode?C.info:C.surface,color:allocMode?"#fff":C.inkMuted,border:`1px solid ${allocMode?C.info:C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,fontWeight:allocMode?"600":"400",cursor:"pointer"}}>配貨</button>
             <button onClick={()=>{setShowSettings(!showSettings);setShowWorkspaces(false);}} style={{border:`1px solid ${C.line}`,background:C.surface,color:C.inkMuted,borderRadius:8,padding:"7px 10px",fontSize:14,cursor:"pointer"}}>⚙</button>
