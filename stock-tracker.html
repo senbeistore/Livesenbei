@@ -344,14 +344,14 @@ async function gFetch(token,gistId){
   const r=await fetch(`https://api.github.com/gists/${gistId}`,{headers:{Authorization:`Bearer ${token}`,Accept:"application/vnd.github.v3+json"}});
   if(!r.ok)throw new Error(`無法讀取 (HTTP ${r.status})`);
   const d=await r.json();const content=d.files[GIST_FILE]?.content;
-  try{const p=JSON.parse(content||"{}");return{items:(p.items||[]).map(migrateItem),savedAlloc:p.savedAlloc||null,iopenCustom:p.iopenCustom||[]};}catch{return{items:[],savedAlloc:null,iopenCustom:[]};}
+  try{const p=JSON.parse(content||"{}");return{items:(p.items||[]).map(migrateItem),savedAlloc:p.savedAlloc||null,iopenCustom:p.iopenCustom||[],iopenData:p.iopenData||{}};}catch{return{items:[],savedAlloc:null,iopenCustom:[],iopenData:{}};}
 }
-async function gSave(token,gistId,items,savedAlloc,iopenCustom){
-  const r=await fetch(`https://api.github.com/gists/${gistId}`,{method:"PATCH",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify({items,savedAlloc,iopenCustom:iopenCustom||[]},null,2)}}})});
+async function gSave(token,gistId,items,savedAlloc,iopenCustom,iopenData){
+  const r=await fetch(`https://api.github.com/gists/${gistId}`,{method:"PATCH",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify({items,savedAlloc,iopenCustom:iopenCustom||[],iopenData:iopenData||{}},null,2)}}})});
   if(!r.ok)throw new Error(`儲存失敗 (HTTP ${r.status})`);
 }
 async function gCreate(token){
-  const r=await fetch("https://api.github.com/gists",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({description:"備貨追蹤 - 理貨台",public:false,files:{[GIST_FILE]:{content:JSON.stringify({items:[],savedAlloc:null})}}})});
+  const r=await fetch("https://api.github.com/gists",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({description:"備貨追蹤 - 理貨台",public:false,files:{[GIST_FILE]:{content:JSON.stringify({items:[],savedAlloc:null,iopenCustom:[],iopenData:{}})}}})});
   if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(`建立失敗 (${r.status})：${e.message||"請確認Token是否有gist權限"}`);}
   return(await r.json()).id;
 }
@@ -493,7 +493,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
 }
 
 // ── 配貨視圖 ──
-function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}){
+function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,iopenData,onSaveIopen}){
   const[editAlloc,setEditAlloc]=useState(savedAlloc||null);
   const[allocMethod,setAllocMethod]=useState("amount"); // "amount" | "proportional"
   const[parsedCSV,setParsedCSV]=useState(null); // 暫存解析後的CSV，模式切換時重新計算
@@ -502,7 +502,6 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
   const[editingKey,setEditingKey]=useState(null);
   const[shipInputs,setShipInputs]=useState({});
   const iopenFileRef=useRef(null);
-  const[iopenData,setIopenData]=useState({});
   const[iopenXlsName,setIopenXlsName]=useState("");
   const[showIopen,setShowIopen]=useState(false);
   const fileRef=useRef(null);
@@ -667,7 +666,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
           });
         }catch(e){alert(file.name+" \u8b80\u53d6\u5931\u6557\uff1a"+e.message);}
         pending--;
-        if(pending===0)setIopenData(Object.assign({},mergedIg));
+        if(pending===0)onSaveIopen(Object.assign({},mergedIg));
       };
       reader.readAsArrayBuffer(file);
     });
@@ -767,7 +766,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <button onClick={()=>iopenFileRef.current.click()} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>選擇 XLS（可多選）</button>
             {iopenXlsName&&<span style={{fontSize:12,color:C.inkMuted,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{iopenXlsName}</span>}
-            {Object.keys(iopenData).length>0&&<button onClick={()=>{setIopenData({});setIopenXlsName("");}} style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"3px 8px",cursor:"pointer"}}>清除</button>}
+            {Object.keys(iopenData).length>0&&<button onClick={()=>{onSaveIopen({});setIopenXlsName("");}} style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"3px 8px",cursor:"pointer"}}>清除</button>}
           </div>
           <input ref={iopenFileRef} type="file" accept=".xls,.xlsx" multiple style={{display:"none"}} onChange={e=>handleIopenXLS(e.target.files)}/>
         </div>)}
@@ -944,6 +943,9 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment}
 function App(){
   const[token,setToken]=useState(()=>localStorage.getItem("st_token")||"");
   const[iopenCustom,setIopenCustom]=useState([]);
+  const[iopenData,setIopenData]=useState({});
+  const iopenCustomRef=useRef([]);
+  const iopenDataRef=useRef({});
   const iopenAppRef=useRef(null);
   const[workspaces,setWorkspaces]=useState(()=>{const raw=localStorage.getItem("st_workspaces");if(raw){try{return JSON.parse(raw);}catch{}}const oldGist=localStorage.getItem("st_gist_id");if(oldGist)return[{name:"第一場次",gistId:oldGist}];return[];});
   const[activeIdx,setActiveIdx]=useState(()=>{const i=parseInt(localStorage.getItem("st_active")||"0",10);return isNaN(i)?0:i;});
@@ -962,7 +964,7 @@ function App(){
 
   useEffect(()=>{savedAllocRef.current=savedAlloc;},[savedAlloc]);
   useEffect(()=>{
-    if(!setupMode&&token&&gistId){setLoading(true);gFetch(token,gistId).then(({items:its,savedAlloc:sa,iopenCustom:ic})=>{setItems(its);setSavedAlloc(sa);if(ic&&ic.length)setIopenCustom(ic);setLoading(false);}).catch(e=>{setGlobalErr(e.message);setLoading(false);});}
+    if(!setupMode&&token&&gistId){setLoading(true);gFetch(token,gistId).then(({items:its,savedAlloc:sa,iopenCustom:ic,iopenData:idt})=>{setItems(its);setSavedAlloc(sa);if(ic&&ic.length){iopenCustomRef.current=ic;setIopenCustom(ic);}if(idt&&Object.keys(idt).length){iopenDataRef.current=idt;setIopenData(idt);}setLoading(false);}).catch(e=>{setGlobalErr(e.message);setLoading(false);});}
   },[]);
 
   const scheduleSave=useCallback((newItems,newAlloc)=>{
@@ -971,7 +973,7 @@ function App(){
       // 用 ref 讀最新值，避免閉包舊值覆蓋出貨記錄
       const allocToSave=newAlloc!==undefined?newAlloc:savedAllocRef.current;
       setSaving(true);
-      gSave(token,gistId,newItems,allocToSave).then(()=>{setSaving(false);setLastSaved(new Date());}).catch(e=>{setSaving(false);setGlobalErr("自動儲存失敗："+e.message);});
+      gSave(token,gistId,newItems,allocToSave,iopenCustomRef.current,iopenDataRef.current).then(()=>{setSaving(false);setLastSaved(new Date());}).catch(e=>{setSaving(false);setGlobalErr("自動儲存失敗："+e.message);});
     },800);
   },[token,gistId]);
 
@@ -1033,8 +1035,8 @@ function App(){
         pending--;
         if(pending===0){
           var filtered=merged.filter(function(c){var p=c.prod&&c.prod.trim();return p&&p!=='運費'&&p.indexOf('湊卷')===-1&&p.indexOf('自願使用無退款')===-1;});
-          setIopenCustom(filtered.slice());
-          if(token&&gistId){setSaving(true);gSave(token,gistId,items,savedAlloc,filtered).then(function(){setSaving(false);setLastSaved(new Date());}).catch(function(e){setSaving(false);setGlobalErr("儲存失敗："+e.message);});}
+          iopenCustomRef.current=filtered.slice();setIopenCustom(filtered.slice());
+          if(token&&gistId){setSaving(true);gSave(token,gistId,items,savedAlloc,filtered,iopenDataRef.current).then(function(){setSaving(false);setLastSaved(new Date());}).catch(function(e){setSaving(false);setGlobalErr("儲存失敗："+e.message);});}
         }
       };
       reader.readAsArrayBuffer(file);
@@ -1148,6 +1150,8 @@ function App(){
 
       {allocMode&&<AllocationView items={items} savedAlloc={savedAlloc} onClose={()=>setAllocMode(false)}
         onSaveAlloc={(newAlloc)=>{setSavedAlloc(newAlloc);scheduleSave(items,newAlloc);}}
+        iopenData={iopenData}
+        onSaveIopen={(d)=>{iopenDataRef.current=d;setIopenData(d);scheduleSave(items);}}
         onConfirmShipment={(oKey,shippedItems,newAlloc)=>{
           // 扣除庫存，並明確傳遞最新 alloc 避免閉包舊值問題
           setItems(prev=>{
