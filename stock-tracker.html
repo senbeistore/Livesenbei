@@ -9,6 +9,14 @@ window.onerror=function(msg,src,line,col,err){
   var info='錯誤：\n'+String(msg)+'\n來源：'+String(src)+'\n第'+line+'行 第'+col+'欄\n'+(err&&err.stack?String(err.stack):'無stack');
   document.body.innerHTML='<div style="white-space:pre-wrap;padding:20px;color:#b91c1c;font-family:monospace;font-size:12px;">'+info+'</div>';
 };
+var _consoleErrors=[];
+var _origErr=console.error;
+console.error=function(){
+  var msg=Array.from(arguments).map(function(a){return typeof a==='object'?JSON.stringify(a):String(a);}).join(' ');
+  _consoleErrors.push(msg);
+  document.body.innerHTML='<div style="white-space:pre-wrap;padding:20px;color:#b91c1c;font-family:monospace;font-size:12px;">Babel錯誤：\n'+msg+'</div>';
+  _origErr.apply(console,arguments);
+};
 </script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -23,6 +31,21 @@ input[type="number"]{-webkit-appearance:none;-moz-appearance:textfield;}
 </head>
 <body>
 <div id="root"></div>
+<script>
+// 診斷：確認所有 CDN 都已載入
+setTimeout(function(){
+  var missing=[];
+  if(typeof React==='undefined')missing.push('React');
+  if(typeof ReactDOM==='undefined')missing.push('ReactDOM');
+  if(typeof Babel==='undefined')missing.push('Babel');
+  if(typeof XLSX==='undefined')missing.push('XLSX');
+  if(missing.length>0){
+    document.body.innerHTML='<div style="padding:20px;color:red;font-family:monospace;">CDN 未載入: '+missing.join(', ')+'</div>';
+  } else if(document.getElementById('root')&&document.getElementById('root').children.length===0){
+    document.body.innerHTML='<div style="padding:20px;color:orange;font-family:monospace;">CDN OK，但 React 未渲染 - Babel 編譯可能失敗</div>';
+  }
+},3000);
+</script>
 <script type="text/babel" data-presets="react">
 const {useState,useEffect,useRef,useCallback,useMemo}=React;
 
