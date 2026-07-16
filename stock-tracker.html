@@ -1123,7 +1123,7 @@ function App(){
                 return(
                   <div key={vk||"_"} style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:4,marginBottom:4,opacity:allOrdered?0.5:1}}>
                     {vk&&<span style={{fontSize:12,fontWeight:600,color,minWidth:80,textDecoration:allOrdered?"line-through":"none"}}>{vk}</span>}
-                    {szKeys.map(sz=>(<span key={sz} style={{background:bg,borderRadius:12,padding:"2px 7px",fontSize:11,color}}>{sz}×{sg[sz]}</span>))}
+                    {szKeys.map(sz=>{const szIt=grpItems.find(it2=>(hasSizeField?it2.size:(it2.color||""))===sz);const szDone=szIt&&(szIt.allArrived||(szIt.arrivedQty||0)>0||(szIt.stockQty||0)>0);const szBg=szDone?"#d4edda":bg;const szCol=szDone?C.success:color;return <span key={sz} style={{background:szBg,borderRadius:12,padding:"2px 7px",fontSize:11,color:szCol}}>{sz}×{sg[sz]}</span>;})}
                     <span style={{fontSize:11,color:C.inkMuted}}>共{total}件</span>
                     {canArrive&&<button onClick={handleGroupArrive} style={{marginLeft:"auto",fontSize:11,padding:"2px 8px",borderRadius:10,border:`1px solid ${C.success}`,background:"#f0faf4",color:C.success,cursor:"pointer"}}>全數到貨</button>}
                   </div>
