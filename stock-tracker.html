@@ -74,6 +74,18 @@ function flatKey(it){
   const stAdd=st&&!pNoParens.includes(st)?st:"";
   return p+c+z+stAdd;
 }
+// 打勾狀態的 key：同一訂單若有多個相同 SKU（客人分開下單同款式，
+// 在同一張訂單重複買了完全相同的商品），用「第幾次出現」區分打勾狀態，
+// 避免打勾/出貨互相牽連（否則勾一件會連帶另一件也被視為已裝袋、一起出貨）
+function packKeyOf(allocItems,item){
+  const sku=flatKey(item);
+  let dup=0;
+  for(const x of allocItems){
+    if(x===item)break;
+    if(x.allocatedQty>0&&flatKey(x)===sku)dup++;
+  }
+  return dup>0?sku+"#"+dup:sku;
+}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function fmtSavedTime(d){if(!d)return"";return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}
 function fmtTs(ts){if(!ts)return"";const d=new Date(ts);return`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}
@@ -631,11 +643,14 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   function confirmShipment(oKey,orderNo){
     setEditAlloc(prev=>{
       const order=prev[oKey];
-      const shippedItems=order.allocItems.filter(it=>it.allocatedQty>0);
+      // 只出貨「已打勾裝袋」的品項；沒勾的留在 allocItems 繼續等打包，不可整批出貨
+      const shippedItems=order.allocItems.filter(it=>it.allocatedQty>0&&packed[oKey+"|"+packKeyOf(order.allocItems,it)]);
+      const remainItems=order.allocItems.filter(it=>!(it.allocatedQty>0&&packed[oKey+"|"+packKeyOf(order.allocItems,it)]));
+      if(shippedItems.length===0)return prev; // 一件都沒勾就不動作
       const newShipment={orderNo,shippedAt:new Date().toISOString(),items:shippedItems};
       const existingShipments=order.shipments||(order.shippedAt?[{orderNo:order.shippedOrderNo,shippedAt:order.shippedAt,items:order.allocItems}]:[]);
       const next={...prev,[oKey]:{...order,
-        allocItems:[],
+        allocItems:remainItems,
         shipments:[...existingShipments,newShipment],
         shippedAt:null,shippedOrderNo:null,
       }};
@@ -878,14 +893,15 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                 {/* 可出貨/等待出貨品項 */}
                 {o.allocItems.filter(it=>it.allocatedQty>0).length>0&&(
                   <div style={{marginBottom:6}}>
-                    <div style={{fontSize:11,color:C.success,fontWeight:700,marginBottom:4,display:"flex",alignItems:"center",gap:8}}><span>✅ 可出貨{hasShipments?"（新一批）":""}</span>{(()=>{const rows=o.allocItems.filter(x=>x.allocatedQty>0);const done=rows.filter(x=>packed[o.oKey+"|"+flatKey(x)]).length;if(!rows.length)return null;const all=done===rows.length;return <span style={{fontSize:10,fontWeight:600,color:all?C.success:C.inkMuted,background:all?C.successSoft:"transparent",border:`1px solid ${all?C.success:C.line}`,borderRadius:10,padding:"0 6px"}}>{all?"✓ 已裝袋 ":"已裝 "}{done}/{rows.length}</span>;})()}</div>
+                    <div style={{fontSize:11,color:C.success,fontWeight:700,marginBottom:4,display:"flex",alignItems:"center",gap:8}}><span>✅ 可出貨{hasShipments?"（新一批）":""}</span>{(()=>{const rows=o.allocItems.filter(x=>x.allocatedQty>0);const done=rows.filter(x=>packed[o.oKey+"|"+packKeyOf(o.allocItems,x)]).length;if(!rows.length)return null;const all=done===rows.length;return <span style={{fontSize:10,fontWeight:600,color:all?C.success:C.inkMuted,background:all?C.successSoft:"transparent",border:`1px solid ${all?C.success:C.line}`,borderRadius:10,padding:"0 6px"}}>{all?"✓ 已裝袋 ":"已裝 "}{done}/{rows.length}</span>;})()}</div>
                     {o.allocItems.filter(it=>it.allocatedQty>0).map((it,i)=>{
                       const sku=flatKey(it);
                       const snk=normalizedKey(it);
                       const otherUsage=Math.max(usage[sku]||0,usage[snk]||0);
                       const available=Math.max(0,Math.max(stockMap[sku]||0,stockMap[snk]||0)-otherUsage);
                       const isEditing=editingKey===o.oKey;
-                      const isPacked=!!packed[o.oKey+"|"+sku];
+                      const packKey=packKeyOf(o.allocItems,it);
+                      const isPacked=!!packed[o.oKey+"|"+packKey];
                       return(
                         <div key={i} style={{background:C.successSoft,borderRadius:8,padding:"6px 10px",marginBottom:4}}>
                           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
@@ -900,7 +916,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                             ):(
                               <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                                 <strong style={{fontSize:13,color:C.success,opacity:isPacked?0.45:1}}>× {it.allocatedQty}</strong>
-                                <button onClick={()=>togglePacked(o.oKey,sku)} title={isPacked?"取消裝袋":"標記已裝袋"}
+                                <button onClick={()=>togglePacked(o.oKey,packKey)} title={isPacked?"取消裝袋":"標記已裝袋"}
                                   style={{width:28,height:28,padding:0,lineHeight:1,borderRadius:7,
                                     border:`2px solid ${isPacked?C.success:C.line}`,
                                     background:isPacked?C.success:"#fff",color:"#fff",
@@ -961,9 +977,14 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                       <input type="text" value={shipInputs[o.oKey]||""} onChange={e=>setShipInputs(p=>({...p,[o.oKey]:e.target.value}))}
                         placeholder={(iopenInfo&&iopenInfo.orders&&iopenInfo.orders[shipments.length]&&iopenInfo.orders[shipments.length].orderNo)||(hasShipments?"填入第二次出貨單號":"填入出貨單號")}
                         style={{flex:1,border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,minWidth:0}}/>
-                      <button onClick={()=>{if(shipInputs[o.oKey]?.trim())confirmShipment(o.oKey,shipInputs[o.oKey].trim());}}
-                        disabled={!shipInputs[o.oKey]?.trim()}
-                        style={{background:shipInputs[o.oKey]?.trim()?C.success:"#ccc",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:shipInputs[o.oKey]?.trim()?"pointer":"default",whiteSpace:"nowrap"}}>
+                      <button onClick={()=>{
+                        if(!shipInputs[o.oKey]?.trim())return;
+                        const anyPacked=o.allocItems.some(it=>it.allocatedQty>0&&packed[o.oKey+"|"+packKeyOf(o.allocItems,it)]);
+                        if(!anyPacked){alert("請先勾選已裝袋的品項，才能出貨");return;}
+                        confirmShipment(o.oKey,shipInputs[o.oKey].trim());
+                      }}
+                        disabled={!shipInputs[o.oKey]?.trim()||!o.allocItems.some(it=>it.allocatedQty>0&&packed[o.oKey+"|"+packKeyOf(o.allocItems,it)])}
+                        style={{background:(shipInputs[o.oKey]?.trim()&&o.allocItems.some(it=>it.allocatedQty>0&&packed[o.oKey+"|"+packKeyOf(o.allocItems,it)]))?C.success:"#ccc",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:(shipInputs[o.oKey]?.trim()&&o.allocItems.some(it=>it.allocatedQty>0&&packed[o.oKey+"|"+packKeyOf(o.allocItems,it)]))?"pointer":"default",whiteSpace:"nowrap"}}>
                         確認出貨
                       </button>
                     </div>
@@ -1188,9 +1209,9 @@ function App(){
       </div>
 
       {allocMode&&<AllocationView items={items} savedAlloc={savedAlloc} onClose={()=>setAllocMode(false)}
-        onSaveAlloc={(newAlloc)=>{setSavedAlloc(newAlloc);scheduleSave(items,newAlloc);}}
+        onSaveAlloc={(newAlloc)=>{savedAllocRef.current=newAlloc;setSavedAlloc(newAlloc);scheduleSave(items,newAlloc);}}
         iopenData={iopenData}
-        onSaveIopen={(d)=>{iopenDataRef.current=d;setIopenData(d);scheduleSave(items);}}
+        onSaveIopen={(d)=>{iopenDataRef.current=d;setIopenData(d);scheduleSave(items,savedAllocRef.current);}}
         onConfirmShipment={(oKey,shippedItems,newAlloc)=>{
           // 扣除庫存，並明確傳遞最新 alloc 避免閉包舊值問題
           setItems(prev=>{
