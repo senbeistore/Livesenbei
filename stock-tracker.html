@@ -44,7 +44,25 @@ function normalizedKey(it){return[it.product,it.color,it.size,it.style].map(nkSt
 // flatKey：終極模糊比對；style 去括號後比對，避免選項在括號內被省略
 // 還需要的數量：orderedQty 為 0 是合法值，不可用 || 退回 qty（0 是 falsy）
 function needQty(it){return it.orderedQty!=null?it.orderedQty:(it.qty||0);}
-function normProdName(s){return String(s||"").replace(/\s*[（(][^/／）)]*[）)]\s*$/,"").trim()||String(s||"");}
+function normProdName(s){
+  let v=String(s||"");
+  v=v.replace(/\s*[（(][^/／）)]*[）)]\s*$/,"").trim();   // 結尾完整括號註記（不含斜線）
+  v=v.replace(/\s*[（(][^）)]*$/,"").trim();              // 結尾未閉合括號（CSV 逗號切斷造成）
+  return v||String(s||"");
+}
+// 顯示用商品名：只剝掉「給客人看的提示語」括號（自行加入/未滿額/加購下單…），
+// 保留款式類括號（Ｖ款/全包款/粗肩細肩），否則會分不出款式
+function displayProd(s){
+  const v=String(s||"");
+  var lp=Math.max(v.lastIndexOf("（"),v.lastIndexOf("("));
+  if(lp<0)return v;
+  var head=v.slice(0,lp).trim();
+  var tail=v.slice(lp+1).split("）").join("").split(")").join("").trim();
+  var NOTE=/自行加入|未滿額|會刪除|加購下單|也在這|備註/;
+  if(NOTE.test(tail)&&head)return head;
+  return v;
+}
+function dispName(it){return [displayProd(it.product),it.color,it.size,it.style].filter(Boolean).join(" ");}
 function flatKey(it){
   const ns=s=>String(s||"")
     .replace(/(?:女裝|男裝|兒童|童裝|女童|男童)?(?:顏色|尺寸|尺碼|身高|體重|規格|款式|全尺碼)[:：]/g,"")
@@ -120,13 +138,22 @@ function parseAllocSpec(raw){
 }
 
 // ── SENBEI 訂單解析 ──
+// hotsnet 匯出的 CSV 若商品名含逗號卻未加引號，會多切出欄位使後面全部位移。
+// 偵測欄數超出表頭時，把多切的欄位併回商品名。
+function fixShiftedRow(r,pi,hdrLen){
+  if(!Array.isArray(r)||!hdrLen||pi==null||pi<0)return r;
+  const extra=r.length-hdrLen;
+  if(extra<=0)return r;
+  const merged=r.slice(pi,pi+1+extra).map(x=>String(x==null?"":x)).join(",");
+  return r.slice(0,pi).concat([merged],r.slice(pi+1+extra));
+}
 function parseSenbeiAOA(aoa){
-  let mCols=null,dCols=null;
+  let mCols=null,dCols=null,dHdrLen=0;
   for(const r of aoa){
     if(!r||!r[0])continue;
     const c0=normalizeStr(String(r[0]));
     if(c0.includes("表頭")&&c0.includes("M")){const m={};r.forEach((v,i)=>{if(v)m[normalizeStr(String(v))]=i;});mCols={account:m["訂購人"]??1,name:m["收件人"]??2,amount:m["小計"]??m["總金額(含運)"]??m["總金額"]??-1};}
-    if(c0.includes("明細")&&c0.includes("D")){const m={};r.forEach((v,i)=>{if(v)m[normalizeStr(String(v))]=i;});const sk=Object.keys(m).find(k=>k.includes("規格"));dCols={product:m["商品名稱"]??1,qty:m["訂購數量"]??3,spec:sk?m[sk]:4};}
+    if(c0.includes("明細")&&c0.includes("D")){const m={};r.forEach((v,i)=>{if(v)m[normalizeStr(String(v))]=i;});const sk=Object.keys(m).find(k=>k.includes("規格"));dCols={product:m["商品名稱"]??1,qty:m["訂購數量"]??3,spec:sk?m[sk]:4};dHdrLen=r.length;}
     if(mCols&&dCols)break;
   }
   mCols=mCols||{account:1,name:2,amount:-1};
@@ -144,6 +171,7 @@ function parseSenbeiAOA(aoa){
       curOrder={orderRef:`${key}_${orders.length+1}`,customerKey:key,amount,items:[]};
       orders.push(curOrder);
     }else if(c0==="D"&&curOrder){
+      r=fixShiftedRow(r,dCols.product,dHdrLen);
       let product=normalizeStr(r[dCols.product]||"");if(!product)return;
       const qty=parseInt(r[dCols.qty],10)||1;
       let specText=normalizeStr(r[dCols.spec]||"");
@@ -424,7 +452,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
     if(nowFull&&!it.allArrived){onUpdate("allArrived",true);if(!it.arrivedTs)onUpdate("arrivedTs",new Date().toISOString());}
   }
   function handleAllArrived(checked){
-    const label=[it.product,it.color,it.size,it.style].filter(Boolean).join(" ");
+    const label=dispName(it);
     const maxQ2=it.orderedQty!=null?it.orderedQty:it.qty;
     if(checked){
       if(!window.confirm(`確認「${label}」共 ${maxQ2} 件全數到貨？\n點確定後到貨數量會自動填入 ${maxQ2} 件。`))return;
@@ -840,7 +868,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                       </div>
                       {sItems.map((it,ii)=>(
                         <div key={ii} style={{fontSize:12,color:sc.color,paddingLeft:4,lineHeight:1.8}}>
-                          {[it.product,it.color,it.size,it.style].filter(Boolean).join(" ")} × {it.allocatedQty}
+                          {dispName(it)} × {it.allocatedQty}
                         </div>
                       ))}
                     </div>
@@ -861,7 +889,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                       return(
                         <div key={i} style={{background:C.successSoft,borderRadius:8,padding:"6px 10px",marginBottom:4}}>
                           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                            <span style={{fontSize:13,color:C.success,fontWeight:500,flex:1,textDecoration:isPacked?"line-through":"none",opacity:isPacked?0.45:1}}>{[it.product,it.color,it.size,it.style].filter(Boolean).join(" ")}</span>
+                            <span style={{fontSize:13,color:C.success,fontWeight:500,flex:1,textDecoration:isPacked?"line-through":"none",opacity:isPacked?0.45:1}}>{dispName(it)}</span>
                             {isEditing?(
                               <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
                                 <button onClick={()=>updateAllocQty(o.oKey,sku,-1)} disabled={it.allocatedQty<=0} style={{width:26,height:26,borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:it.allocatedQty>0?"pointer":"default",fontSize:16,fontWeight:700,color:C.ink}}>−</button>
@@ -902,7 +930,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                       return(
                         <div key={i} style={{background:C.orangeSoft,borderRadius:8,padding:"6px 10px",marginBottom:4}}>
                           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                            <span style={{fontSize:13,color:C.orange,flex:1}}>{[it.product,it.color,it.size,it.style].filter(Boolean).join(" ")}</span>
+                            <span style={{fontSize:13,color:C.orange,flex:1}}>{dispName(it)}</span>
                             {available>0?(
                               <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
                                 <span style={{fontSize:12,color:C.inkMuted}}>待 {waitQty}</span>
