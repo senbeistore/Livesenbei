@@ -42,6 +42,8 @@ function itemKey(it){return[it.product,it.color,it.size,it.style].join("|||");}
 function nkStr(s){return String(s||"").replace(/｜/g,"|").replace(/\//g," ").replace(/\s+/g," ").trim().toLowerCase();}
 function normalizedKey(it){return[it.product,it.color,it.size,it.style].map(nkStr).join("|||");}
 // flatKey：終極模糊比對；style 去括號後比對，避免選項在括號內被省略
+// 還需要的數量：orderedQty 為 0 是合法值，不可用 || 退回 qty（0 是 falsy）
+function needQty(it){return it.orderedQty!=null?it.orderedQty:(it.qty||0);}
 function normProdName(s){return String(s||"").replace(/\s*[（(][^/／）)]*[）)]\s*$/,"").trim()||String(s||"");}
 function flatKey(it){
   const ns=s=>String(s||"")
@@ -502,6 +504,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   const[err,setErr]=useState("");
   const[editingKey,setEditingKey]=useState(null);
   const[shipInputs,setShipInputs]=useState({});
+  const[packed,setPacked]=useState({});  // 裝袋標記：key = oKey|sku
+  const togglePacked=(oKey,sku)=>setPacked(p=>({...p,[oKey+"|"+sku]:!p[oKey+"|"+sku]}));
   const iopenFileRef=useRef(null);
   const[iopenXlsName,setIopenXlsName]=useState("");
   const[showIopen,setShowIopen]=useState(false);
@@ -575,7 +579,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
         if(wi){item={...wi,allocatedQty:0};allocItems=[...allocItems,item];order.allocItems=allocItems;}
       }
       if(!item)return prev;
-      const maxByOrder=item.orderedQty||item.qty||999; // 不可超過客人訂購數量
+      const maxByOrder=item.orderedQty!=null?item.orderedQty:(item.qty!=null?item.qty:999); // 不可超過客人訂購數量
       const newQty=Math.max(0,Math.min(available+item.allocatedQty,maxByOrder,item.allocatedQty+delta));
       const matchSku=(it)=>{const fk=flatKey(it);return fk===sku||normalizedKey(it)===sku||itemKey(it)===sku;};
       const newAllocItems=order.allocItems.map(it=>matchSku(it)?{...it,allocatedQty:newQty}:it);
@@ -584,11 +588,11 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
       let newWaitingItems=[...order.waitingItems];
       if(diff>0){
         const existing=newWaitingItems.find(it=>matchSku(it));
-        if(existing)newWaitingItems=newWaitingItems.map(it=>matchSku(it)?{...it,allocatedQty:0,orderedQty:(it.orderedQty||it.qty)+diff}:it);
+        if(existing)newWaitingItems=newWaitingItems.map(it=>matchSku(it)?{...it,allocatedQty:0,orderedQty:(needQty(it))+diff}:it);
         else{const orig=newAllocItems.find(it=>matchSku(it))||item;newWaitingItems.push({...orig,allocatedQty:0,orderedQty:diff,qty:diff});}
       }else if(diff<0){
         // 從waiting取回
-        newWaitingItems=newWaitingItems.map(it=>{if(matchSku(it)&&(it.orderedQty||it.qty)>0){const take=Math.min(Math.abs(diff),(it.orderedQty||it.qty));return{...it,orderedQty:(it.orderedQty||it.qty)-take};}return it;}).filter(it=>(it.orderedQty||it.qty)>0);
+        newWaitingItems=newWaitingItems.map(it=>{if(matchSku(it)&&(needQty(it))>0){const take=Math.min(Math.abs(diff),(needQty(it)));return{...it,orderedQty:(needQty(it))-take};}return it;}).filter(it=>(needQty(it))>0);
       }
       const next={...prev,[oKey]:{...order,allocItems:newAllocItems,waitingItems:newWaitingItems}};
       onSaveAlloc(next);
@@ -612,6 +616,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
       return next;
     });
     setShipInputs(p=>({...p,[oKey]:""}));
+    setPacked(p=>{const n={...p};Object.keys(n).forEach(k=>{if(k.indexOf(oKey+"|")===0)delete n[k];});return n;});
   }
 
   function revokeShipment(oKey,idx){
@@ -682,7 +687,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
     sorted.forEach(o=>{
       const status=o.shippedAt?"✅ 已出貨":"可出貨";
       o.allocItems.forEach(it=>{if(it.allocatedQty>0)rows.push([o.customerAccount,o.customerName,o.customerTotalAmount,o.orderAmount,it.product,it.color,it.size,it.style,it.allocatedQty,status,o.shippedOrderNo||"",o.shippedAt?fmtTs(o.shippedAt):""])});
-      o.waitingItems.forEach(it=>{if((it.orderedQty||it.qty)>0)rows.push([o.customerAccount,o.customerName,o.customerTotalAmount,o.orderAmount,it.product,it.color,it.size,it.style,it.orderedQty||it.qty,"⏳ 待補貨","",""]);});
+      o.waitingItems.forEach(it=>{if((needQty(it))>0)rows.push([o.customerAccount,o.customerName,o.customerTotalAmount,o.orderAmount,it.product,it.color,it.size,it.style,needQty(it),"⏳ 待補貨","",""]);});
     });
     const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
@@ -845,17 +850,18 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                 {/* 可出貨/等待出貨品項 */}
                 {o.allocItems.filter(it=>it.allocatedQty>0).length>0&&(
                   <div style={{marginBottom:6}}>
-                    <div style={{fontSize:11,color:C.success,fontWeight:700,marginBottom:4}}>✅ 可出貨{hasShipments?"（新一批）":""}</div>
+                    <div style={{fontSize:11,color:C.success,fontWeight:700,marginBottom:4,display:"flex",alignItems:"center",gap:8}}><span>✅ 可出貨{hasShipments?"（新一批）":""}</span>{(()=>{const rows=o.allocItems.filter(x=>x.allocatedQty>0);const done=rows.filter(x=>packed[o.oKey+"|"+flatKey(x)]).length;if(!rows.length)return null;const all=done===rows.length;return <span style={{fontSize:10,fontWeight:600,color:all?C.success:C.inkMuted,background:all?C.successSoft:"transparent",border:`1px solid ${all?C.success:C.line}`,borderRadius:10,padding:"0 6px"}}>{all?"✓ 已裝袋 ":"已裝 "}{done}/{rows.length}</span>;})()}</div>
                     {o.allocItems.filter(it=>it.allocatedQty>0).map((it,i)=>{
                       const sku=flatKey(it);
                       const snk=normalizedKey(it);
                       const otherUsage=Math.max(usage[sku]||0,usage[snk]||0);
                       const available=Math.max(0,Math.max(stockMap[sku]||0,stockMap[snk]||0)-otherUsage);
                       const isEditing=editingKey===o.oKey;
+                      const isPacked=!!packed[o.oKey+"|"+sku];
                       return(
                         <div key={i} style={{background:C.successSoft,borderRadius:8,padding:"6px 10px",marginBottom:4}}>
                           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                            <span style={{fontSize:13,color:C.success,fontWeight:500,flex:1}}>{[it.product,it.color,it.size,it.style].filter(Boolean).join(" ")}</span>
+                            <span style={{fontSize:13,color:C.success,fontWeight:500,flex:1,textDecoration:isPacked?"line-through":"none",opacity:isPacked?0.45:1}}>{[it.product,it.color,it.size,it.style].filter(Boolean).join(" ")}</span>
                             {isEditing?(
                               <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
                                 <button onClick={()=>updateAllocQty(o.oKey,sku,-1)} disabled={it.allocatedQty<=0} style={{width:26,height:26,borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:it.allocatedQty>0?"pointer":"default",fontSize:16,fontWeight:700,color:C.ink}}>−</button>
@@ -864,11 +870,15 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                                 <span style={{fontSize:10,color:C.inkMuted}}>可用{available+it.allocatedQty}</span>
                               </div>
                             ):(
-                              <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
-                                <strong style={{fontSize:13,color:C.success}}>× {it.allocatedQty}</strong>
-                                <button onClick={()=>updateAllocQty(o.oKey,sku,-it.allocatedQty)}
-                                  style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:"rgba(255,255,255,0.8)",borderRadius:6,padding:"1px 7px",cursor:"pointer",whiteSpace:"nowrap"}}>
-                                  釋放
+                              <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                                <strong style={{fontSize:13,color:C.success,opacity:isPacked?0.45:1}}>× {it.allocatedQty}</strong>
+                                <button onClick={()=>togglePacked(o.oKey,sku)} title={isPacked?"取消裝袋":"標記已裝袋"}
+                                  style={{width:28,height:28,padding:0,lineHeight:1,borderRadius:7,
+                                    border:`2px solid ${isPacked?C.success:C.line}`,
+                                    background:isPacked?C.success:"#fff",color:"#fff",
+                                    fontSize:16,fontWeight:700,cursor:"pointer",
+                                    display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                                  {isPacked?"✓":""}
                                 </button>
                               </div>
                             )}
@@ -880,15 +890,15 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                 )}
 
                 {/* 待補貨品項 */}
-                {o.waitingItems.filter(it=>(it.orderedQty||it.qty)>0).length>0&&(
+                {o.waitingItems.filter(it=>(needQty(it))>0).length>0&&(
                   <div style={{marginBottom:6}}>
                     <div style={{fontSize:11,color:C.orange,fontWeight:700,marginBottom:4}}>⏳ 待補貨</div>
-                    {o.waitingItems.filter(it=>(it.orderedQty||it.qty)>0).map((it,i)=>{
+                    {o.waitingItems.filter(it=>(needQty(it))>0).map((it,i)=>{
                       const sku=flatKey(it);
                       const snk=normalizedKey(it);
                       const otherUsage=Math.max(usage[sku]||0,usage[snk]||0);
                       const available=Math.max(0,Math.max(stockMap[sku]||0,stockMap[snk]||0)-otherUsage);
-                      const waitQty=it.orderedQty||it.qty;
+                      const waitQty=needQty(it);
                       return(
                         <div key={i} style={{background:C.orangeSoft,borderRadius:8,padding:"6px 10px",marginBottom:4}}>
                           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
