@@ -299,14 +299,18 @@ function recalculateAlloc(currentAlloc,parsed,stockItems,method){
       });
     });
     const allocItems=[],waitingItems=[];
+    // remainShipped：逐筆消耗的「剩餘已出貨額度」，避免同商品重複下單時，
+    // 第2筆也被誤判成「已出過」而整個消失（alreadyShipped 是總量，不能每筆都拿去比對）
+    const remainShipped={...alreadyShipped};
     o.items.forEach(item=>{
-      const shipped=alreadyShipped[flatKey(item)]||0;
+      const fk=flatKey(item);
+      const shipped=Math.min(item.qty,remainShipped[fk]||0);
+      remainShipped[fk]=(remainShipped[fk]||0)-shipped;
       const remaining=item.qty-shipped;
-      if(remaining<=0)return; // 已全數出貨，略過
-      const _kr=flatKey(item);
-      const rem=stock[_kr]||0;
+      if(remaining<=0)return; // 這一筆已出完，略過
+      const rem=stock[fk]||0;
       const give=Math.min(remaining,rem);
-      if(give>0)stock[_kr]=Math.max(0,rem-give);
+      if(give>0)stock[fk]=Math.max(0,rem-give);
       if(give>0)allocItems.push({...item,orderedQty:item.qty,allocatedQty:give});
       if(give<remaining)waitingItems.push({...item,orderedQty:remaining-give,allocatedQty:0,qty:remaining-give});
     });
@@ -366,7 +370,7 @@ function parseIopenXLS(aoa){
       if(!byIg[ig])byIg[ig]={orders:[],customItems:[],totalSpend:0,needGift:false};
       var dup=false;
       for(var q=0;q<byIg[ig].orders.length;q++)if(byIg[ig].orders[q].orderNo===orderNo)dup=true;
-      if(!dup)byIg[ig].orders.push({orderNo:orderNo,shipNo:shipNo,store:store});
+      if(!dup)byIg[ig].orders.push({orderNo:orderNo,shipNo:shipNo,store:store,amount:oAmt[orderNo]||0});
       if(!isLive&&prod){
         var item={ig:ig,orderNo:orderNo,shipNo:shipNo,prod:prod,spec1:spec1,spec2:spec2};
         byIg[ig].customItems.push(item);
@@ -840,7 +844,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div>
               <span style={{fontWeight:700,fontSize:14,color:C.ink}}>{c.account||c.name}</span>
-              {c.name&&c.account&&<span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>{c.name}</span>}{iopenInfo&&iopenInfo.needGift&&<span style={{marginLeft:6,fontSize:11,background:"#FFF5F5",color:"#C0392B",border:"1px solid #C0392B",borderRadius:10,padding:"1px 7px"}}>🎁 滿額贈</span>}{iopenInfo&&iopenInfo.orders&&iopenInfo.orders.map((ord,oi2)=>{const shipped=c.orders.reduce((s,o)=>s+((o.shipments&&o.shipments.length)||0),0);const used=oi2<shipped;const tk=c.orders[0]&&c.orders[0].oKey;return(<button key={oi2} onClick={()=>{if(tk&&!used){setShipInputs(p=>({...p,[tk]:ord.orderNo}));}else{navigator.clipboard.writeText(ord.orderNo).catch(()=>{});}}} style={{marginLeft:6,fontSize:11,color:used?C.inkMuted:C.info,border:`1px solid ${used?C.line:C.info}`,background:used?"transparent":C.infoSoft,borderRadius:10,padding:"1px 7px",cursor:"pointer",textDecoration:used?"line-through":"none",opacity:used?0.5:1}}>出貨單{["①","②","③","④"][Math.min(oi2,3)]}</button>);})}
+              {c.name&&c.account&&<span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>{c.name}</span>}{iopenInfo&&iopenInfo.needGift&&<span style={{marginLeft:6,fontSize:11,background:"#FFF5F5",color:"#C0392B",border:"1px solid #C0392B",borderRadius:10,padding:"1px 7px"}}>🎁 滿額贈</span>}{iopenInfo&&iopenInfo.orders&&iopenInfo.orders.map((ord,oi2)=>{const shipped=c.orders.reduce((s,o)=>s+((o.shipments&&o.shipments.length)||0),0);const used=oi2<shipped;const tk=c.orders[0]&&c.orders[0].oKey;return(<button key={oi2} onClick={()=>{if(tk&&!used){setShipInputs(p=>({...p,[tk]:ord.orderNo}));}else{navigator.clipboard.writeText(ord.orderNo).catch(()=>{});}}} style={{marginLeft:6,fontSize:11,color:used?C.inkMuted:C.info,border:`1px solid ${used?C.line:C.info}`,background:used?"transparent":C.infoSoft,borderRadius:10,padding:"1px 7px",cursor:"pointer",textDecoration:used?"line-through":"none",opacity:used?0.5:1,display:"inline-flex",alignItems:"center",gap:4}}><span>出貨單{["①","②","③","④"][Math.min(oi2,3)]}</span>{ord.store&&<span style={{opacity:0.85}}>{ord.store}</span>}{ord.amount>0&&<span style={{fontFamily:"monospace"}}>${ord.amount}</span>}</button>);})}
             </div>
             <span style={{fontSize:12,fontFamily:"monospace",color:C.inkMuted}}>NT${c.totalAmount.toLocaleString()}</span>
           </div>
