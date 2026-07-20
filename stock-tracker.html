@@ -542,6 +542,10 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
 }
 
 // ── 配貨視圖 ──
+function buildShipNotice(orderNo,store,prods){
+  var t=new Date().toLocaleDateString("zh-TW");
+  return "您好～這是出貨通知\n"+(orderNo||"")+"\n"+prods.join("\n")+(prods.length?"\n":"")+"於今日"+t+"已寄出\n至您下單指定的"+(store||"")+"\n2-3天後即到門市\n請務必記得留意簡訊呦\n3天後簡訊沒有收到的話建議致電門市詢問\n\u203c\ufe0f超商有無發簡訊我們無法知曉，再麻煩媽咪記得到超商詢問一下呦\n\u203c\ufe0f如若未取貨，訂單原始金額+退回運費38+純取運費60=匯款金額，未取貨請48H內完成匯款\n（未取貨訂單等同訂單卷失效）";
+}
 function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,iopenData,onSaveIopen}){
   const[editAlloc,setEditAlloc]=useState(savedAlloc||null);
   const[allocMethod,setAllocMethod]=useState("amount"); // "amount" | "proportional"
@@ -943,6 +947,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:sItems.length?6:0}}>
                         <span style={{color:sc.color,fontWeight:700,fontSize:12}}>📦 第{si+1}批出貨 {fmtTs(s.shippedAt)}</span>
                         <span style={{color:sc.color,fontFamily:"monospace",fontSize:12,opacity:0.85}}>{s.orderNo}</span>
+                        <button onClick={()=>{const store=(iopenInfo&&iopenInfo.orders&&(iopenInfo.orders.find(x=>String(x.orderNo)===String(s.orderNo))||{}).store)||"";const prods=(s.items||[]).filter(it=>it.allocatedQty>0).map(it=>dispName(it)+(it.allocatedQty>1?" ×"+it.allocatedQty:""));const key=o.oKey+"|b"+si;navigator.clipboard.writeText(buildShipNotice(s.orderNo,store,prods)).then(()=>{setCopiedKey(key);setTimeout(()=>setCopiedKey(""),1800);}).catch(()=>{});}} style={{color:sc.color,border:`1px solid ${sc.border}`,background:C.surface,borderRadius:6,padding:"2px 8px",fontSize:11,cursor:"pointer"}}>{copiedKey===(o.oKey+"|b"+si)?"\u2713 已複製":"\ud83d\udccb 複製通知"}</button>
                         <button onClick={()=>{if(window.confirm("確定撤銷這筆出貨記錄？品項會退回可出貨清單。"))revokeShipment(o.oKey,si);}} style={{marginLeft:"auto",color:sc.color,border:`1px solid ${sc.border}`,background:C.surface,borderRadius:6,padding:"2px 8px",fontSize:11,cursor:"pointer"}}>撤銷</button>
                       </div>
                       {sItems.map((it,ii)=>(
@@ -1059,14 +1064,13 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                       </button>
                     </div>
                     {(()=>{const typed=shipInputs[o.oKey];const ords=(iopenInfo&&iopenInfo.orders)||[];const isShippedOrd=(x)=>c.orders.some(oo=>(oo.shipments||[]).some(s=>String(s.orderNo)===String(x.orderNo)));const nextOrd=(typed&&ords.find(x=>x.orderNo===typed))||ords.find(x=>!isShippedOrd(x))||ords[shipments.length];if(!nextOrd||!(nextOrd.store||nextOrd.amount>0))return null;
-                      const prods=((iopenInfo&&iopenInfo.customItems)||[]).filter(ci=>String(ci.orderNo)===String(nextOrd.orderNo)&&ci.prod.indexOf("運費")===-1).map(ci=>ci.prod+(ci.spec1?" "+ci.spec1:"")+(ci.spec2?" "+ci.spec2:""));
-                      const buildMsg=()=>{const t=new Date().toLocaleDateString("zh-TW");return "您好～這是出貨通知\n"+nextOrd.orderNo+"\n"+prods.join("\n")+(prods.length?"\n":"")+"於今日"+t+"已寄出\n至您下單指定的"+(nextOrd.store||"")+"\n2-3天後即到門市\n請務必記得留意簡訊呦\n3天後簡訊沒有收到的話建議致電門市詢問\n\u203c\ufe0f超商有無發簡訊我們無法知曉，再麻煩媽咪記得到超商詢問一下呦\n\u203c\ufe0f如若未取貨，訂單原始金額+退回運費38+純取運費60=匯款金額，未取貨請48H內完成匯款\n（未取貨訂單等同訂單卷失效）";};
+                      const prods=o.allocItems.filter(it=>it.allocatedQty>0).map(it=>dispName(it)+(it.allocatedQty>1?" ×"+it.allocatedQty:""));
                       const cpk=o.oKey+"|"+nextOrd.orderNo;
                       return(
                       <div style={{fontSize:12,color:C.inkMuted,marginBottom:4,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                         {nextOrd.store&&<span>📍{nextOrd.store}</span>}
                         {nextOrd.amount>0&&<span style={{fontFamily:"monospace",fontWeight:700,color:C.ink}}>${nextOrd.amount}</span>}
-                        <button onClick={()=>{navigator.clipboard.writeText(buildMsg()).then(()=>{setCopiedKey(cpk);setTimeout(()=>setCopiedKey(""),1800);}).catch(()=>{});}} style={{fontSize:11,color:copiedKey===cpk?C.success:C.info,border:`1px solid ${copiedKey===cpk?C.success:C.info}`,background:copiedKey===cpk?C.successSoft:C.infoSoft,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>{copiedKey===cpk?"\u2713 已複製":"\ud83d\udccb 複製通知"}</button>
+                        <button onClick={()=>{navigator.clipboard.writeText(buildShipNotice(nextOrd.orderNo,nextOrd.store,prods)).then(()=>{setCopiedKey(cpk);setTimeout(()=>setCopiedKey(""),1800);}).catch(()=>{});}} style={{fontSize:11,color:copiedKey===cpk?C.success:C.info,border:`1px solid ${copiedKey===cpk?C.success:C.info}`,background:copiedKey===cpk?C.successSoft:C.infoSoft,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>{copiedKey===cpk?"\u2713 已複製":"\ud83d\udccb 複製通知"}</button>
                       </div>
                       );})()}
                     <div style={{display:"flex",gap:6}}>
