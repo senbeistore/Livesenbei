@@ -551,6 +551,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   const[fileName,setFileName]=useState("");
   const[err,setErr]=useState("");
   const[editingKey,setEditingKey]=useState(null);
+  const[allocSearch,setAllocSearch]=useState("");
   const[shipInputs,setShipInputs]=useState({});
   const[packed,setPacked]=useState({});  // 裝袋標記：key = oKey|sku
   const togglePacked=(oKey,sku)=>setPacked(p=>({...p,[oKey+"|"+sku]:!p[oKey+"|"+sku]}));
@@ -773,6 +774,20 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
     return Object.values(byCust).sort((a,b)=>b.totalAmount-a.totalAmount);
   },[editAlloc]);
 
+  // 搜尋：帳號 / 人名 / iOPEN訂單編號·出貨單號 / 已出貨單號
+  const filteredDisplay=useMemo(()=>{
+    const q=allocSearch.trim().toLowerCase();
+    if(!q)return displayData;
+    return displayData.filter(c=>{
+      const hay=[c.account,c.name].filter(Boolean).join(" ").toLowerCase();
+      if(hay.includes(q))return true;
+      const info=iopenData[c.account];
+      if(info&&info.orders&&info.orders.some(o=>String(o.orderNo||"").toLowerCase().includes(q)||String(o.shipNo||"").toLowerCase().includes(q)))return true;
+      if(c.orders&&c.orders.some(o=>(o.shipments||[]).some(s=>String(s.orderNo||"").toLowerCase().includes(q))))return true;
+      return false;
+    });
+  },[displayData,allocSearch,iopenData]);
+
   const totalOrders=Object.keys(editAlloc||{}).length;
   const shippedCount=Object.values(editAlloc||{}).filter(o=>o.shippedAt).length;
   const readyCount=Object.values(editAlloc||{}).filter(o=>!o.shippedAt&&o.allocItems.some(it=>it.allocatedQty>0)).length;
@@ -859,12 +874,17 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
         </div>
       )}
 
-      {displayData.map((c,ci)=>{const iopenInfo=iopenData[c.account];return(
+      {editAlloc&&<div style={{marginBottom:12,position:"relative"}}>
+        <input type="text" value={allocSearch} onChange={e=>setAllocSearch(e.target.value)} placeholder="搜尋 帳號 / 人名 / 訂單編號" style={{width:"100%",border:`1px solid ${allocSearch?C.info:C.line}`,borderRadius:10,padding:"9px 32px 9px 12px",fontSize:14,background:C.surface,color:C.ink,boxSizing:"border-box"}}/>
+        {allocSearch&&<button onClick={()=>setAllocSearch("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:C.inkMuted,fontSize:16,cursor:"pointer",lineHeight:1}}>×</button>}
+      </div>}
+      {allocSearch&&filteredDisplay.length===0&&<div style={{textAlign:"center",color:C.inkMuted,fontSize:13,padding:"20px 0"}}>找不到符合「{allocSearch}」的客人</div>}
+      {filteredDisplay.map((c,ci)=>{const iopenInfo=iopenData[c.account];return(
         <div key={c.account||c.name||ci} style={{background:C.surface,border:`1px solid ${C.line}`,borderRadius:12,marginBottom:10,padding:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div>
               <span style={{fontWeight:700,fontSize:14,color:C.ink}}>{c.account||c.name}</span>
-              {c.name&&c.account&&<span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>{c.name}</span>}{iopenInfo&&iopenInfo.needGift&&<span style={{marginLeft:6,fontSize:11,background:"#FFF5F5",color:"#C0392B",border:"1px solid #C0392B",borderRadius:10,padding:"1px 7px"}}>🎁 滿額贈</span>}{iopenInfo&&iopenInfo.orders&&iopenInfo.orders.map((ord,oi2)=>{const shipped=c.orders.reduce((s,o)=>s+((o.shipments&&o.shipments.length)||0),0);const used=oi2<shipped;const tk=c.orders[0]&&c.orders[0].oKey;return(<button key={oi2} onClick={()=>{if(tk&&!used){setShipInputs(p=>({...p,[tk]:ord.orderNo}));}else{navigator.clipboard.writeText(ord.orderNo).catch(()=>{});}}} style={{marginLeft:6,fontSize:11,color:used?C.inkMuted:C.info,border:`1px solid ${used?C.line:C.info}`,background:used?"transparent":C.infoSoft,borderRadius:10,padding:"1px 7px",cursor:"pointer",textDecoration:used?"line-through":"none",opacity:used?0.5:1}}>出貨單{["①","②","③","④"][Math.min(oi2,3)]}</button>);})}
+              {c.name&&c.account&&<span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>{c.name}</span>}{iopenInfo&&iopenInfo.needGift&&<span style={{marginLeft:6,fontSize:11,background:"#FFF5F5",color:"#C0392B",border:"1px solid #C0392B",borderRadius:10,padding:"1px 7px"}}>🎁 滿額贈</span>}{iopenInfo&&iopenInfo.orders&&iopenInfo.orders.map((ord,oi2)=>{const used=c.orders.some(oo=>(oo.shipments||[]).some(s=>String(s.orderNo)===String(ord.orderNo)));const tk=c.orders[0]&&c.orders[0].oKey;return(<button key={oi2} onClick={()=>{if(tk&&!used){setShipInputs(p=>({...p,[tk]:ord.orderNo}));}else{navigator.clipboard.writeText(ord.orderNo).catch(()=>{});}}} style={{marginLeft:6,fontSize:11,color:used?C.inkMuted:C.info,border:`1px solid ${used?C.line:C.info}`,background:used?"transparent":C.infoSoft,borderRadius:10,padding:"1px 7px",cursor:"pointer",textDecoration:used?"line-through":"none",opacity:used?0.5:1}}>出貨單{["①","②","③","④"][Math.min(oi2,3)]}{ord.amount>0?" $"+ord.amount:""}</button>);})}
             </div>
             <span style={{fontSize:12,fontFamily:"monospace",color:C.inkMuted}}>NT${c.totalAmount.toLocaleString()}</span>
           </div>
@@ -1018,7 +1038,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                         {editingKey===o.oKey?"完成調整":"調整配貨"}
                       </button>
                     </div>
-                    {(()=>{const nextOrd=iopenInfo&&iopenInfo.orders&&iopenInfo.orders[shipments.length];if(!nextOrd||!(nextOrd.store||nextOrd.amount>0))return null;return(
+                    {(()=>{const typed=shipInputs[o.oKey];const ords=(iopenInfo&&iopenInfo.orders)||[];const isShippedOrd=(x)=>c.orders.some(oo=>(oo.shipments||[]).some(s=>String(s.orderNo)===String(x.orderNo)));const nextOrd=(typed&&ords.find(x=>x.orderNo===typed))||ords.find(x=>!isShippedOrd(x))||ords[shipments.length];if(!nextOrd||!(nextOrd.store||nextOrd.amount>0))return null;return(
                       <div style={{fontSize:12,color:C.inkMuted,marginBottom:4,display:"flex",gap:8,alignItems:"center"}}>
                         {nextOrd.store&&<span>📍{nextOrd.store}</span>}
                         {nextOrd.amount>0&&<span style={{fontFamily:"monospace",fontWeight:700,color:C.ink}}>${nextOrd.amount}</span>}
