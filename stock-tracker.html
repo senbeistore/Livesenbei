@@ -338,55 +338,51 @@ function parseIopenXLS(aoa){
     var CA=col('\u8a02\u55ae\u91d1\u984d'),CM=col('\u9580\u5e02\u540d\u7a31'),CST=col('\u8a02\u55ae\u72c0\u614b'),CN=col('\u5099\u8a3b');
     var CS1=hdr.findIndex(function(h){return h==='\u898f\u683c1';});
     var CS2=hdr.findIndex(function(h){return h==='\u898f\u683c2';});
-    var byIg={},oAmt={},seen={},allCustom=[];
+    var extractLiveIg=function(prod){
+      var li=prod.indexOf('\u76f4\u64ad');if(li<0)return '';
+      var lp=prod.indexOf('\uff08',li),lp2=prod.indexOf('(',li);
+      var ls=(lp>-1&&(lp2===-1||lp<lp2))?lp:lp2;if(ls<0)return '';
+      var rp=prod.indexOf('\uff09',ls),rp2=prod.indexOf(')',ls);
+      var rs=(rp>-1&&(rp2===-1||rp<rp2))?rp:rp2;
+      return rs>ls?prod.substring(ls+1,rs).trim():'';
+    };
+    // \u7b2c\u4e00\u8f2a\uff1a\u4ee5\u300c\u8a02\u55ae\u7de8\u865f\u300d\u70ba\u55ae\u4f4d\u5f59\u6574\uff0cIG \u53ea\u8981\u4efb\u4e00\u5217\u8fa8\u8b58\u51fa\u4f86\uff0c\u6574\u5f35\u8a02\u55ae\u5546\u54c1\u90fd\u6b78\u5c6c
+    var orderMap={};
     for(var i=1;i<aoa.length;i++){
-      var r=aoa[i];
-      var st=String(r[CST]||'');
+      var r=aoa[i];var st=String(r[CST]||'');
       if(st.indexOf('\u53d6\u6d88')>-1||st.indexOf('\u9000\u6b3e')>-1||st.indexOf('\u9000\u8ca8')>-1)continue;
-      var prod=String(r[CP]||'').trim();
-      var note=String(r[CN]||'').trim();
-      var orderNo=String(r[CO]||'').trim();
-      var shipNo=String(r[CS]||'').trim();
-      var store=String(r[CM]||'').trim();
+      var orderNo=String(r[CO]||'').trim();if(!orderNo)continue;
+      var prod=String(r[CP]||'').trim(),note=String(r[CN]||'').trim();
+      var shipNo=String(r[CS]||'').trim(),store=String(r[CM]||'').trim();
       var amt=parseFloat(r[CA])||0;
-      var spec1=CS1>=0?String(r[CS1]||'').trim():'';
-      var spec2=CS2>=0?String(r[CS2]||'').trim():'';
-      if(!orderNo)continue;
-      if(oAmt[orderNo]===undefined)oAmt[orderNo]=amt;
-      var igFromProd='';
-      var liveIdx=prod.indexOf('\u76f4\u64ad');
-      if(liveIdx>-1){
-        var lp=prod.indexOf('\uff08',liveIdx),lp2=prod.indexOf('(',liveIdx);
-        var ls=(lp>-1&&(lp2===-1||lp<lp2))?lp:lp2;
-        var rp=prod.indexOf('\uff09',ls>-1?ls:0),rp2=prod.indexOf(')',ls>-1?ls:0);
-        var rs=(rp>-1&&(rp2===-1||rp<rp2))?rp:rp2;
-        if(ls>-1&&rs>ls)igFromProd=prod.substring(ls+1,rs).trim();
-      }
-      var igFromNote='';
-      if(!igFromProd&&note&&note.length<=30&&note.indexOf(' ')===-1&&note.indexOf('\uff0c')===-1&&note.indexOf(',')===-1)
-        igFromNote=note;
-      var ig=igFromProd||igFromNote;
-      if(!ig)continue;
-      var isLive=igFromProd.length>0;
-      var key=orderNo+'|'+ig+'|'+prod+'|'+spec1;
-      if(seen[key])continue;
-      seen[key]=1;
+      var spec1=CS1>=0?String(r[CS1]||'').trim():'',spec2=CS2>=0?String(r[CS2]||'').trim():'';
+      if(!orderMap[orderNo])orderMap[orderNo]={igLive:'',igNote:'',store:'',shipNo:'',amount:0,rows:[]};
+      var om=orderMap[orderNo];
+      var liveIg=extractLiveIg(prod);
+      if(liveIg)om.igLive=liveIg;
+      if(!om.igNote&&note&&note.length<=30&&note.indexOf(' ')===-1&&note.indexOf('\uff0c')===-1&&note.indexOf(',')===-1)om.igNote=note;
+      if(amt&&!om.amount)om.amount=amt;
+      if(store&&!om.store)om.store=store;
+      if(shipNo&&!om.shipNo)om.shipNo=shipNo;
+      om.rows.push({prod:prod,spec1:spec1,spec2:spec2,shipNo:shipNo,isLiveMarker:liveIg.length>0});
+    }
+    // \u7b2c\u4e8c\u8f2a\uff1a\u7d44 byIg\uff08\u975e\u76f4\u64ad\u884c\u7684\u5546\u54c1\u5217\u70ba\u5ba2\u8a02\u54c1\u9805\uff09
+    var byIg={},allCustom=[],oAmt={};
+    Object.keys(orderMap).forEach(function(orderNo){
+      var om=orderMap[orderNo];var ig=om.igLive||om.igNote;if(!ig)return;
+      oAmt[orderNo]=om.amount;
       if(!byIg[ig])byIg[ig]={orders:[],customItems:[],totalSpend:0,needGift:false};
-      var dup=false;
-      for(var q=0;q<byIg[ig].orders.length;q++)if(byIg[ig].orders[q].orderNo===orderNo)dup=true;
-      if(!dup)byIg[ig].orders.push({orderNo:orderNo,shipNo:shipNo,store:store,amount:oAmt[orderNo]||0});
-      if(!isLive&&prod){
-        var item={ig:ig,orderNo:orderNo,shipNo:shipNo,prod:prod,spec1:spec1,spec2:spec2};
-        byIg[ig].customItems.push(item);
-        allCustom.push(item);
-      }
-    }
-    var igs=Object.keys(byIg);
-    for(var j=0;j<igs.length;j++){
-      var d=byIg[igs[j]],tot=0;
-      for(var k=0;k<d.orders.length;k++)tot+=oAmt[d.orders[k].orderNo]||0;
-      d.totalSpend=tot;d.needGift=tot>=3500;
-    }
+      var dup=false;for(var q=0;q<byIg[ig].orders.length;q++)if(byIg[ig].orders[q].orderNo===orderNo)dup=true;
+      if(!dup)byIg[ig].orders.push({orderNo:orderNo,shipNo:om.shipNo,store:om.store,amount:om.amount});
+      var seen={};
+      om.rows.forEach(function(row){
+        if(row.isLiveMarker||!row.prod)return;
+        var k=row.prod+'|'+row.spec1+'|'+row.spec2;if(seen[k])return;seen[k]=1;
+        var item={ig:ig,orderNo:orderNo,shipNo:row.shipNo,prod:row.prod,spec1:row.spec1,spec2:row.spec2};
+        byIg[ig].customItems.push(item);allCustom.push(item);
+      });
+    });
+    Object.keys(byIg).forEach(function(ig){var d=byIg[ig],tot=0;for(var k=0;k<d.orders.length;k++)tot+=oAmt[d.orders[k].orderNo]||0;d.totalSpend=tot;d.needGift=tot>=3500;});
     return{byIg:byIg,allCustom:allCustom};
   }catch(e){console.error('parseIopenXLS:',e);return{byIg:{},allCustom:[]};}
 }
@@ -771,7 +767,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
       if(!byCust[ck])byCust[ck]={account:o.customerAccount,name:o.customerName,totalAmount:o.customerTotalAmount,orders:[]};
       byCust[ck].orders.push({oKey,...o});
     });
-    return Object.values(byCust).sort((a,b)=>b.totalAmount-a.totalAmount);
+    const custDone=(c)=>{const s=c.orders.some(o=>((o.shipments&&o.shipments.length>0)||o.shippedAt));const r=c.orders.some(o=>(o.allocItems||[]).some(it=>it.allocatedQty>0));return s&&!r;};
+    return Object.values(byCust).sort((a,b)=>{const da=custDone(a),db=custDone(b);if(da!==db)return da?1:-1;return b.totalAmount-a.totalAmount;});
   },[editAlloc]);
 
   // 搜尋：帳號 / 人名 / iOPEN訂單編號·出貨單號 / 已出貨單號
@@ -789,8 +786,10 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   },[displayData,allocSearch,iopenData]);
 
   const totalOrders=Object.keys(editAlloc||{}).length;
-  const shippedCount=Object.values(editAlloc||{}).filter(o=>o.shippedAt).length;
-  const readyCount=Object.values(editAlloc||{}).filter(o=>!o.shippedAt&&o.allocItems.some(it=>it.allocatedQty>0)).length;
+  const hasShipOf=(o)=>((o.shipments&&o.shipments.length>0)||!!o.shippedAt);
+  const hasReadyOf=(o)=>(o.allocItems||[]).some(it=>it.allocatedQty>0);
+  const shippedCount=Object.values(editAlloc||{}).filter(hasShipOf).length;
+  const readyCount=Object.values(editAlloc||{}).filter(hasReadyOf).length;
 
   return(
     <div style={{maxWidth:640,margin:"0 auto",padding:"14px 14px"}}>
