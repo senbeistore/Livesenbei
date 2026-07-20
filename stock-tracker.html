@@ -611,32 +611,40 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
     e.target.value="";
   }
 
-  function updateAllocQty(oKey,sku,delta){
+  function updateAllocQty(oKey,sku,delta,targetPackKey){
     const usage=computeAllocUsage(editAlloc,oKey);
-    const available=Math.max(0,(stockMap[sku]||0)-(usage[sku]||0)); // sku 是 normalizedKey
+    const available=Math.max(0,(stockMap[sku]||0)-(usage[sku]||0)); // sku 是 normalizedKey，僅用來查庫存
     setEditAlloc(prev=>{
       const order={...prev[oKey]};
       let allocItems=[...order.allocItems];
-      let item=allocItems.find(it=>flatKey(it)===sku||normalizedKey(it)===sku||itemKey(it)===sku);
+      // 精確定位「使用者點的是哪一筆」：優先用 targetPackKey（可消歧重複SKU），
+      // 沒給的話才退回用 sku 比對（維持舊呼叫方式相容，但重複SKU時可能誤中多筆，
+      // 因此凡是會動到 allocItems 的呼叫端都應該帶入 targetPackKey）
+      const matchOne=(it)=>targetPackKey?packKeyOf(order.allocItems,it)===targetPackKey:(flatKey(it)===sku||normalizedKey(it)===sku||itemKey(it)===sku);
+      let item=allocItems.find(matchOne);
       if(!item&&delta>0){
         const wi=order.waitingItems.find(it=>flatKey(it)===sku||normalizedKey(it)===sku||itemKey(it)===sku);
         if(wi){item={...wi,allocatedQty:0};allocItems=[...allocItems,item];order.allocItems=allocItems;}
       }
       if(!item)return prev;
-      const maxByOrder=item.orderedQty!=null?item.orderedQty:(item.qty!=null?item.qty:999); // 不可超過客人訂購數量
+      const maxByOrder=item.orderedQty!=null?item.orderedQty:(item.qty!=null?item.qty:999); // 不可超過這一筆的訂購數量
       const newQty=Math.max(0,Math.min(available+item.allocatedQty,maxByOrder,item.allocatedQty+delta));
-      const matchSku=(it)=>{const fk=flatKey(it);return fk===sku||normalizedKey(it)===sku||itemKey(it)===sku;};
-      const newAllocItems=order.allocItems.map(it=>matchSku(it)?{...it,allocatedQty:newQty}:it);
-      // 如果減少了分配量，多出來的就放回waiting
+      // 只更新「這一筆」（用物件參照比對，不是用 flatKey，避免誤傷同SKU的其他筆）
+      const newAllocItems=order.allocItems.map(it=>it===item?{...it,allocatedQty:newQty}:it);
       const diff=item.allocatedQty-newQty;
       let newWaitingItems=[...order.waitingItems];
+      const matchSku=(it)=>{const fk=flatKey(it);return fk===sku||normalizedKey(it)===sku||itemKey(it)===sku;};
       if(diff>0){
         const existing=newWaitingItems.find(it=>matchSku(it));
-        if(existing)newWaitingItems=newWaitingItems.map(it=>matchSku(it)?{...it,allocatedQty:0,orderedQty:(needQty(it))+diff}:it);
-        else{const orig=newAllocItems.find(it=>matchSku(it))||item;newWaitingItems.push({...orig,allocatedQty:0,orderedQty:diff,qty:diff});}
+        if(existing)newWaitingItems=newWaitingItems.map(it=>it===existing?{...it,orderedQty:(needQty(it))+diff}:it);
+        else newWaitingItems.push({...item,allocatedQty:0,orderedQty:diff,qty:diff});
       }else if(diff<0){
-        // 從waiting取回
-        newWaitingItems=newWaitingItems.map(it=>{if(matchSku(it)&&(needQty(it))>0){const take=Math.min(Math.abs(diff),(needQty(it)));return{...it,orderedQty:(needQty(it))-take};}return it;}).filter(it=>(needQty(it))>0);
+        // 從waiting取回；同SKU可能有多筆待補，依序扣減即可（waiting本身不分是哪一筆，數量對即可）
+        let need=Math.abs(diff);
+        newWaitingItems=newWaitingItems.map(it=>{
+          if(need>0&&matchSku(it)&&(needQty(it))>0){const take=Math.min(need,(needQty(it)));need-=take;return{...it,orderedQty:(needQty(it))-take};}
+          return it;
+        }).filter(it=>(needQty(it))>0);
       }
       const next={...prev,[oKey]:{...order,allocItems:newAllocItems,waitingItems:newWaitingItems}};
       onSaveAlloc(next);
@@ -844,7 +852,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div>
               <span style={{fontWeight:700,fontSize:14,color:C.ink}}>{c.account||c.name}</span>
-              {c.name&&c.account&&<span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>{c.name}</span>}{iopenInfo&&iopenInfo.needGift&&<span style={{marginLeft:6,fontSize:11,background:"#FFF5F5",color:"#C0392B",border:"1px solid #C0392B",borderRadius:10,padding:"1px 7px"}}>🎁 滿額贈</span>}{iopenInfo&&iopenInfo.orders&&iopenInfo.orders.map((ord,oi2)=>{const shipped=c.orders.reduce((s,o)=>s+((o.shipments&&o.shipments.length)||0),0);const used=oi2<shipped;const tk=c.orders[0]&&c.orders[0].oKey;return(<button key={oi2} onClick={()=>{if(tk&&!used){setShipInputs(p=>({...p,[tk]:ord.orderNo}));}else{navigator.clipboard.writeText(ord.orderNo).catch(()=>{});}}} style={{marginLeft:6,fontSize:11,color:used?C.inkMuted:C.info,border:`1px solid ${used?C.line:C.info}`,background:used?"transparent":C.infoSoft,borderRadius:10,padding:"1px 7px",cursor:"pointer",textDecoration:used?"line-through":"none",opacity:used?0.5:1,display:"inline-flex",alignItems:"center",gap:4}}><span>出貨單{["①","②","③","④"][Math.min(oi2,3)]}</span>{ord.store&&<span style={{opacity:0.85}}>{ord.store}</span>}{ord.amount>0&&<span style={{fontFamily:"monospace"}}>${ord.amount}</span>}</button>);})}
+              {c.name&&c.account&&<span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>{c.name}</span>}{iopenInfo&&iopenInfo.needGift&&<span style={{marginLeft:6,fontSize:11,background:"#FFF5F5",color:"#C0392B",border:"1px solid #C0392B",borderRadius:10,padding:"1px 7px"}}>🎁 滿額贈</span>}{iopenInfo&&iopenInfo.orders&&iopenInfo.orders.map((ord,oi2)=>{const shipped=c.orders.reduce((s,o)=>s+((o.shipments&&o.shipments.length)||0),0);const used=oi2<shipped;const tk=c.orders[0]&&c.orders[0].oKey;return(<button key={oi2} onClick={()=>{if(tk&&!used){setShipInputs(p=>({...p,[tk]:ord.orderNo}));}else{navigator.clipboard.writeText(ord.orderNo).catch(()=>{});}}} style={{marginLeft:6,fontSize:11,color:used?C.inkMuted:C.info,border:`1px solid ${used?C.line:C.info}`,background:used?"transparent":C.infoSoft,borderRadius:10,padding:"1px 7px",cursor:"pointer",textDecoration:used?"line-through":"none",opacity:used?0.5:1}}>出貨單{["①","②","③","④"][Math.min(oi2,3)]}</button>);})}
             </div>
             <span style={{fontSize:12,fontFamily:"monospace",color:C.inkMuted}}>NT${c.totalAmount.toLocaleString()}</span>
           </div>
@@ -912,9 +920,9 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                             <span style={{fontSize:13,color:C.success,fontWeight:500,flex:1,textDecoration:isPacked?"line-through":"none",opacity:isPacked?0.45:1}}>{dispName(it)}</span>
                             {isEditing?(
                               <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
-                                <button onClick={()=>updateAllocQty(o.oKey,sku,-1)} disabled={it.allocatedQty<=0} style={{width:26,height:26,borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:it.allocatedQty>0?"pointer":"default",fontSize:16,fontWeight:700,color:C.ink}}>−</button>
+                                <button onClick={()=>updateAllocQty(o.oKey,sku,-1,packKey)} disabled={it.allocatedQty<=0} style={{width:26,height:26,borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:it.allocatedQty>0?"pointer":"default",fontSize:16,fontWeight:700,color:C.ink}}>−</button>
                                 <span style={{fontSize:13,fontWeight:700,color:C.success,minWidth:20,textAlign:"center"}}>{it.allocatedQty}</span>
-                                <button onClick={()=>updateAllocQty(o.oKey,sku,1)} disabled={it.allocatedQty>=available+it.allocatedQty} style={{width:26,height:26,borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:it.allocatedQty<available+it.allocatedQty?"pointer":"default",fontSize:16,fontWeight:700,color:C.ink}}>＋</button>
+                                <button onClick={()=>updateAllocQty(o.oKey,sku,1,packKey)} disabled={it.allocatedQty>=available+it.allocatedQty} style={{width:26,height:26,borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:it.allocatedQty<available+it.allocatedQty?"pointer":"default",fontSize:16,fontWeight:700,color:C.ink}}>＋</button>
                                 <span style={{fontSize:10,color:C.inkMuted}}>可用{available+it.allocatedQty}</span>
                               </div>
                             ):(
@@ -977,6 +985,12 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                         {editingKey===o.oKey?"完成調整":"調整配貨"}
                       </button>
                     </div>
+                    {(()=>{const nextOrd=iopenInfo&&iopenInfo.orders&&iopenInfo.orders[shipments.length];if(!nextOrd||!(nextOrd.store||nextOrd.amount>0))return null;return(
+                      <div style={{fontSize:12,color:C.inkMuted,marginBottom:4,display:"flex",gap:8}}>
+                        {nextOrd.store&&<span>📍{nextOrd.store}</span>}
+                        {nextOrd.amount>0&&<span style={{fontFamily:"monospace"}}>${nextOrd.amount}</span>}
+                      </div>
+                    );})()}
                     <div style={{display:"flex",gap:6}}>
                       <input type="text" value={shipInputs[o.oKey]||""} onChange={e=>setShipInputs(p=>({...p,[o.oKey]:e.target.value}))}
                         placeholder={(iopenInfo&&iopenInfo.orders&&iopenInfo.orders[shipments.length]&&iopenInfo.orders[shipments.length].orderNo)||(hasShipments?"填入第二次出貨單號":"填入出貨單號")}
