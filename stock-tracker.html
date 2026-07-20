@@ -326,6 +326,8 @@ function recalculateAlloc(currentAlloc,parsed,stockItems,method){
     const fresh=method==="proportional"?computeProportionalAlloc(sub,stockItems):computeAlloc(sub,stockItems);
     Object.assign(result,fresh);
   }
+  // 保留既有備註（重算會產生新物件，避免備註被洗掉）
+  if(currentAlloc)Object.keys(result).forEach(k=>{if(currentAlloc[k]&&currentAlloc[k].note&&!result[k].note)result[k].note=currentAlloc[k].note;});
   return result;
 }
 // ── iOPEN XLS 解析 ──
@@ -376,7 +378,7 @@ function parseIopenXLS(aoa){
       if(!dup)byIg[ig].orders.push({orderNo:orderNo,shipNo:om.shipNo,store:om.store,amount:om.amount});
       var seen={};
       om.rows.forEach(function(row){
-        if(row.isLiveMarker||!row.prod)return;
+        if(row.isLiveMarker||!row.prod||row.prod.indexOf('\u904b\u8cbb')>-1)return;
         var k=row.prod+'|'+row.spec1+'|'+row.spec2;if(seen[k])return;seen[k]=1;
         var item={ig:ig,orderNo:orderNo,shipNo:row.shipNo,prod:row.prod,spec1:row.spec1,spec2:row.spec2};
         byIg[ig].customItems.push(item);allCustom.push(item);
@@ -548,9 +550,13 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   const[err,setErr]=useState("");
   const[editingKey,setEditingKey]=useState(null);
   const[allocSearch,setAllocSearch]=useState("");
+  const[copiedKey,setCopiedKey]=useState("");
+  const[editingNote,setEditingNote]=useState("");
+  const[noteInputs,setNoteInputs]=useState({});
   const[shipInputs,setShipInputs]=useState({});
   const[packed,setPacked]=useState({});  // 裝袋標記：key = oKey|sku
   const togglePacked=(oKey,sku)=>setPacked(p=>({...p,[oKey+"|"+sku]:!p[oKey+"|"+sku]}));
+  function saveNote(oKey,text){setEditAlloc(prev=>{if(!prev||!prev[oKey])return prev;const next={...prev,[oKey]:{...prev[oKey],note:text}};onSaveAlloc(next);return next;});}
   const iopenFileRef=useRef(null);
   const[iopenXlsName,setIopenXlsName]=useState("");
   const[showIopen,setShowIopen]=useState(false);
@@ -913,6 +919,21 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                   </div>
                 )}
 
+                {/* 備註 */}
+                {editingNote===o.oKey?(
+                  <div style={{marginBottom:8}}>
+                    <textarea value={noteInputs[o.oKey]!==undefined?noteInputs[o.oKey]:(o.note||"")} onChange={e=>setNoteInputs(p=>({...p,[o.oKey]:e.target.value}))} placeholder="備註（例：客人要求延後出貨）" rows={2} style={{width:"100%",border:`1px solid ${C.warning}`,borderRadius:8,padding:"6px 10px",fontSize:13,boxSizing:"border-box",resize:"vertical",color:C.ink,background:C.surface}}/>
+                    <div style={{display:"flex",gap:6,marginTop:4}}>
+                      <button onClick={()=>{const t=(noteInputs[o.oKey]!==undefined?noteInputs[o.oKey]:(o.note||"")).trim();saveNote(o.oKey,t);setEditingNote("");}} style={{fontSize:12,background:C.success,color:"#fff",border:"none",borderRadius:8,padding:"4px 12px",cursor:"pointer"}}>儲存</button>
+                      <button onClick={()=>{setNoteInputs(p=>{const n={...p};delete n[o.oKey];return n;});setEditingNote("");}} style={{fontSize:12,background:C.surface,color:C.inkMuted,border:`1px solid ${C.line}`,borderRadius:8,padding:"4px 12px",cursor:"pointer"}}>取消</button>
+                    </div>
+                  </div>
+                ):o.note?(
+                  <div onClick={()=>{setNoteInputs(p=>({...p,[o.oKey]:o.note}));setEditingNote(o.oKey);}} style={{marginBottom:8,background:C.warningSoft,border:`1px solid ${C.warning}`,borderRadius:8,padding:"6px 10px",fontSize:13,color:C.warning,cursor:"pointer",whiteSpace:"pre-wrap"}}>📝 {o.note}</div>
+                ):(
+                  <button onClick={()=>{setNoteInputs(p=>({...p,[o.oKey]:""}));setEditingNote(o.oKey);}} style={{marginBottom:8,fontSize:11,color:C.inkMuted,border:`1px dashed ${C.line}`,background:"transparent",borderRadius:8,padding:"3px 10px",cursor:"pointer"}}>＋ 備註</button>
+                )}
+
                 {/* 出貨歷史記錄 */}
                 {shipments.map((s,si)=>{
                   const sc=shipColor(si);
@@ -1037,12 +1058,17 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                         {editingKey===o.oKey?"完成調整":"調整配貨"}
                       </button>
                     </div>
-                    {(()=>{const typed=shipInputs[o.oKey];const ords=(iopenInfo&&iopenInfo.orders)||[];const isShippedOrd=(x)=>c.orders.some(oo=>(oo.shipments||[]).some(s=>String(s.orderNo)===String(x.orderNo)));const nextOrd=(typed&&ords.find(x=>x.orderNo===typed))||ords.find(x=>!isShippedOrd(x))||ords[shipments.length];if(!nextOrd||!(nextOrd.store||nextOrd.amount>0))return null;return(
-                      <div style={{fontSize:12,color:C.inkMuted,marginBottom:4,display:"flex",gap:8,alignItems:"center"}}>
+                    {(()=>{const typed=shipInputs[o.oKey];const ords=(iopenInfo&&iopenInfo.orders)||[];const isShippedOrd=(x)=>c.orders.some(oo=>(oo.shipments||[]).some(s=>String(s.orderNo)===String(x.orderNo)));const nextOrd=(typed&&ords.find(x=>x.orderNo===typed))||ords.find(x=>!isShippedOrd(x))||ords[shipments.length];if(!nextOrd||!(nextOrd.store||nextOrd.amount>0))return null;
+                      const prods=((iopenInfo&&iopenInfo.customItems)||[]).filter(ci=>String(ci.orderNo)===String(nextOrd.orderNo)&&ci.prod.indexOf("運費")===-1).map(ci=>ci.prod+(ci.spec1?" "+ci.spec1:"")+(ci.spec2?" "+ci.spec2:""));
+                      const buildMsg=()=>{const t=new Date().toLocaleDateString("zh-TW");return "您好～這是出貨通知\n"+nextOrd.orderNo+"\n"+prods.join("\n")+(prods.length?"\n":"")+"於今日"+t+"已寄出\n至您下單指定的"+(nextOrd.store||"")+"\n2-3天後即到門市\n請務必記得留意簡訊呦\n3天後簡訊沒有收到的話建議致電門市詢問\n\u203c\ufe0f超商有無發簡訊我們無法知曉，再麻煩媽咪記得到超商詢問一下呦\n\u203c\ufe0f如若未取貨，訂單原始金額+退回運費38+純取運費60=匯款金額，未取貨請48H內完成匯款\n（未取貨訂單等同訂單卷失效）";};
+                      const cpk=o.oKey+"|"+nextOrd.orderNo;
+                      return(
+                      <div style={{fontSize:12,color:C.inkMuted,marginBottom:4,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                         {nextOrd.store&&<span>📍{nextOrd.store}</span>}
                         {nextOrd.amount>0&&<span style={{fontFamily:"monospace",fontWeight:700,color:C.ink}}>${nextOrd.amount}</span>}
+                        <button onClick={()=>{navigator.clipboard.writeText(buildMsg()).then(()=>{setCopiedKey(cpk);setTimeout(()=>setCopiedKey(""),1800);}).catch(()=>{});}} style={{fontSize:11,color:copiedKey===cpk?C.success:C.info,border:`1px solid ${copiedKey===cpk?C.success:C.info}`,background:copiedKey===cpk?C.successSoft:C.infoSoft,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>{copiedKey===cpk?"\u2713 已複製":"\ud83d\udccb 複製通知"}</button>
                       </div>
-                    );})()}
+                      );})()}
                     <div style={{display:"flex",gap:6}}>
                       <input type="text" value={shipInputs[o.oKey]||""} onChange={e=>setShipInputs(p=>({...p,[o.oKey]:e.target.value}))}
                         placeholder={(iopenInfo&&iopenInfo.orders&&iopenInfo.orders[shipments.length]&&iopenInfo.orders[shipments.length].orderNo)||(hasShipments?"填入第二次出貨單號":"填入出貨單號")}
