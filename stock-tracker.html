@@ -1019,9 +1019,9 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                       </button>
                     </div>
                     {(()=>{const nextOrd=iopenInfo&&iopenInfo.orders&&iopenInfo.orders[shipments.length];if(!nextOrd||!(nextOrd.store||nextOrd.amount>0))return null;return(
-                      <div style={{fontSize:12,color:C.inkMuted,marginBottom:4,display:"flex",gap:8}}>
+                      <div style={{fontSize:12,color:C.inkMuted,marginBottom:4,display:"flex",gap:8,alignItems:"center"}}>
                         {nextOrd.store&&<span>📍{nextOrd.store}</span>}
-                        {nextOrd.amount>0&&<span style={{fontFamily:"monospace"}}>${nextOrd.amount}</span>}
+                        {nextOrd.amount>0&&<span style={{fontFamily:"monospace",fontWeight:700,color:C.ink}}>${nextOrd.amount}</span>}
                       </div>
                     );})()}
                     <div style={{display:"flex",gap:6}}>
