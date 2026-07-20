@@ -216,7 +216,7 @@ function computeAlloc(parsed,stockItems){
       const rem=stock[_k]||0;
       const give=Math.min(item.qty,rem);if(give>0)stock[_k]=Math.max(0,rem-give);
       if(give>0)allocItems.push({...item,orderedQty:item.qty,allocatedQty:give});
-      if(give<item.qty)waitingItems.push({...item,orderedQty:item.qty,allocatedQty:0});
+      if(give<item.qty)waitingItems.push({...item,orderedQty:item.qty-give,allocatedQty:0,qty:item.qty-give});
     });
     result[oKey]={
       customerAccount:customers[o.customerKey]?.account||o.customerKey,
@@ -247,12 +247,11 @@ function computeProportionalAlloc(parsed,stockItems){
   const baseSum={};// sku → 已分配底數總和
   orders.forEach(o=>{
     const oKey=makeOrderKey(o.customerKey,o.items);
-    orderFloors[oKey]={};
-    o.items.forEach(item=>{
+    orderFloors[oKey]=o.items.map(item=>{
       const k=flatKey(item)||normalizedKey(item);const r=ratio[k]||0;
       const exact=item.qty*r;const base=Math.floor(exact);const frac=exact-base;
-      orderFloors[oKey][k]={base,frac,item};
       baseSum[k]=(baseSum[k]||0)+base;
+      return{sku:k,base,frac,item};
     });
   });
   // 第二輪：剩餘件數按小數點大小補給
@@ -260,9 +259,9 @@ function computeProportionalAlloc(parsed,stockItems){
     let remaining=(stock[sku]||0)-(baseSum[sku]||0);
     if(remaining<=0)return;
     const candidates=[];
-    Object.entries(orderFloors).forEach(([oKey,skuMap])=>{if(skuMap[sku]&&skuMap[sku].frac>0)candidates.push({oKey,frac:skuMap[sku].frac});});
+    Object.entries(orderFloors).forEach(([oKey,slots])=>{slots.forEach((sl,idx)=>{if(sl.sku===sku&&sl.frac>0)candidates.push({oKey,idx,frac:sl.frac});});});
     candidates.sort((a,b)=>b.frac-a.frac);
-    for(let i=0;i<Math.min(remaining,candidates.length);i++){orderFloors[candidates[i].oKey][sku].base+=1;}
+    for(let i=0;i<Math.min(remaining,candidates.length);i++){orderFloors[candidates[i].oKey][candidates[i].idx].base+=1;}
   });
   // 組裝結果（依客人金額排序顯示）
   const sorted=[...orders].sort((a,b)=>(customers[b.customerKey]?.totalAmount||0)-(customers[a.customerKey]?.totalAmount||0));
@@ -270,8 +269,8 @@ function computeProportionalAlloc(parsed,stockItems){
   sorted.forEach(o=>{
     const oKey=makeOrderKey(o.customerKey,o.items);
     const allocItems=[],waitingItems=[];
-    o.items.forEach(item=>{
-      const k=flatKey(item)||normalizedKey(item);const allocQty=orderFloors[oKey]?.[k]?.base||0;
+    (orderFloors[oKey]||[]).forEach(slot=>{
+      const item=slot.item;const allocQty=slot.base||0;
       if(allocQty>0)allocItems.push({...item,orderedQty:item.qty,allocatedQty:allocQty});
       if(allocQty<item.qty)waitingItems.push({...item,orderedQty:item.qty-allocQty,allocatedQty:0,qty:item.qty-allocQty});
     });
