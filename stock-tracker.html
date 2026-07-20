@@ -86,6 +86,11 @@ function packKeyOf(allocItems,item){
   }
   return dup>0?sku+"#"+dup:sku;
 }
+// 單件識別碼：同一筆 item（allocatedQty 可能>1）拆成每件獨立的 key，
+// 這樣打勾/出貨才能精確到「這一件」，不會因為顯示成 ×N 而混淆進度
+function unitPackKey(allocItems,item,unitIdx){
+  return packKeyOf(allocItems,item)+"#u"+unitIdx;
+}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function fmtSavedTime(d){if(!d)return"";return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}
 function fmtTs(ts){if(!ts)return"";const d=new Date(ts);return`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}
@@ -655,9 +660,17 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   function confirmShipment(oKey,orderNo){
     setEditAlloc(prev=>{
       const order=prev[oKey];
-      // 只出貨「已打勾裝袋」的品項；沒勾的留在 allocItems 繼續等打包，不可整批出貨
-      const shippedItems=order.allocItems.filter(it=>it.allocatedQty>0&&packed[oKey+"|"+packKeyOf(order.allocItems,it)]);
-      const remainItems=order.allocItems.filter(it=>!(it.allocatedQty>0&&packed[oKey+"|"+packKeyOf(order.allocItems,it)]));
+      // 只出貨「已打勾裝袋」的件數；用單件(unit)為粒度計算，
+      // 一筆 allocatedQty=2 的商品若只勾了1件，會被拆成「出貨1件、留1件繼續等打包」
+      const shippedItems=[],remainItems=[];
+      order.allocItems.forEach(it=>{
+        if(!(it.allocatedQty>0)){remainItems.push(it);return;}
+        let packedUnits=0;
+        for(let u=0;u<it.allocatedQty;u++){if(packed[oKey+"|"+unitPackKey(order.allocItems,it,u)])packedUnits++;}
+        if(packedUnits<=0){remainItems.push(it);return;}
+        if(packedUnits>=it.allocatedQty){shippedItems.push(it);}
+        else{shippedItems.push({...it,allocatedQty:packedUnits});remainItems.push({...it,allocatedQty:it.allocatedQty-packedUnits});}
+      });
       if(shippedItems.length===0)return prev; // 一件都沒勾就不動作
       const newShipment={orderNo,shippedAt:new Date().toISOString(),items:shippedItems};
       const existingShipments=order.shipments||(order.shippedAt?[{orderNo:order.shippedOrderNo,shippedAt:order.shippedAt,items:order.allocItems}]:[]);
@@ -905,43 +918,64 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                 {/* 可出貨/等待出貨品項 */}
                 {o.allocItems.filter(it=>it.allocatedQty>0).length>0&&(
                   <div style={{marginBottom:6}}>
-                    <div style={{fontSize:11,color:C.success,fontWeight:700,marginBottom:4,display:"flex",alignItems:"center",gap:8}}><span>✅ 可出貨{hasShipments?"（新一批）":""}</span>{(()=>{const rows=o.allocItems.filter(x=>x.allocatedQty>0);const done=rows.filter(x=>packed[o.oKey+"|"+packKeyOf(o.allocItems,x)]).length;if(!rows.length)return null;const all=done===rows.length;return <span style={{fontSize:10,fontWeight:600,color:all?C.success:C.inkMuted,background:all?C.successSoft:"transparent",border:`1px solid ${all?C.success:C.line}`,borderRadius:10,padding:"0 6px"}}>{all?"✓ 已裝袋 ":"已裝 "}{done}/{rows.length}</span>;})()}</div>
-                    {o.allocItems.filter(it=>it.allocatedQty>0).map((it,i)=>{
-                      const sku=flatKey(it);
-                      const snk=normalizedKey(it);
-                      const otherUsage=Math.max(usage[sku]||0,usage[snk]||0);
-                      const available=Math.max(0,Math.max(stockMap[sku]||0,stockMap[snk]||0)-otherUsage);
-                      const isEditing=editingKey===o.oKey;
-                      const packKey=packKeyOf(o.allocItems,it);
-                      const isPacked=!!packed[o.oKey+"|"+packKey];
-                      return(
-                        <div key={i} style={{background:C.successSoft,borderRadius:8,padding:"6px 10px",marginBottom:4}}>
-                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                            <span style={{fontSize:13,color:C.success,fontWeight:500,flex:1,textDecoration:isPacked?"line-through":"none",opacity:isPacked?0.45:1}}>{dispName(it)}</span>
-                            {isEditing?(
+                    <div style={{fontSize:11,color:C.success,fontWeight:700,marginBottom:4,display:"flex",alignItems:"center",gap:8}}><span>✅ 可出貨{hasShipments?"（新一批）":""}</span>{(()=>{const rows=o.allocItems.filter(x=>x.allocatedQty>0);
+                const totalUnits=rows.reduce((s,x)=>s+x.allocatedQty,0);
+                let done=0;
+                rows.forEach(x=>{for(let u=0;u<x.allocatedQty;u++)if(packed[o.oKey+"|"+unitPackKey(o.allocItems,x,u)])done++;});
+                if(!totalUnits)return null;const all=done===totalUnits;return <span style={{fontSize:10,fontWeight:600,color:all?C.success:C.inkMuted,background:all?C.successSoft:"transparent",border:`1px solid ${all?C.success:C.line}`,borderRadius:10,padding:"0 6px"}}>{all?"✓ 已裝袋 ":"已裝 "}{done}/{totalUnits}</span>;})()}</div>
+                    {(editingKey===o.oKey?
+                      // 編輯模式：以「一整筆SKU」為單位調整配貨總量（±按鈕）
+                      o.allocItems.filter(it=>it.allocatedQty>0).map((it,i)=>{
+                        const sku=flatKey(it);
+                        const snk=normalizedKey(it);
+                        const otherUsage=Math.max(usage[sku]||0,usage[snk]||0);
+                        const available=Math.max(0,Math.max(stockMap[sku]||0,stockMap[snk]||0)-otherUsage);
+                        const packKey=packKeyOf(o.allocItems,it);
+                        return(
+                          <div key={i} style={{background:C.successSoft,borderRadius:8,padding:"6px 10px",marginBottom:4}}>
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                              <span style={{fontSize:13,color:C.success,fontWeight:500,flex:1}}>{dispName(it)}</span>
                               <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
                                 <button onClick={()=>updateAllocQty(o.oKey,sku,-1,packKey)} disabled={it.allocatedQty<=0} style={{width:26,height:26,borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:it.allocatedQty>0?"pointer":"default",fontSize:16,fontWeight:700,color:C.ink}}>−</button>
                                 <span style={{fontSize:13,fontWeight:700,color:C.success,minWidth:20,textAlign:"center"}}>{it.allocatedQty}</span>
                                 <button onClick={()=>updateAllocQty(o.oKey,sku,1,packKey)} disabled={it.allocatedQty>=available+it.allocatedQty} style={{width:26,height:26,borderRadius:6,border:`1px solid ${C.line}`,background:"#fff",cursor:it.allocatedQty<available+it.allocatedQty?"pointer":"default",fontSize:16,fontWeight:700,color:C.ink}}>＋</button>
                                 <span style={{fontSize:10,color:C.inkMuted}}>可用{available+it.allocatedQty}</span>
                               </div>
-                            ):(
-                              <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                                <strong style={{fontSize:13,color:C.success,opacity:isPacked?0.45:1}}>× {it.allocatedQty}</strong>
-                                <button onClick={()=>togglePacked(o.oKey,packKey)} title={isPacked?"取消裝袋":"標記已裝袋"}
-                                  style={{width:28,height:28,padding:0,lineHeight:1,borderRadius:7,
-                                    border:`2px solid ${isPacked?C.success:C.line}`,
-                                    background:isPacked?C.success:"#fff",color:"#fff",
-                                    fontSize:16,fontWeight:700,cursor:"pointer",
-                                    display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                                  {isPacked?"✓":""}
-                                </button>
-                              </div>
-                            )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                      :
+                      // 瀏覽/打勾模式：拆成「每件獨立一行」，避免 ×N 導致漏勾/多勾
+                      (()=>{
+                        const units=[];
+                        o.allocItems.filter(it=>it.allocatedQty>0).forEach(it=>{
+                          for(let u=0;u<it.allocatedQty;u++)units.push({it,unitIdx:u});
+                        });
+                        return units.map(({it,unitIdx},i)=>{
+                          const uKey=unitPackKey(o.allocItems,it,unitIdx);
+                          const isPacked=!!packed[o.oKey+"|"+uKey];
+                          return(
+                            <div key={i} style={{background:C.successSoft,borderRadius:8,padding:"6px 10px",marginBottom:4}}>
+                              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                                <span style={{fontSize:13,color:C.success,fontWeight:500,flex:1,textDecoration:isPacked?"line-through":"none",opacity:isPacked?0.45:1}}>{dispName(it)}</span>
+                                <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                                  <strong style={{fontSize:13,color:C.success,opacity:isPacked?0.45:1}}>× 1</strong>
+                                  <button onClick={()=>togglePacked(o.oKey,uKey)} title={isPacked?"取消裝袋":"標記已裝袋"}
+                                    style={{width:28,height:28,padding:0,lineHeight:1,borderRadius:7,
+                                      border:`2px solid ${isPacked?C.success:C.line}`,
+                                      background:isPacked?C.success:"#fff",color:"#fff",
+                                      fontSize:16,fontWeight:700,cursor:"pointer",
+                                      display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                                    {isPacked?"✓":""}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()
+                    )}
                   </div>
                 )}
 
@@ -997,12 +1031,12 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                         style={{flex:1,border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,minWidth:0}}/>
                       <button onClick={()=>{
                         if(!shipInputs[o.oKey]?.trim())return;
-                        const anyPacked=o.allocItems.some(it=>it.allocatedQty>0&&packed[o.oKey+"|"+packKeyOf(o.allocItems,it)]);
+                        const anyPacked=o.allocItems.some(it=>{if(!(it.allocatedQty>0))return false;for(let u=0;u<it.allocatedQty;u++)if(packed[o.oKey+"|"+unitPackKey(o.allocItems,it,u)])return true;return false;});
                         if(!anyPacked){alert("請先勾選已裝袋的品項，才能出貨");return;}
                         confirmShipment(o.oKey,shipInputs[o.oKey].trim());
                       }}
-                        disabled={!shipInputs[o.oKey]?.trim()||!o.allocItems.some(it=>it.allocatedQty>0&&packed[o.oKey+"|"+packKeyOf(o.allocItems,it)])}
-                        style={{background:(shipInputs[o.oKey]?.trim()&&o.allocItems.some(it=>it.allocatedQty>0&&packed[o.oKey+"|"+packKeyOf(o.allocItems,it)]))?C.success:"#ccc",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:(shipInputs[o.oKey]?.trim()&&o.allocItems.some(it=>it.allocatedQty>0&&packed[o.oKey+"|"+packKeyOf(o.allocItems,it)]))?"pointer":"default",whiteSpace:"nowrap"}}>
+                        disabled={!shipInputs[o.oKey]?.trim()||!o.allocItems.some(it=>{if(!(it.allocatedQty>0))return false;for(let u=0;u<it.allocatedQty;u++)if(packed[o.oKey+"|"+unitPackKey(o.allocItems,it,u)])return true;return false;})}
+                        style={{background:(shipInputs[o.oKey]?.trim()&&o.allocItems.some(it=>{if(!(it.allocatedQty>0))return false;for(let u=0;u<it.allocatedQty;u++)if(packed[o.oKey+"|"+unitPackKey(o.allocItems,it,u)])return true;return false;}))?C.success:"#ccc",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:(shipInputs[o.oKey]?.trim()&&o.allocItems.some(it=>{if(!(it.allocatedQty>0))return false;for(let u=0;u<it.allocatedQty;u++)if(packed[o.oKey+"|"+unitPackKey(o.allocItems,it,u)])return true;return false;}))?"pointer":"default",whiteSpace:"nowrap"}}>
                         確認出貨
                       </button>
                     </div>
