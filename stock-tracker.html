@@ -326,6 +326,12 @@ function recalculateAlloc(currentAlloc,parsed,stockItems,method){
     const fresh=method==="proportional"?computeProportionalAlloc(sub,stockItems):computeAlloc(sub,stockItems);
     Object.assign(result,fresh);
   }
+  // 保留「已出貨但不在新檔」的訂單，避免昨日已出貨訂單因重匯而整筆消失（連出貨記錄一起不見）
+  if(currentAlloc)Object.keys(currentAlloc).forEach(oKey=>{
+    if(result[oKey])return; // 新檔已涵蓋
+    const ex=currentAlloc[oKey];
+    if(ex&&((ex.shipments&&ex.shipments.length>0)||ex.shippedAt))result[oKey]={...ex};
+  });
   // 保留既有備註（重算會產生新物件，避免備註被洗掉）
   if(currentAlloc)Object.keys(result).forEach(k=>{if(currentAlloc[k]&&currentAlloc[k].note&&!result[k].note)result[k].note=currentAlloc[k].note;});
   return result;
@@ -678,7 +684,10 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
         else{shippedItems.push({...it,allocatedQty:packedUnits});remainItems.push({...it,allocatedQty:it.allocatedQty-packedUnits});}
       });
       if(shippedItems.length===0)return prev; // 一件都沒勾就不動作
-      const newShipment={orderNo,shippedAt:new Date().toISOString(),items:shippedItems};
+      const _acc=String(order.customerAccount||"").toLowerCase();
+      const _info=iopenLC[_acc];
+      const _iord=_info&&_info.orders&&_info.orders.find(x=>String(x.orderNo)===String(orderNo));
+      const newShipment={orderNo,shippedAt:new Date().toISOString(),items:shippedItems,store:_iord?_iord.store:"",amount:_iord?_iord.amount:0};
       const existingShipments=order.shipments||(order.shippedAt?[{orderNo:order.shippedOrderNo,shippedAt:order.shippedAt,items:order.allocItems}]:[]);
       const next={...prev,[oKey]:{...order,
         allocItems:remainItems,
@@ -724,7 +733,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
     if(!files||!files.length)return;
     var arr=Array.from(files);
     setIopenXlsName(arr.map(function(f){return f.name;}).join("\u3001"));
-    var pending=arr.length,mergedIg={};
+    var pending=arr.length,mergedIg=JSON.parse(JSON.stringify(iopenData||{}));
     arr.forEach(function(file){
       var reader=new FileReader();
       reader.onload=function(ev){
@@ -737,16 +746,18 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
           Object.keys(byIg).forEach(function(ig){
             if(!mergedIg[ig])mergedIg[ig]={orders:[],customItems:[],totalSpend:0,needGift:false};
             var src=byIg[ig],tgt=mergedIg[ig];
+            if(!tgt.orders)tgt.orders=[];if(!tgt.customItems)tgt.customItems=[];
             var have={};tgt.orders.forEach(function(o){have[o.orderNo]=1;});
             src.orders.forEach(function(o){if(!have[o.orderNo])tgt.orders.push(o);});
             var haveC={};tgt.customItems.forEach(function(c){haveC[c.orderNo+"|"+c.prod]=1;});
             src.customItems.forEach(function(c){if(!haveC[c.orderNo+"|"+c.prod])tgt.customItems.push(c);});
-            tgt.totalSpend+=src.totalSpend;
-            tgt.needGift=tgt.totalSpend>=3500;
           });
         }catch(e){alert(file.name+" \u8b80\u53d6\u5931\u6557\uff1a"+e.message);}
         pending--;
-        if(pending===0)onSaveIopen(Object.assign({},mergedIg));
+        if(pending===0){
+          Object.keys(mergedIg).forEach(function(ig){var t=mergedIg[ig];t.totalSpend=(t.orders||[]).reduce(function(s,o){return s+(o.amount||0);},0);t.needGift=t.totalSpend>=3500;});
+          onSaveIopen(Object.assign({},mergedIg));
+        }
       };
       reader.readAsArrayBuffer(file);
     });
@@ -950,7 +961,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:sItems.length?6:0}}>
                         <span style={{color:sc.color,fontWeight:700,fontSize:12}}>📦 第{si+1}批出貨 {fmtTs(s.shippedAt)}</span>
                         <span style={{color:sc.color,fontFamily:"monospace",fontSize:12,opacity:0.85}}>{s.orderNo}</span>
-                        <button onClick={()=>{const store=(iopenInfo&&iopenInfo.orders&&(iopenInfo.orders.find(x=>String(x.orderNo)===String(s.orderNo))||{}).store)||"";const prods=(s.items||[]).filter(it=>it.allocatedQty>0).map(it=>dispName(it)+(it.allocatedQty>1?" ×"+it.allocatedQty:""));const key=o.oKey+"|b"+si;navigator.clipboard.writeText(buildShipNotice(s.orderNo,store,prods)).then(()=>{setCopiedKey(key);setTimeout(()=>setCopiedKey(""),1800);}).catch(()=>{});}} style={{color:sc.color,border:`1px solid ${sc.border}`,background:C.surface,borderRadius:6,padding:"2px 8px",fontSize:11,cursor:"pointer"}}>{copiedKey===(o.oKey+"|b"+si)?"\u2713 已複製":"\ud83d\udccb 複製通知"}</button>
+                        <button onClick={()=>{const store=s.store||(iopenInfo&&iopenInfo.orders&&(iopenInfo.orders.find(x=>String(x.orderNo)===String(s.orderNo))||{}).store)||"";const prods=(s.items||[]).filter(it=>it.allocatedQty>0).map(it=>dispName(it)+(it.allocatedQty>1?" ×"+it.allocatedQty:""));const key=o.oKey+"|b"+si;navigator.clipboard.writeText(buildShipNotice(s.orderNo,store,prods)).then(()=>{setCopiedKey(key);setTimeout(()=>setCopiedKey(""),1800);}).catch(()=>{});}} style={{color:sc.color,border:`1px solid ${sc.border}`,background:C.surface,borderRadius:6,padding:"2px 8px",fontSize:11,cursor:"pointer"}}>{copiedKey===(o.oKey+"|b"+si)?"\u2713 已複製":"\ud83d\udccb 複製通知"}</button>
                         <button onClick={()=>{if(window.confirm("確定撤銷這筆出貨記錄？品項會退回可出貨清單。"))revokeShipment(o.oKey,si);}} style={{marginLeft:"auto",color:sc.color,border:`1px solid ${sc.border}`,background:C.surface,borderRadius:6,padding:"2px 8px",fontSize:11,cursor:"pointer"}}>撤銷</button>
                       </div>
                       {sItems.map((it,ii)=>(
