@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta http-equiv="Pragma" content="no-cache"/>
+<meta http-equiv="Expires" content="0"/>
 <title>備貨追蹤</title>
 <script>
 window.onerror=function(msg,src,line,col,err){
@@ -961,7 +964,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
       {(()=>{const umAll=(iopenData&&iopenData.__unmatched__)||[];if(!umAll.length||allocSearch)return null;const um=umAll.slice().sort((a,b)=>(a.shipped?1:0)-(b.shipped?1:0));const pend=umAll.filter(u=>!u.shipped).length;return(
         <div style={{marginBottom:12,border:`1px solid ${C.warning}`,borderRadius:12,background:C.warningSoft,padding:"10px 12px"}}>
           <div style={{fontSize:13,fontWeight:700,color:C.warning,marginBottom:8}}>⚠️ 未歸屬 iOPEN 訂單（待出 {pend}／共 {umAll.length}）<span style={{fontWeight:400,fontSize:11}}>　查無 IG，勾選後可出貨</span></div>
-          {um.map((u,ui)=>{const prods=u.items.map(it=>it.prod+(it.spec1?" "+it.spec1:"")+(it.spec2?" "+it.spec2:""));const cpk="um|"+u.orderNo;const allChecked=u.items.length>0&&u.items.every((it,idx)=>!!packed["UM|"+u.orderNo+"|"+idx]);return(
+          {um.map((u,ui)=>{const prods=(u.items||[]).map(it=>it.prod+(it.spec1?" "+it.spec1:"")+(it.spec2?" "+it.spec2:""));const cpk="um|"+u.orderNo;const allChecked=(u.items||[]).length>0&&(u.items||[]).every((it,idx)=>!!packed["UM|"+u.orderNo+"|"+idx]);return(
             <div key={u.orderNo} style={{borderTop:ui>0?`1px solid ${C.line}`:"none",paddingTop:ui>0?8:0,marginTop:ui>0?8:0,opacity:u.shipped?0.6:1}}>
               <div style={{fontSize:12,color:C.ink,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:4}}>
                 <span style={{fontWeight:600,textDecoration:u.shipped?"line-through":"none"}}>{u.name||"—"}</span>
@@ -978,7 +981,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                 </div>
               ):(
                 <div>
-                  {u.items.map((it,idx)=>{const isP=!!packed["UM|"+u.orderNo+"|"+idx];return(
+                  {(u.items||[]).map((it,idx)=>{const isP=!!packed["UM|"+u.orderNo+"|"+idx];return(
                     <div key={idx} style={{fontSize:12,display:"flex",alignItems:"center",gap:8,padding:"2px 0",paddingLeft:4}}>
                       <span style={{flex:1,color:C.warning}}>· {it.prod}{it.spec1?" "+it.spec1:""}{it.spec2?" "+it.spec2:""}</span>
                       <button onClick={()=>togglePacked("UM",u.orderNo+"|"+idx)} title={isP?"取消裝袋":"標記已裝袋"} style={{width:22,height:22,borderRadius:5,border:`2px solid ${isP?C.success:C.warning}`,background:isP?C.success:"#fff",color:"#fff",cursor:"pointer",fontSize:13,lineHeight:1,flexShrink:0,padding:0}}>{isP?"✓":""}</button>
@@ -1385,7 +1388,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17}}>備貨追蹤</div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0721-D</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -1569,7 +1572,19 @@ function App(){
   );
 }
 
-try{const root=ReactDOM.createRoot(document.getElementById("root"));root.render(<App/>);}catch(err){document.body.innerHTML='<div style="white-space:pre-wrap;padding:20px;color:#b91c1c;font-family:monospace;font-size:13px;">Render錯誤：\n'+(err&&err.stack?err.stack:String(err))+'</div>';}
+class ErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={err:null,info:null};}
+  static getDerivedStateFromError(err){return{err:err};}
+  componentDidCatch(err,info){this.setState({err:err,info:info});}
+  render(){
+    if(this.state.err){
+      return React.createElement('div',{style:{whiteSpace:'pre-wrap',padding:20,color:'#b91c1c',fontFamily:'monospace',fontSize:13}},
+        '畫面錯誤：\n'+String((this.state.err&&this.state.err.message)||this.state.err)+'\n\n'+((this.state.err&&this.state.err.stack)||'')+'\n\n元件位置：'+((this.state.info&&this.state.info.componentStack)||''));
+    }
+    return this.props.children;
+  }
+}
+try{const root=ReactDOM.createRoot(document.getElementById("root"));root.render(React.createElement(ErrorBoundary,null,React.createElement(App)));}catch(err){document.body.innerHTML='<div style="white-space:pre-wrap;padding:20px;color:#b91c1c;font-family:monospace;font-size:13px;">Render錯誤：\n'+(err&&err.stack?err.stack:String(err))+'</div>';}
 </script>
 </body>
 </html>
