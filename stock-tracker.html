@@ -91,6 +91,8 @@ function packKeyOf(allocItems,item){
 function unitPackKey(allocItems,item,unitIdx){
   return packKeyOf(allocItems,item)+"#u"+unitIdx;
 }
+function custKey(ci){return String(ci.orderNo||"")+"|"+String(ci.prod||"")+"|"+String(ci.spec1||"")+"|"+String(ci.spec2||"");}
+function custToItem(ci){return {product:ci.prod,color:"",size:"",style:[ci.spec1,ci.spec2].filter(Boolean).join(" "),allocatedQty:1,isCustom:true,custKey:custKey(ci)};}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function fmtSavedTime(d){if(!d)return"";return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}
 function fmtTs(ts){if(!ts)return"";const d=new Date(ts);return`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}
@@ -339,11 +341,12 @@ function recalculateAlloc(currentAlloc,parsed,stockItems,method){
 // ── iOPEN XLS 解析 ──
 function parseIopenXLS(aoa){
   try{
-    if(!aoa||aoa.length<2)return{byIg:{},allCustom:[]};
+    if(!aoa||aoa.length<2)return{byIg:{},allCustom:[],unmatched:[]};
     var hdr=aoa[0].map(function(h){return String(h||'');});
     var col=function(k){return hdr.findIndex(function(h){return h.indexOf(k)>-1;});};
     var CO=col('\u8a02\u55ae\u7de8\u865f'),CP=col('\u5546\u54c1\u540d\u7a31'),CS=col('\u51fa\u8ca8\u55ae\u7de8\u865f');
     var CA=col('\u8a02\u55ae\u91d1\u984d'),CM=col('\u9580\u5e02\u540d\u7a31'),CST=col('\u8a02\u55ae\u72c0\u614b'),CN=col('\u5099\u8a3b');
+    var CNM=col('\u6703\u54e1\u59d3\u540d');
     var CS1=hdr.findIndex(function(h){return h==='\u898f\u683c1';});
     var CS2=hdr.findIndex(function(h){return h==='\u898f\u683c2';});
     var extractLiveIg=function(prod){
@@ -364,8 +367,9 @@ function parseIopenXLS(aoa){
       var shipNo=String(r[CS]||'').trim(),store=String(r[CM]||'').trim();
       var amt=parseFloat(r[CA])||0;
       var spec1=CS1>=0?String(r[CS1]||'').trim():'',spec2=CS2>=0?String(r[CS2]||'').trim():'';
-      if(!orderMap[orderNo])orderMap[orderNo]={igLive:'',igNote:'',store:'',shipNo:'',amount:0,rows:[]};
+      if(!orderMap[orderNo])orderMap[orderNo]={igLive:'',igNote:'',store:'',shipNo:'',amount:0,name:'',rows:[]};
       var om=orderMap[orderNo];
+      var nm=CNM>=0?String(r[CNM]||'').trim():'';if(nm&&!om.name)om.name=nm;
       var liveIg=extractLiveIg(prod);
       if(liveIg)om.igLive=liveIg;
       if(!om.igNote&&note&&note.length<=30&&note.indexOf(' ')===-1&&note.indexOf('\uff0c')===-1&&note.indexOf(',')===-1)om.igNote=note;
@@ -375,9 +379,19 @@ function parseIopenXLS(aoa){
       om.rows.push({prod:prod,spec1:spec1,spec2:spec2,shipNo:shipNo,isLiveMarker:liveIg.length>0});
     }
     // \u7b2c\u4e8c\u8f2a\uff1a\u7d44 byIg\uff08\u975e\u76f4\u64ad\u884c\u7684\u5546\u54c1\u5217\u70ba\u5ba2\u8a02\u54c1\u9805\uff09
-    var byIg={},allCustom=[],oAmt={};
+    var byIg={},allCustom=[],unmatched=[],oAmt={};
     Object.keys(orderMap).forEach(function(orderNo){
-      var om=orderMap[orderNo];var ig=om.igLive||om.igNote;if(!ig)return;
+      var om=orderMap[orderNo];var ig=om.igLive||om.igNote;
+      if(!ig){
+        var up=[],useen={};
+        om.rows.forEach(function(row){
+          if(row.isLiveMarker||!row.prod||row.prod.indexOf('\u904b\u8cbb')>-1)return;
+          var uk=row.prod+'|'+row.spec1+'|'+row.spec2;if(useen[uk])return;useen[uk]=1;
+          up.push({prod:row.prod,spec1:row.spec1,spec2:row.spec2});
+        });
+        if(up.length)unmatched.push({orderNo:orderNo,store:om.store,amount:om.amount,name:om.name||'',items:up});
+        return;
+      }
       oAmt[orderNo]=om.amount;
       if(!byIg[ig])byIg[ig]={orders:[],customItems:[],totalSpend:0,needGift:false};
       var dup=false;for(var q=0;q<byIg[ig].orders.length;q++)if(byIg[ig].orders[q].orderNo===orderNo)dup=true;
@@ -391,8 +405,8 @@ function parseIopenXLS(aoa){
       });
     });
     Object.keys(byIg).forEach(function(ig){var d=byIg[ig],tot=0;for(var k=0;k<d.orders.length;k++)tot+=oAmt[d.orders[k].orderNo]||0;d.totalSpend=tot;d.needGift=tot>=3500;});
-    return{byIg:byIg,allCustom:allCustom};
-  }catch(e){console.error('parseIopenXLS:',e);return{byIg:{},allCustom:[]};}
+    return{byIg:byIg,allCustom:allCustom,unmatched:unmatched};
+  }catch(e){console.error('parseIopenXLS:',e);return{byIg:{},allCustom:[],unmatched:[]};}
 }
 
 async function gFetch(token,gistId){
@@ -683,15 +697,19 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
         if(packedUnits>=it.allocatedQty){shippedItems.push(it);}
         else{shippedItems.push({...it,allocatedQty:packedUnits});remainItems.push({...it,allocatedQty:it.allocatedQty-packedUnits});}
       });
-      if(shippedItems.length===0)return prev; // 一件都沒勾就不動作
       const _acc=String(order.customerAccount||"").toLowerCase();
       const _info=iopenLC[_acc];
+      // 併入已勾選的客訂品項
+      const custShipped=[];const newShippedCI=(order.shippedCI||[]).slice();
+      if(_info&&_info.customItems)_info.customItems.forEach(ci=>{const ck=custKey(ci);if(newShippedCI.indexOf(ck)>-1)return;if(packed[oKey+"|CI|"+ck]){custShipped.push(custToItem(ci));newShippedCI.push(ck);}});
+      if(shippedItems.length===0&&custShipped.length===0)return prev; // 一件都沒勾就不動作
       const _iord=_info&&_info.orders&&_info.orders.find(x=>String(x.orderNo)===String(orderNo));
-      const newShipment={orderNo,shippedAt:new Date().toISOString(),items:shippedItems,store:_iord?_iord.store:"",amount:_iord?_iord.amount:0};
+      const newShipment={orderNo,shippedAt:new Date().toISOString(),items:shippedItems.concat(custShipped),store:_iord?_iord.store:"",amount:_iord?_iord.amount:0};
       const existingShipments=order.shipments||(order.shippedAt?[{orderNo:order.shippedOrderNo,shippedAt:order.shippedAt,items:order.allocItems}]:[]);
       const next={...prev,[oKey]:{...order,
         allocItems:remainItems,
         shipments:[...existingShipments,newShipment],
+        shippedCI:newShippedCI,
         shippedAt:null,shippedOrderNo:null,
       }};
       onSaveAlloc(next);
@@ -743,6 +761,12 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
           var aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
           var res=parseIopenXLS(aoa);
           var byIg=(res&&res.byIg)||{};
+          var um=(res&&res.unmatched)||[];
+          if(um.length){
+            if(!Array.isArray(mergedIg.__unmatched__))mergedIg.__unmatched__=[];
+            var uhave={};mergedIg.__unmatched__.forEach(function(u){uhave[u.orderNo]=1;});
+            um.forEach(function(u){if(!uhave[u.orderNo])mergedIg.__unmatched__.push(u);});
+          }
           Object.keys(byIg).forEach(function(ig){
             if(!mergedIg[ig])mergedIg[ig]={orders:[],customItems:[],totalSpend:0,needGift:false};
             var src=byIg[ig],tgt=mergedIg[ig];
@@ -755,7 +779,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
         }catch(e){alert(file.name+" \u8b80\u53d6\u5931\u6557\uff1a"+e.message);}
         pending--;
         if(pending===0){
-          Object.keys(mergedIg).forEach(function(ig){var t=mergedIg[ig];t.totalSpend=(t.orders||[]).reduce(function(s,o){return s+(o.amount||0);},0);t.needGift=t.totalSpend>=3500;});
+          Object.keys(mergedIg).forEach(function(ig){if(ig==='__unmatched__')return;var t=mergedIg[ig];t.totalSpend=(t.orders||[]).reduce(function(s,o){return s+(o.amount||0);},0);t.needGift=t.totalSpend>=3500;});
           onSaveIopen(Object.assign({},mergedIg));
         }
       };
@@ -794,6 +818,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
 
   // iOPEN 帳號比對不分大小寫（直播行 IG 大小寫可能與 hotsnet 帳號不同）
   const iopenLC=useMemo(()=>{const m={};Object.keys(iopenData||{}).forEach(k=>{m[String(k).toLowerCase()]=iopenData[k];});return m;},[iopenData]);
+  const iopenCount=useMemo(()=>Object.keys(iopenData||{}).filter(k=>k!=="__unmatched__").length,[iopenData]);
 
   // 搜尋：帳號 / 人名 / iOPEN訂單編號·出貨單號 / 已出貨單號
   const filteredDisplay=useMemo(()=>{
@@ -868,7 +893,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:showIopen?10:0}}>
           <div>
             <span style={{fontSize:13,fontWeight:600,color:C.ink}}>導入 iOPEN 出貨明細</span>
-            {Object.keys(iopenData).length>0&&<span style={{fontSize:11,color:C.success,marginLeft:8}}>✓ {Object.keys(iopenData).length}人</span>}
+            {iopenCount>0&&<span style={{fontSize:11,color:C.success,marginLeft:8}}>✓ {iopenCount}人</span>}
           </div>
           <button onClick={()=>setShowIopen(!showIopen)} style={{fontSize:12,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"3px 10px",cursor:"pointer"}}>{showIopen?"收起":"展開"}</button>
         </div>
@@ -902,6 +927,23 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
         {allocSearch&&<button onClick={()=>setAllocSearch("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:C.inkMuted,fontSize:16,cursor:"pointer",lineHeight:1}}>×</button>}
       </div>}
       {allocSearch&&filteredDisplay.length===0&&<div style={{textAlign:"center",color:C.inkMuted,fontSize:13,padding:"20px 0"}}>找不到符合「{allocSearch}」的客人</div>}
+      {(()=>{const um=(iopenData&&iopenData.__unmatched__)||[];if(!um.length||allocSearch)return null;return(
+        <div style={{marginBottom:12,border:`1px solid ${C.warning}`,borderRadius:12,background:C.warningSoft,padding:"10px 12px"}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.warning,marginBottom:8}}>⚠️ 未歸屬 iOPEN 訂單（{um.length}）<span style={{fontWeight:400,fontSize:11}}>　查無 IG，無法自動對應客人</span></div>
+          {um.map((u,ui)=>{const prods=u.items.map(it=>it.prod+(it.spec1?" "+it.spec1:"")+(it.spec2?" "+it.spec2:""));const cpk="um|"+u.orderNo;return(
+            <div key={u.orderNo} style={{borderTop:ui>0?`1px solid ${C.line}`:"none",paddingTop:ui>0?8:0,marginTop:ui>0?8:0}}>
+              <div style={{fontSize:12,color:C.ink,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:4}}>
+                <span style={{fontWeight:600}}>{u.name||"—"}</span>
+                <span style={{fontFamily:"monospace",color:C.inkMuted}}>{u.orderNo}</span>
+                {u.store&&<span style={{color:C.inkMuted}}>📍{u.store}</span>}
+                {u.amount>0&&<span style={{fontFamily:"monospace",fontWeight:700}}>${u.amount}</span>}
+                <button onClick={()=>{navigator.clipboard.writeText(buildShipNotice(u.orderNo,u.store,prods)).then(()=>{setCopiedKey(cpk);setTimeout(()=>setCopiedKey(""),1800);}).catch(()=>{});}} style={{marginLeft:"auto",fontSize:11,color:copiedKey===cpk?C.success:C.info,border:`1px solid ${copiedKey===cpk?C.success:C.info}`,background:C.surface,borderRadius:8,padding:"2px 8px",cursor:"pointer"}}>{copiedKey===cpk?"\u2713 已複製":"\ud83d\udccb 複製通知"}</button>
+              </div>
+              {prods.map((p,pi)=>(<div key={pi} style={{fontSize:12,color:C.warning,paddingLeft:4,lineHeight:1.7}}>· {p}</div>))}
+            </div>
+          );})}
+        </div>
+      );})()}
       {filteredDisplay.map((c,ci)=>{const iopenInfo=iopenLC[String(c.account||"").toLowerCase()];return(
         <div key={c.account||c.name||ci} style={{background:C.surface,border:`1px solid ${C.line}`,borderRadius:12,marginBottom:10,padding:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
@@ -912,16 +954,21 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
             <span style={{fontSize:12,fontFamily:"monospace",color:C.inkMuted}}>NT${c.totalAmount.toLocaleString()}</span>
           </div>
 
-          {iopenInfo&&iopenInfo.customItems&&iopenInfo.customItems.length>0&&(
+          {iopenInfo&&iopenInfo.customItems&&iopenInfo.customItems.length>0&&(()=>{
+          const primaryKey=c.orders[0]&&c.orders[0].oKey;
+          const shippedCI=(c.orders[0]&&c.orders[0].shippedCI)||[];
+          return(
           <div style={{marginBottom:8,padding:"8px 10px",background:"#F5F0FF",border:"1px solid #D4B8FF",borderRadius:10}}>
-            <div style={{fontSize:11,fontWeight:600,color:"#6B21A8",marginBottom:6}}>🎯 客訂品項</div>
-            {iopenInfo.customItems.map((ci2,idx2)=>(
-              <div key={idx2} style={{fontSize:12,color:"#4C1D95",padding:"3px 0"}}>
-                {ci2.prod}{ci2.spec1?" · "+ci2.spec1:""}{ci2.spec2?" · "+ci2.spec2:""}
+            <div style={{fontSize:11,fontWeight:600,color:"#6B21A8",marginBottom:6}}>🎯 客訂品項（可勾選一起出貨）</div>
+            {iopenInfo.customItems.map((ci2,idx2)=>{const ck=custKey(ci2);const shipped=shippedCI.indexOf(ck)>-1;const isP=!!packed[primaryKey+"|CI|"+ck];return(
+              <div key={idx2} style={{fontSize:12,display:"flex",alignItems:"center",gap:8,padding:"3px 0",opacity:shipped?0.55:1}}>
+                <span style={{flex:1,color:"#4C1D95",textDecoration:shipped?"line-through":"none"}}>{ci2.prod}{ci2.spec1?" · "+ci2.spec1:""}{ci2.spec2?" · "+ci2.spec2:""}</span>
+                {shipped?<span style={{fontSize:11,color:C.success,fontWeight:600}}>已出</span>:
+                  <button onClick={()=>togglePacked(primaryKey,"CI|"+ck)} title={isP?"取消裝袋":"標記已裝袋"} style={{width:24,height:24,borderRadius:6,border:`2px solid ${isP?C.success:"#C4A6F0"}`,background:isP?C.success:"#fff",color:"#fff",cursor:"pointer",fontSize:14,lineHeight:1,flexShrink:0,padding:0}}>{isP?"✓":""}</button>}
               </div>
-            ))}
+            );})}
           </div>
-        )}
+          );})()}
         {c.orders.map((o,oi)=>{
             const canShip=o.allocItems.some(it=>it.allocatedQty>0);
             const shipments=o.shipments||(o.shippedAt?[{orderNo:o.shippedOrderNo,shippedAt:o.shippedAt}]:[]);
@@ -1087,21 +1134,29 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                         <button onClick={()=>{navigator.clipboard.writeText(buildShipNotice(nextOrd.orderNo,nextOrd.store,prods)).then(()=>{setCopiedKey(cpk);setTimeout(()=>setCopiedKey(""),1800);}).catch(()=>{});}} style={{fontSize:11,color:copiedKey===cpk?C.success:C.info,border:`1px solid ${copiedKey===cpk?C.success:C.info}`,background:copiedKey===cpk?C.successSoft:C.infoSoft,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>{copiedKey===cpk?"\u2713 已複製":"\ud83d\udccb 複製通知"}</button>
                       </div>
                       );})()}
+                    {(()=>{
+                      const anyAllocPacked=o.allocItems.some(it=>{if(!(it.allocatedQty>0))return false;for(let u=0;u<it.allocatedQty;u++)if(packed[o.oKey+"|"+unitPackKey(o.allocItems,it,u)])return true;return false;});
+                      const _sci=(c.orders[0]&&c.orders[0].shippedCI)||[];
+                      const anyCustPacked=(iopenInfo&&iopenInfo.customItems?iopenInfo.customItems:[]).some(ci=>{const ck=custKey(ci);return _sci.indexOf(ck)===-1&&!!packed[o.oKey+"|CI|"+ck];});
+                      const anyPacked=anyAllocPacked||anyCustPacked;
+                      const hasInput=!!(shipInputs[o.oKey]&&shipInputs[o.oKey].trim());
+                      const canConfirm=hasInput&&anyPacked;
+                      return(
                     <div style={{display:"flex",gap:6}}>
                       <input type="text" value={shipInputs[o.oKey]||""} onChange={e=>setShipInputs(p=>({...p,[o.oKey]:e.target.value}))}
                         placeholder={(iopenInfo&&iopenInfo.orders&&iopenInfo.orders[shipments.length]&&iopenInfo.orders[shipments.length].orderNo)||(hasShipments?"填入第二次出貨單號":"填入出貨單號")}
                         style={{flex:1,border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,minWidth:0}}/>
                       <button onClick={()=>{
-                        if(!shipInputs[o.oKey]?.trim())return;
-                        const anyPacked=o.allocItems.some(it=>{if(!(it.allocatedQty>0))return false;for(let u=0;u<it.allocatedQty;u++)if(packed[o.oKey+"|"+unitPackKey(o.allocItems,it,u)])return true;return false;});
-                        if(!anyPacked){alert("請先勾選已裝袋的品項，才能出貨");return;}
+                        if(!hasInput)return;
+                        if(!anyPacked){alert("請先勾選已裝袋的品項（含客訂品項），才能出貨");return;}
                         confirmShipment(o.oKey,shipInputs[o.oKey].trim());
                       }}
-                        disabled={!shipInputs[o.oKey]?.trim()||!o.allocItems.some(it=>{if(!(it.allocatedQty>0))return false;for(let u=0;u<it.allocatedQty;u++)if(packed[o.oKey+"|"+unitPackKey(o.allocItems,it,u)])return true;return false;})}
-                        style={{background:(shipInputs[o.oKey]?.trim()&&o.allocItems.some(it=>{if(!(it.allocatedQty>0))return false;for(let u=0;u<it.allocatedQty;u++)if(packed[o.oKey+"|"+unitPackKey(o.allocItems,it,u)])return true;return false;}))?C.success:"#ccc",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:(shipInputs[o.oKey]?.trim()&&o.allocItems.some(it=>{if(!(it.allocatedQty>0))return false;for(let u=0;u<it.allocatedQty;u++)if(packed[o.oKey+"|"+unitPackKey(o.allocItems,it,u)])return true;return false;}))?"pointer":"default",whiteSpace:"nowrap"}}>
+                        disabled={!canConfirm}
+                        style={{background:canConfirm?C.success:"#ccc",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:canConfirm?"pointer":"default",whiteSpace:"nowrap"}}>
                         確認出貨
                       </button>
                     </div>
+                      );})()}
                   </div>
                 )}
               </div>
