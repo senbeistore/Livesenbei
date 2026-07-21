@@ -597,6 +597,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   const[err,setErr]=useState("");
   const[editingKey,setEditingKey]=useState(null);
   const[allocSearch,setAllocSearch]=useState("");
+  const[catFilter,setCatFilter]=useState("live");
   const[copiedKey,setCopiedKey]=useState("");
   const[editingNote,setEditingNote]=useState("");
   const[noteInputs,setNoteInputs]=useState({});
@@ -850,7 +851,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
       byCust[ck].orders.push({oKey,...o});
     });
     const custDone=(c)=>{const s=c.orders.some(o=>((o.shipments&&o.shipments.length>0)||o.shippedAt));const r=c.orders.some(o=>(o.allocItems||[]).some(it=>it.allocatedQty>0));return s&&!r;};
-    return Object.values(byCust).sort((a,b)=>{const da=custDone(a),db=custDone(b);if(da!==db)return da?1:-1;return b.totalAmount-a.totalAmount;});
+    const arr=Object.values(byCust);arr.forEach(c=>{c.done=custDone(c);});
+    return arr.sort((a,b)=>{if(a.done!==b.done)return a.done?1:-1;return b.totalAmount-a.totalAmount;});
   },[editAlloc]);
 
   // iOPEN 帳號比對不分大小寫（直播行 IG 大小寫可能與 hotsnet 帳號不同）
@@ -963,10 +965,11 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
         <input type="text" value={allocSearch} onChange={e=>setAllocSearch(e.target.value)} placeholder="搜尋 帳號 / 人名 / 訂單編號" style={{width:"100%",border:`1px solid ${allocSearch?C.info:C.line}`,borderRadius:10,padding:"9px 32px 9px 12px",fontSize:14,background:C.surface,color:C.ink,boxSizing:"border-box"}}/>
         {allocSearch&&<button onClick={()=>setAllocSearch("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:C.inkMuted,fontSize:16,cursor:"pointer",lineHeight:1}}>×</button>}
       </div>}
+      {(()=>{const umAll=(iopenData&&iopenData.__unmatched__)||[];const liveN=filteredDisplay.filter(c=>!c.done).length;const shippedN=filteredDisplay.filter(c=>c.done).length+umAll.filter(u=>u.shipped).length;const ipmN=umAll.filter(u=>!u.shipped).length;const tab=(key,label,n)=>(<button key={key} onClick={()=>setCatFilter(key)} style={{flex:1,padding:"8px 4px",fontSize:13,fontWeight:600,border:"none",borderBottom:`2px solid ${catFilter===key?C.info:"transparent"}`,background:"transparent",color:catFilter===key?C.info:C.inkMuted,cursor:"pointer"}}>{label} <span style={{fontSize:11,opacity:0.8}}>{n}</span></button>);return(<div style={{display:"flex",borderBottom:`1px solid ${C.line}`,marginBottom:10}}>{tab("live","直播",liveN)}{tab("ipm","IPM",ipmN)}{tab("shipped","已出貨",shippedN)}</div>);})()}
       {allocSearch&&filteredDisplay.length===0&&<div style={{textAlign:"center",color:C.inkMuted,fontSize:13,padding:"20px 0"}}>找不到符合「{allocSearch}」的客人</div>}
-      {(()=>{const umAll=(iopenData&&iopenData.__unmatched__)||[];if(!umAll.length||allocSearch)return null;const um=umAll.slice().sort((a,b)=>(a.shipped?1:0)-(b.shipped?1:0));const pend=umAll.filter(u=>!u.shipped).length;return(
+      {(()=>{const umAll=(iopenData&&iopenData.__unmatched__)||[];if(!umAll.length||allocSearch||catFilter==="live")return null;const um=catFilter==="ipm"?umAll.filter(u=>!u.shipped):umAll.filter(u=>u.shipped);if(!um.length)return null;const pend=umAll.filter(u=>!u.shipped).length;return(
         <div style={{marginBottom:12,border:`1px solid ${C.warning}`,borderRadius:12,background:C.warningSoft,padding:"10px 12px"}}>
-          <div style={{fontSize:13,fontWeight:700,color:C.warning,marginBottom:8}}>⚠️ 未歸屬 iOPEN 訂單（待出 {pend}／共 {umAll.length}）<span style={{fontWeight:400,fontSize:11}}>　查無 IG，勾選後可出貨</span></div>
+          <div style={{fontSize:13,fontWeight:700,color:catFilter==="shipped"?C.success:C.warning,marginBottom:8}}>{catFilter==="shipped"?"✓ 已出貨・未歸屬 iOPEN 訂單（"+um.length+"）":"⚠️ 未歸屬 iOPEN 訂單（待出 "+pend+"／共 "+umAll.length+"）"}<span style={{fontWeight:400,fontSize:11,color:C.inkMuted}}>{catFilter==="shipped"?"":"　查無 IG，勾選後可出貨"}</span></div>
           {um.map((u,ui)=>{const prods=(u.items||[]).map(it=>it.prod+(it.spec1?" "+it.spec1:"")+(it.spec2?" "+it.spec2:""));const cpk="um|"+u.orderNo;const allChecked=(u.items||[]).length>0&&(u.items||[]).every((it,idx)=>!!packed["UM|"+u.orderNo+"|"+idx]);return(
             <div key={u.orderNo} style={{borderTop:ui>0?`1px solid ${C.line}`:"none",paddingTop:ui>0?8:0,marginTop:ui>0?8:0,opacity:u.shipped?0.6:1}}>
               <div style={{fontSize:12,color:C.ink,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:4}}>
@@ -997,7 +1000,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
           );})}
         </div>
       );})()}
-      {filteredDisplay.map((c,ci)=>{const iopenInfo=iopenLC[String(c.account||"").toLowerCase()];return(
+      {filteredDisplay.filter(c=>catFilter==="live"?!c.done:catFilter==="shipped"?c.done:false).map((c,ci)=>{const iopenInfo=iopenLC[String(c.account||"").toLowerCase()];return(
         <div key={c.account||c.name||ci} style={{background:C.surface,border:`1px solid ${C.line}`,borderRadius:12,marginBottom:10,padding:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div>
@@ -1391,7 +1394,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0721-E</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0721-F</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
