@@ -781,6 +781,9 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
     return Object.values(byCust).sort((a,b)=>{const da=custDone(a),db=custDone(b);if(da!==db)return da?1:-1;return b.totalAmount-a.totalAmount;});
   },[editAlloc]);
 
+  // iOPEN 帳號比對不分大小寫（直播行 IG 大小寫可能與 hotsnet 帳號不同）
+  const iopenLC=useMemo(()=>{const m={};Object.keys(iopenData||{}).forEach(k=>{m[String(k).toLowerCase()]=iopenData[k];});return m;},[iopenData]);
+
   // 搜尋：帳號 / 人名 / iOPEN訂單編號·出貨單號 / 已出貨單號
   const filteredDisplay=useMemo(()=>{
     const q=allocSearch.trim().toLowerCase();
@@ -788,12 +791,12 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
     return displayData.filter(c=>{
       const hay=[c.account,c.name].filter(Boolean).join(" ").toLowerCase();
       if(hay.includes(q))return true;
-      const info=iopenData[c.account];
+      const info=iopenLC[String(c.account||"").toLowerCase()];
       if(info&&info.orders&&info.orders.some(o=>String(o.orderNo||"").toLowerCase().includes(q)||String(o.shipNo||"").toLowerCase().includes(q)))return true;
       if(c.orders&&c.orders.some(o=>(o.shipments||[]).some(s=>String(s.orderNo||"").toLowerCase().includes(q))))return true;
       return false;
     });
-  },[displayData,allocSearch,iopenData]);
+  },[displayData,allocSearch,iopenLC]);
 
   const totalOrders=Object.keys(editAlloc||{}).length;
   const hasShipOf=(o)=>((o.shipments&&o.shipments.length>0)||!!o.shippedAt);
@@ -888,7 +891,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
         {allocSearch&&<button onClick={()=>setAllocSearch("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:C.inkMuted,fontSize:16,cursor:"pointer",lineHeight:1}}>×</button>}
       </div>}
       {allocSearch&&filteredDisplay.length===0&&<div style={{textAlign:"center",color:C.inkMuted,fontSize:13,padding:"20px 0"}}>找不到符合「{allocSearch}」的客人</div>}
-      {filteredDisplay.map((c,ci)=>{const iopenInfo=iopenData[c.account];return(
+      {filteredDisplay.map((c,ci)=>{const iopenInfo=iopenLC[String(c.account||"").toLowerCase()];return(
         <div key={c.account||c.name||ci} style={{background:C.surface,border:`1px solid ${C.line}`,borderRadius:12,marginBottom:10,padding:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div>
