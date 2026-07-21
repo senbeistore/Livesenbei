@@ -970,7 +970,10 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
           </div>
           );})()}
         {c.orders.map((o,oi)=>{
-            const canShip=o.allocItems.some(it=>it.allocatedQty>0);
+            const _primaryKey=c.orders[0]&&c.orders[0].oKey;
+            const _shippedCI=(c.orders[0]&&c.orders[0].shippedCI)||[];
+            const hasUnshippedCustom=o.oKey===_primaryKey&&iopenInfo&&iopenInfo.customItems&&iopenInfo.customItems.some(ci=>_shippedCI.indexOf(custKey(ci))===-1);
+            const canShip=o.allocItems.some(it=>it.allocatedQty>0)||hasUnshippedCustom;
             const shipments=o.shipments||(o.shippedAt?[{orderNo:o.shippedOrderNo,shippedAt:o.shippedAt}]:[]);
             const hasShipments=shipments.length>0;
             const isShipped=hasShipments; // 有任何出貨記錄就算已出貨過
@@ -1126,6 +1129,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                     </div>
                     {(()=>{const typed=shipInputs[o.oKey];const ords=(iopenInfo&&iopenInfo.orders)||[];const isShippedOrd=(x)=>c.orders.some(oo=>(oo.shipments||[]).some(s=>String(s.orderNo)===String(x.orderNo)));const nextOrd=(typed&&ords.find(x=>x.orderNo===typed))||ords.find(x=>!isShippedOrd(x))||ords[shipments.length];if(!nextOrd||!(nextOrd.store||nextOrd.amount>0))return null;
                       const prods=o.allocItems.filter(it=>it.allocatedQty>0).map(it=>dispName(it)+(it.allocatedQty>1?" ×"+it.allocatedQty:""));
+                      if(iopenInfo&&iopenInfo.customItems){const _sci2=(c.orders[0]&&c.orders[0].shippedCI)||[];iopenInfo.customItems.forEach(ci=>{const ck=custKey(ci);if(_sci2.indexOf(ck)===-1&&packed[o.oKey+"|CI|"+ck])prods.push(ci.prod+(ci.spec1?" "+ci.spec1:"")+(ci.spec2?" "+ci.spec2:""));});}
                       const cpk=o.oKey+"|"+nextOrd.orderNo;
                       return(
                       <div style={{fontSize:12,color:C.inkMuted,marginBottom:4,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
@@ -1257,9 +1261,15 @@ function App(){
           var aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
           var result=parseIopenXLS(aoa);
           var allCustom=(result&&result.allCustom)||[];
+          var unmatched=(result&&result.unmatched)||[];
+          // 未歸屬（查無 IG）訂單的商品也要進備貨清單
+          var uItems=[];
+          unmatched.forEach(function(u){(u.items||[]).forEach(function(it){uItems.push({orderNo:u.orderNo,prod:it.prod,spec1:it.spec1,spec2:it.spec2});});});
+          var combined=allCustom.concat(uItems);
+          var dkey=function(c){return c.orderNo+'|'+c.prod+'|'+(c.spec1||'')+'|'+(c.spec2||'');};
           var seen={};
-          merged.forEach(function(c){seen[c.orderNo+'|'+c.prod]=1;});
-          allCustom.forEach(function(c){if(!seen[c.orderNo+'|'+c.prod])merged.push(c);});
+          merged.forEach(function(c){seen[dkey(c)]=1;});
+          combined.forEach(function(c){if(!seen[dkey(c)]){seen[dkey(c)]=1;merged.push(c);}});
         }catch(e){alert(file.name+' 讀取失敗：'+e.message);}
         pending--;
         if(pending===0){
