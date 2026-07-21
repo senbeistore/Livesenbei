@@ -427,6 +427,26 @@ async function gCreate(token){
 function migrateItem(it){
   return{...it,stockQty:it.stockQty||0,firstOrderDate:it.firstOrderDate||it.supplierOrderDate||"",secondOrderDate:it.secondOrderDate||"",allOrdered:it.allOrdered||false,orderedQty:it.orderedQty!=null?it.orderedQty:it.qty,arrivedQty:it.arrivedQty>0?it.arrivedQty:(it.allArrived?(it.orderedQty!=null?it.orderedQty:it.qty):(it.arrived?it.qty:0)),shippedQty:it.shippedQty||0,allArrived:it.allArrived||it.arrived||false,arrivedTs:it.arrivedTs||"",firstArrivedTs:it.firstArrivedTs||"",importedAt:it.importedAt||it.orderDate||todayStr()};
 }
+// 從 iopenData 收集所有客訂商品（含未歸屬），過濾運費/湊卷等非實體品項
+function iopenCustomFromData(d){
+  var out=[];
+  var push=function(prod,spec1,spec2){var p=(prod||"").trim();if(!p||p==="運費"||p.indexOf("湊卷")>-1||p.indexOf("自願使用無退款")>-1)return;out.push({prod:p,spec1:spec1||"",spec2:spec2||""});};
+  Object.keys(d||{}).forEach(function(ig){
+    if(ig==="__unmatched__"){(d.__unmatched__||[]).forEach(function(u){(u.items||[]).forEach(function(it){push(it.prod,it.spec1,it.spec2);});});return;}
+    var t=d[ig];if(t&&t.customItems)t.customItems.forEach(function(c){push(c.prod,c.spec1,c.spec2);});
+  });
+  return out;
+}
+// 把客訂商品併入主 items（依 SKU 聚合計數；只加「不存在的」新 SKU，既有品項不動以保留訂貨/到貨進度）
+function mergeCustomIntoItems(currentItems,custList){
+  if(!custList||!custList.length)return currentItems||[];
+  var agg={};
+  custList.forEach(function(c){var sku=c.prod+"|"+(c.spec1||"")+"|"+(c.spec2||"");if(!agg[sku])agg[sku]={product:c.prod,color:c.spec1||"",size:c.spec2||"",qty:0};agg[sku].qty+=1;});
+  var have={};(currentItems||[]).forEach(function(it){have[(it.product||"")+"|"+(it.color||"")+"|"+(it.size||"")+"|"+(it.style||"")]=1;});
+  var added=[];
+  Object.keys(agg).forEach(function(sku){var a=agg[sku];var k=a.product+"|"+a.color+"|"+a.size+"|";if(have[k])return;have[k]=1;added.push(migrateItem({id:"cust_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,7),product:a.product,color:a.color,size:a.size,style:"",qty:a.qty,isCustomStock:true}));});
+  return added.length?(currentItems||[]).concat(added):(currentItems||[]);
+}
 
 // ── Setup ──
 function Setup({onDone}){
@@ -720,8 +740,19 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
     setPacked(p=>{const n={...p};Object.keys(n).forEach(k=>{if(k.indexOf(oKey+"|")===0)delete n[k];});return n;});
   }
 
-  function revokeShipment(oKey,idx){
-    setEditAlloc(prev=>{
+  function shipUnmatched(orderNo){
+    const nd=JSON.parse(JSON.stringify(iopenData||{}));
+    const t=(nd.__unmatched__||[]).find(u=>String(u.orderNo)===String(orderNo));
+    if(t){t.shipped=true;t.shippedAt=new Date().toISOString();}
+    onSaveIopen(nd);
+    setPacked(p=>{const n={...p};Object.keys(n).forEach(k=>{if(k.indexOf("UM|"+orderNo+"|")===0)delete n[k];});return n;});
+  }
+  function revokeUnmatched(orderNo){
+    const nd=JSON.parse(JSON.stringify(iopenData||{}));
+    const t=(nd.__unmatched__||[]).find(u=>String(u.orderNo)===String(orderNo));
+    if(t){t.shipped=false;t.shippedAt=null;}
+    onSaveIopen(nd);
+  }
       const order=prev[oKey];
       const revokedShipment=(order.shipments||[])[idx];
       const newShipments=(order.shipments||[]).filter((_,i)=>i!==idx);
@@ -927,19 +958,35 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
         {allocSearch&&<button onClick={()=>setAllocSearch("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",border:"none",background:"transparent",color:C.inkMuted,fontSize:16,cursor:"pointer",lineHeight:1}}>×</button>}
       </div>}
       {allocSearch&&filteredDisplay.length===0&&<div style={{textAlign:"center",color:C.inkMuted,fontSize:13,padding:"20px 0"}}>找不到符合「{allocSearch}」的客人</div>}
-      {(()=>{const um=(iopenData&&iopenData.__unmatched__)||[];if(!um.length||allocSearch)return null;return(
+      {(()=>{const umAll=(iopenData&&iopenData.__unmatched__)||[];if(!umAll.length||allocSearch)return null;const um=umAll.slice().sort((a,b)=>(a.shipped?1:0)-(b.shipped?1:0));const pend=umAll.filter(u=>!u.shipped).length;return(
         <div style={{marginBottom:12,border:`1px solid ${C.warning}`,borderRadius:12,background:C.warningSoft,padding:"10px 12px"}}>
-          <div style={{fontSize:13,fontWeight:700,color:C.warning,marginBottom:8}}>⚠️ 未歸屬 iOPEN 訂單（{um.length}）<span style={{fontWeight:400,fontSize:11}}>　查無 IG，無法自動對應客人</span></div>
-          {um.map((u,ui)=>{const prods=u.items.map(it=>it.prod+(it.spec1?" "+it.spec1:"")+(it.spec2?" "+it.spec2:""));const cpk="um|"+u.orderNo;return(
-            <div key={u.orderNo} style={{borderTop:ui>0?`1px solid ${C.line}`:"none",paddingTop:ui>0?8:0,marginTop:ui>0?8:0}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.warning,marginBottom:8}}>⚠️ 未歸屬 iOPEN 訂單（待出 {pend}／共 {umAll.length}）<span style={{fontWeight:400,fontSize:11}}>　查無 IG，勾選後可出貨</span></div>
+          {um.map((u,ui)=>{const prods=u.items.map(it=>it.prod+(it.spec1?" "+it.spec1:"")+(it.spec2?" "+it.spec2:""));const cpk="um|"+u.orderNo;const allChecked=u.items.length>0&&u.items.every((it,idx)=>!!packed["UM|"+u.orderNo+"|"+idx]);return(
+            <div key={u.orderNo} style={{borderTop:ui>0?`1px solid ${C.line}`:"none",paddingTop:ui>0?8:0,marginTop:ui>0?8:0,opacity:u.shipped?0.6:1}}>
               <div style={{fontSize:12,color:C.ink,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:4}}>
-                <span style={{fontWeight:600}}>{u.name||"—"}</span>
+                <span style={{fontWeight:600,textDecoration:u.shipped?"line-through":"none"}}>{u.name||"—"}</span>
                 <span style={{fontFamily:"monospace",color:C.inkMuted}}>{u.orderNo}</span>
                 {u.store&&<span style={{color:C.inkMuted}}>📍{u.store}</span>}
                 {u.amount>0&&<span style={{fontFamily:"monospace",fontWeight:700}}>${u.amount}</span>}
+                {u.shipped&&<span style={{fontSize:11,color:C.success,fontWeight:600}}>✓ 已出貨</span>}
                 <button onClick={()=>{navigator.clipboard.writeText(buildShipNotice(u.orderNo,u.store,prods)).then(()=>{setCopiedKey(cpk);setTimeout(()=>setCopiedKey(""),1800);}).catch(()=>{});}} style={{marginLeft:"auto",fontSize:11,color:copiedKey===cpk?C.success:C.info,border:`1px solid ${copiedKey===cpk?C.success:C.info}`,background:C.surface,borderRadius:8,padding:"2px 8px",cursor:"pointer"}}>{copiedKey===cpk?"\u2713 已複製":"\ud83d\udccb 複製通知"}</button>
               </div>
-              {prods.map((p,pi)=>(<div key={pi} style={{fontSize:12,color:C.warning,paddingLeft:4,lineHeight:1.7}}>· {p}</div>))}
+              {u.shipped?(
+                <div>
+                  {prods.map((p,pi)=>(<div key={pi} style={{fontSize:12,color:C.inkMuted,paddingLeft:4,lineHeight:1.7,textDecoration:"line-through"}}>· {p}</div>))}
+                  <button onClick={()=>revokeUnmatched(u.orderNo)} style={{marginTop:4,fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:8,padding:"2px 8px",cursor:"pointer"}}>撤銷出貨</button>
+                </div>
+              ):(
+                <div>
+                  {u.items.map((it,idx)=>{const isP=!!packed["UM|"+u.orderNo+"|"+idx];return(
+                    <div key={idx} style={{fontSize:12,display:"flex",alignItems:"center",gap:8,padding:"2px 0",paddingLeft:4}}>
+                      <span style={{flex:1,color:C.warning}}>· {it.prod}{it.spec1?" "+it.spec1:""}{it.spec2?" "+it.spec2:""}</span>
+                      <button onClick={()=>togglePacked("UM",u.orderNo+"|"+idx)} title={isP?"取消裝袋":"標記已裝袋"} style={{width:22,height:22,borderRadius:5,border:`2px solid ${isP?C.success:C.warning}`,background:isP?C.success:"#fff",color:"#fff",cursor:"pointer",fontSize:13,lineHeight:1,flexShrink:0,padding:0}}>{isP?"✓":""}</button>
+                    </div>
+                  );})}
+                  <button onClick={()=>{if(allChecked)shipUnmatched(u.orderNo);}} disabled={!allChecked} style={{marginTop:6,background:allChecked?C.success:"#ccc",color:"#fff",border:"none",borderRadius:8,padding:"6px 14px",fontSize:13,fontWeight:600,cursor:allChecked?"pointer":"default"}}>出貨</button>
+                </div>
+              )}
             </div>
           );})}
         </div>
@@ -1275,7 +1322,13 @@ function App(){
         if(pending===0){
           var filtered=merged.filter(function(c){var p=c.prod&&c.prod.trim();return p&&p!=='運費'&&p.indexOf('湊卷')===-1&&p.indexOf('自願使用無退款')===-1;});
           iopenCustomRef.current=filtered.slice();setIopenCustom(filtered.slice());
-          if(token&&gistId){setSaving(true);gSave(token,gistId,items,savedAlloc,filtered,iopenDataRef.current).then(function(){setSaving(false);setLastSaved(new Date());}).catch(function(e){setSaving(false);setGlobalErr("儲存失敗："+e.message);});}
+          setItems(function(prev){
+            var next=mergeCustomIntoItems(prev,filtered);
+            var addedN=next.length-(prev?prev.length:0);
+            if(token&&gistId){setSaving(true);gSave(token,gistId,next,savedAllocRef.current,filtered,iopenDataRef.current).then(function(){setSaving(false);setLastSaved(new Date());}).catch(function(e){setSaving(false);setGlobalErr("儲存失敗："+e.message);});}
+            setTimeout(function(){alert("客訂商品匯入完成：新增 "+addedN+" 項到備貨清單（已存在的品項不重複）。");},50);
+            return next;
+          });
         }
       };
       reader.readAsArrayBuffer(file);
@@ -1390,7 +1443,7 @@ function App(){
       {allocMode&&<AllocationView items={items} savedAlloc={savedAlloc} onClose={()=>setAllocMode(false)}
         onSaveAlloc={(newAlloc)=>{savedAllocRef.current=newAlloc;setSavedAlloc(newAlloc);scheduleSave(items,newAlloc);}}
         iopenData={iopenData}
-        onSaveIopen={(d)=>{iopenDataRef.current=d;setIopenData(d);scheduleSave(items,savedAllocRef.current);}}
+        onSaveIopen={(d)=>{iopenDataRef.current=d;setIopenData(d);var custList=iopenCustomFromData(d);iopenCustomRef.current=custList.slice();setItems(function(prev){var next=mergeCustomIntoItems(prev,custList);scheduleSave(next,savedAllocRef.current);return next;});}}
         onConfirmShipment={(oKey,shippedItems,newAlloc)=>{
           // 扣除庫存，並明確傳遞最新 alloc 避免閉包舊值問題
           setItems(prev=>{
