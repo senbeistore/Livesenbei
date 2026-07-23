@@ -428,7 +428,11 @@ async function gCreate(token){
   return(await r.json()).id;
 }
 function migrateItem(it){
-  return{...it,stockQty:it.stockQty||0,firstOrderDate:it.firstOrderDate||it.supplierOrderDate||"",secondOrderDate:it.secondOrderDate||"",allOrdered:it.allOrdered||false,orderedQty:it.orderedQty!=null?it.orderedQty:it.qty,arrivedQty:it.arrivedQty>0?it.arrivedQty:(it.allArrived?(it.orderedQty!=null?it.orderedQty:it.qty):(it.arrived?it.qty:0)),shippedQty:it.shippedQty||0,allArrived:it.allArrived||it.arrived||false,arrivedTs:it.arrivedTs||"",firstArrivedTs:it.firstArrivedTs||"",importedAt:it.importedAt||it.orderDate||todayStr()};
+  const _stock=it.stockQty||0;
+  const _arrived=it.arrivedQty>0?it.arrivedQty:(it.allArrived?(it.orderedQty!=null?it.orderedQty:it.qty):(it.arrived?it.qty:0));
+  // 已出貨不得超過（已到貨＋現貨）；修復舊版撤銷未回退留下的孤兒數字
+  const _shipped=Math.max(0,Math.min(it.shippedQty||0,(_arrived||0)+_stock));
+  return{...it,stockQty:_stock,firstOrderDate:it.firstOrderDate||it.supplierOrderDate||"",secondOrderDate:it.secondOrderDate||"",allOrdered:it.allOrdered||false,orderedQty:it.orderedQty!=null?it.orderedQty:it.qty,arrivedQty:_arrived,shippedQty:_shipped,allArrived:it.allArrived||it.arrived||false,arrivedTs:it.arrivedTs||"",firstArrivedTs:it.firstArrivedTs||"",importedAt:it.importedAt||it.orderDate||todayStr()};
 }
 // 從 iopenData 收集所有客訂商品（含未歸屬），過濾運費/湊卷等非實體品項
 function iopenCustomFromData(d){
@@ -508,6 +512,9 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
     const maxQ=it.orderedQty!=null?it.orderedQty:it.qty;const n=Math.max(0,parseInt(val,10)||0);
     const wasZero=!it.arrivedQty;const nowFull=n>=maxQ;
     onUpdate("arrivedQty",n);
+    // 已出貨不得超過（已到貨＋現貨）
+    const cap=n+(it.stockQty||0);
+    if((it.shippedQty||0)>cap)onUpdate("shippedQty",cap);
     if(n>0&&wasZero&&!it.firstArrivedTs)onUpdate("firstArrivedTs",new Date().toISOString());
     if(n===0)onUpdate("firstArrivedTs","");
     if(nowFull&&!it.allArrived){onUpdate("allArrived",true);if(!it.arrivedTs)onUpdate("arrivedTs",new Date().toISOString());}
@@ -1413,7 +1420,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0723-H</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0723-I</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
