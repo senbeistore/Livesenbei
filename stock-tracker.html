@@ -596,7 +596,7 @@ function buildShipNotice(orderNo,store,prods){
   var t=new Date().toLocaleDateString("zh-TW");
   return "您好～這是出貨通知\n"+(orderNo||"")+"\n"+prods.join("\n")+(prods.length?"\n":"")+"於今日"+t+"已寄出\n至您下單指定的"+(store||"")+"\n2-3天後即到門市\n請務必記得留意簡訊呦\n3天後簡訊沒有收到的話建議致電門市詢問\n\u203c\ufe0f超商有無發簡訊我們無法知曉，再麻煩媽咪記得到超商詢問一下呦\n\u203c\ufe0f如若未取貨，訂單原始金額+退回運費38+純取運費60=匯款金額，未取貨請48H內完成匯款\n（未取貨訂單等同訂單卷失效）";
 }
-function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,onRevokeShipment,iopenData,onSaveIopen}){
+function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,onRevokeShipment,onUnarrive,iopenData,onSaveIopen}){
   const[editAlloc,setEditAlloc]=useState(savedAlloc||null);
   const[allocMethod,setAllocMethod]=useState("amount"); // "amount" | "proportional"
   const[parsedCSV,setParsedCSV]=useState(null); // 暫存解析後的CSV，模式切換時重新計算
@@ -769,6 +769,23 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
     const t=(nd.__unmatched__||[]).find(u=>String(u.orderNo)===String(orderNo));
     if(t){t.shipped=false;t.shippedAt=null;}
     onSaveIopen(nd);
+  }
+
+  // 把一件「可出貨」品項退回待補貨，並連動扣除備貨中心的到貨數（誤標到貨時使用）
+  function returnToWaiting(oKey,item){
+    setEditAlloc(prev=>{
+      const order=prev[oKey];if(!order)return prev;
+      const newAlloc=(order.allocItems||[]).map(it=>itemKey(it)===itemKey(item)&&it.allocatedQty>0?{...it,allocatedQty:it.allocatedQty-1}:it);
+      const newWaiting=[...(order.waitingItems||[])];
+      const ex=newWaiting.find(it=>itemKey(it)===itemKey(item));
+      if(ex){const i=newWaiting.indexOf(ex);newWaiting[i]={...ex,orderedQty:needQty(ex)+1,qty:needQty(ex)+1};}
+      else newWaiting.push({...item,allocatedQty:0,orderedQty:1,qty:1});
+      const next={...prev,[oKey]:{...order,allocItems:newAlloc,waitingItems:newWaiting}};
+      onSaveAlloc(next);
+      if(onUnarrive)onUnarrive(item,1,next);
+      return next;
+    });
+    setPacked(p=>{const n={...p};Object.keys(n).forEach(k=>{if(k.indexOf(oKey+"|")===0)delete n[k];});return n;});
   }
 
   function toggleNotified(oKey,idx){
@@ -1151,6 +1168,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                                 <span style={{fontSize:13,color:C.success,fontWeight:500,flex:1,textDecoration:isPacked?"line-through":"none",opacity:isPacked?0.45:1}}>{dispName(it)}</span>
                                 <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                                   <strong style={{fontSize:13,color:C.success,opacity:isPacked?0.45:1}}>× 1</strong>
+                                  <button onClick={()=>{if(window.confirm("⚠️ 退回待補貨\n\n「"+dispName(it)+"」1 件將：\n・從這位客人的可出貨移到待補貨\n・備貨中心的「已到貨」數量 −1\n\n適用於實際還沒到貨、卻誤標成到貨的情況。\n此動作會同步影響備貨中心，確定要繼續？"))returnToWaiting(o.oKey,it);}} title="實際未到貨，退回待補並扣回備貨中心到貨數"
+                                    style={{border:`1px solid ${C.orange}`,color:C.orange,background:"#fff",borderRadius:7,padding:"4px 8px",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>⏳ 退回待補</button>
                                   <button onClick={()=>togglePacked(o.oKey,uKey)} title={isPacked?"取消裝袋":"標記已裝袋"}
                                     style={{width:28,height:28,padding:0,lineHeight:1,borderRadius:7,
                                       border:`2px solid ${isPacked?C.success:C.line}`,
@@ -1420,7 +1439,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0723-I</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0723-J</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -1499,6 +1518,18 @@ function App(){
               const rv=(revokedItems||[]).find(s=>itemKey(s)===itemKey(it));
               if(!rv||!rv.allocatedQty)return it;
               return{...it,shippedQty:Math.max(0,(it.shippedQty||0)-rv.allocatedQty)};
+            });
+            scheduleSave(next,newAlloc);
+            return next;
+          });
+        }}
+        onUnarrive={(item,qty,newAlloc)=>{
+          // 配貨區退回待補：連動扣除備貨中心已到貨數量
+          setItems(prev=>{
+            const next=prev.map(it=>{
+              if(itemKey(it)!==itemKey(item))return it;
+              const na=Math.max(0,(it.arrivedQty||0)-(qty||1));
+              return{...it,arrivedQty:na,allArrived:false,...(na===0?{firstArrivedTs:"",arrivedTs:""}:{})};
             });
             scheduleSave(next,newAlloc);
             return next;
