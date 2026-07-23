@@ -596,7 +596,7 @@ function buildShipNotice(orderNo,store,prods){
   var t=new Date().toLocaleDateString("zh-TW");
   return "您好～這是出貨通知\n"+(orderNo||"")+"\n"+prods.join("\n")+(prods.length?"\n":"")+"於今日"+t+"已寄出\n至您下單指定的"+(store||"")+"\n2-3天後即到門市\n請務必記得留意簡訊呦\n3天後簡訊沒有收到的話建議致電門市詢問\n\u203c\ufe0f超商有無發簡訊我們無法知曉，再麻煩媽咪記得到超商詢問一下呦\n\u203c\ufe0f如若未取貨，訂單原始金額+退回運費38+純取運費60=匯款金額，未取貨請48H內完成匯款\n（未取貨訂單等同訂單卷失效）";
 }
-function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,onRevokeShipment,onUnarrive,iopenData,onSaveIopen}){
+function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,onRevokeShipment,onUnarrive,onArrive,iopenData,onSaveIopen}){
   const[editAlloc,setEditAlloc]=useState(savedAlloc||null);
   const[allocMethod,setAllocMethod]=useState("amount"); // "amount" | "proportional"
   const[parsedCSV,setParsedCSV]=useState(null); // 暫存解析後的CSV，模式切換時重新計算
@@ -769,6 +769,22 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
     const t=(nd.__unmatched__||[]).find(u=>String(u.orderNo)===String(orderNo));
     if(t){t.shipped=false;t.shippedAt=null;}
     onSaveIopen(nd);
+  }
+
+  // 待補貨品項改標為已到貨：移到可出貨，並連動備貨中心到貨數 +1
+  function markArrivedFromWaiting(oKey,item){
+    setEditAlloc(prev=>{
+      const order=prev[oKey];if(!order)return prev;
+      const newWaiting=(order.waitingItems||[]).map(it=>{if(itemKey(it)!==itemKey(item))return it;const n=Math.max(0,needQty(it)-1);return{...it,orderedQty:n,qty:n};});
+      const newAlloc=[...(order.allocItems||[])];
+      const ex=newAlloc.find(it=>itemKey(it)===itemKey(item));
+      if(ex){const i=newAlloc.indexOf(ex);newAlloc[i]={...ex,allocatedQty:(ex.allocatedQty||0)+1};}
+      else newAlloc.push({...item,allocatedQty:1,orderedQty:1,qty:1});
+      const next={...prev,[oKey]:{...order,allocItems:newAlloc,waitingItems:newWaiting}};
+      onSaveAlloc(next);
+      if(onArrive)onArrive(item,1,next);
+      return next;
+    });
   }
 
   // 把一件「可出貨」品項退回待補貨，並連動扣除備貨中心的到貨數（誤標到貨時使用）
@@ -1206,17 +1222,23 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                         <div key={i} style={{background:C.orangeSoft,borderRadius:8,padding:"6px 10px",marginBottom:4}}>
                           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
                             <span style={{fontSize:13,color:C.orange,flex:1}}>{dispName(it)}</span>
-                            {available>0?(
+                            {(()=>{const arriveBtn=(<button onClick={()=>{if(window.confirm("📦 標記到貨\n\n「"+dispName(it)+"」1 件將：\n・從待補貨移到可出貨\n・備貨中心的「已到貨」數量 +1\n\n適用於貨已實際到、但備貨中心還沒更新的情況。\n此動作會同步影響備貨中心，確定要繼續？"))markArrivedFromWaiting(o.oKey,it);}} title="貨已到，補進可出貨並同步備貨中心到貨數"
+                              style={{border:`1px solid ${C.success}`,color:C.success,background:"#fff",borderRadius:7,padding:"4px 8px",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>📦 標記到貨</button>);
+                            return available>0?(
                               <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
                                 <span style={{fontSize:12,color:C.inkMuted}}>待 {waitQty}</span>
+                                {arriveBtn}
                                 <button onClick={()=>updateAllocQty(o.oKey,sku,available)}
                                   style={{background:C.success,color:"#fff",border:"none",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
                                   補入{available}件
                                 </button>
                               </div>
                             ):(
-                              <span style={{fontSize:13,color:C.orange,flexShrink:0}}>× {waitQty}</span>
-                            )}
+                              <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                                <span style={{fontSize:13,color:C.orange}}>× {waitQty}</span>
+                                {arriveBtn}
+                              </div>
+                            );})()}
                           </div>
                         </div>
                       );
@@ -1443,7 +1465,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0723-K</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0723-L</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -1534,6 +1556,19 @@ function App(){
               if(itemKey(it)!==itemKey(item))return it;
               const na=Math.max(0,(it.arrivedQty||0)-(qty||1));
               return{...it,arrivedQty:na,allArrived:false,...(na===0?{firstArrivedTs:"",arrivedTs:""}:{})};
+            });
+            scheduleSave(next,newAlloc);
+            return next;
+          });
+        }}
+        onArrive={(item,qty,newAlloc)=>{
+          // 配貨區標記到貨：連動增加備貨中心已到貨數量
+          setItems(prev=>{
+            const next=prev.map(it=>{
+              if(itemKey(it)!==itemKey(item))return it;
+              const maxQ=it.orderedQty!=null?it.orderedQty:it.qty;
+              const na=Math.min((it.arrivedQty||0)+(qty||1),maxQ);
+              return{...it,arrivedQty:na,allArrived:na>=maxQ,firstArrivedTs:it.firstArrivedTs||new Date().toISOString(),arrivedTs:na>=maxQ?(it.arrivedTs||new Date().toISOString()):it.arrivedTs};
             });
             scheduleSave(next,newAlloc);
             return next;
