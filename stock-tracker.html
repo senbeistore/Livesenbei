@@ -589,7 +589,7 @@ function buildShipNotice(orderNo,store,prods){
   var t=new Date().toLocaleDateString("zh-TW");
   return "您好～這是出貨通知\n"+(orderNo||"")+"\n"+prods.join("\n")+(prods.length?"\n":"")+"於今日"+t+"已寄出\n至您下單指定的"+(store||"")+"\n2-3天後即到門市\n請務必記得留意簡訊呦\n3天後簡訊沒有收到的話建議致電門市詢問\n\u203c\ufe0f超商有無發簡訊我們無法知曉，再麻煩媽咪記得到超商詢問一下呦\n\u203c\ufe0f如若未取貨，訂單原始金額+退回運費38+純取運費60=匯款金額，未取貨請48H內完成匯款\n（未取貨訂單等同訂單卷失效）";
 }
-function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,iopenData,onSaveIopen}){
+function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,onRevokeShipment,iopenData,onSaveIopen}){
   const[editAlloc,setEditAlloc]=useState(savedAlloc||null);
   const[allocMethod,setAllocMethod]=useState("amount"); // "amount" | "proportional"
   const[parsedCSV,setParsedCSV]=useState(null); // 暫存解析後的CSV，模式切換時重新計算
@@ -790,6 +790,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
       });
       const next={...prev,[oKey]:{...order,allocItems:newAllocItems,shipments:newShipments}};
       onSaveAlloc(next);
+      if(onRevokeShipment)onRevokeShipment(oKey,revokedItems,next);
       return next;
     });
   }
@@ -1412,7 +1413,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0721-G</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0723-H</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -1479,6 +1480,18 @@ function App(){
               if(!shipped||!shipped.allocatedQty)return it;
               const newShipped=Math.min((it.shippedQty||0)+shipped.allocatedQty,it.arrivedQty||0);
               return{...it,shippedQty:newShipped};
+            });
+            scheduleSave(next,newAlloc);
+            return next;
+          });
+        }}
+        onRevokeShipment={(oKey,revokedItems,newAlloc)=>{
+          // 撤銷出貨：把已出貨件數退回，庫存才能重新配給
+          setItems(prev=>{
+            const next=prev.map(it=>{
+              const rv=(revokedItems||[]).find(s=>itemKey(s)===itemKey(it));
+              if(!rv||!rv.allocatedQty)return it;
+              return{...it,shippedQty:Math.max(0,(it.shippedQty||0)-rv.allocatedQty)};
             });
             scheduleSave(next,newAlloc);
             return next;
