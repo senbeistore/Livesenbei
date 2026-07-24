@@ -803,7 +803,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   function addReship(account,name,item,qty){
     const cur=reshipList();
     const rec={id:"rs_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,6),
-      account:account||"",name:name||"",prod:dispName(item),qty:qty||1,
+      account:account||"",name:name||"",prod:dispName(item),qty:qty||1,item:{product:item.product,color:item.color||"",size:item.size||"",style:item.style||""},
       method:"store",store:"",address:"",recipient:name||"",phone:"",shipNo:"",
       notified:false,shipped:false,createdAt:new Date().toISOString(),shippedAt:null};
     saveReship([...cur,rec]);
@@ -1108,20 +1108,22 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
       {catFilter==="live"&&(()=>{
         // 待補貨品項中，備貨清單找不到的（來源品名不同時會發生）
         const miss=[];const seen={};
-        displayData.forEach(c=>c.orders.forEach(o=>(o.waitingItems||[]).forEach(it=>{
-          if(needQty(it)<=0)return;
+        const scan=(it,q)=>{
+          if(!it||!it.product||q<=0)return;
           if(matchItemIdx(items,it)>=0)return;
           const k=itemKey(it);
-          if(seen[k]){seen[k].qty+=needQty(it);return;}
-          const rec={item:it,qty:needQty(it)};seen[k]=rec;miss.push(rec);
-        })));
+          if(seen[k]){seen[k].qty+=q;return;}
+          const rec={item:it,qty:q};seen[k]=rec;miss.push(rec);
+        };
+        displayData.forEach(c=>c.orders.forEach(o=>(o.waitingItems||[]).forEach(it=>scan(it,needQty(it)))));
+        reshipList().forEach(r=>{if(!r.shipped&&r.item)scan(r.item,r.qty||1);});
         if(!miss.length){
-          const anyWait=displayData.some(c=>c.orders.some(o=>(o.waitingItems||[]).some(it=>needQty(it)>0)));
+          const anyWait=displayData.some(c=>c.orders.some(o=>(o.waitingItems||[]).some(it=>needQty(it)>0)))||reshipList().some(r=>!r.shipped&&r.item);
           if(!anyWait)return null;
-          return(<div style={{fontSize:12,color:C.success,background:"#F0FDF4",border:`1px solid ${C.success}`,borderRadius:10,padding:"7px 12px",marginBottom:10}}>✓ 所有待補貨品項都已在備貨清單中</div>);
+          return(<div style={{fontSize:12,color:C.success,background:"#F0FDF4",border:`1px solid ${C.success}`,borderRadius:10,padding:"7px 12px",marginBottom:10}}>✓ 所有待補／補寄品項都已在備貨清單中</div>);
         }
         return(<div style={{border:`1px solid ${C.stamp}`,background:"#FDF6F2",borderRadius:12,padding:"10px 12px",marginBottom:10}}>
-          <div style={{fontSize:13,fontWeight:700,color:C.stamp,marginBottom:6}}>➕ 有 {miss.length} 項待補貨不在備貨清單</div>
+          <div style={{fontSize:13,fontWeight:700,color:C.stamp,marginBottom:6}}>➕ 有 {miss.length} 項待補／補寄品項不在備貨清單</div>
           <div style={{fontSize:12,color:C.inkMuted,lineHeight:1.7,marginBottom:8}}>
             {miss.slice(0,5).map((m,i)=>(<div key={i}>· {dispName(m.item)} ×{m.qty}</div>))}
             {miss.length>5&&<div>…其餘 {miss.length-5} 項</div>}
@@ -1153,7 +1155,11 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                 {r.shipped&&<span style={{fontSize:11,color:C.success,fontWeight:700}}>✓ 已補寄</span>}
                 <button onClick={()=>{if(window.confirm("刪除這筆補寄項目？"))removeReship(r.id);}} style={{marginLeft:"auto",fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:7,padding:"2px 8px",cursor:"pointer"}}>刪除</button>
               </div>
-              <div style={{fontSize:13,color:r.shipped?C.inkMuted:C.orange,fontWeight:600,marginBottom:8,textDecoration:r.shipped?"line-through":"none"}}>📦 {r.prod}{r.qty>1?" ×"+r.qty:""}</div>
+              <div style={{fontSize:13,color:r.shipped?C.inkMuted:C.orange,fontWeight:600,marginBottom:8,textDecoration:r.shipped?"line-through":"none",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span>📦 {r.prod}{r.qty>1?" ×"+r.qty:""}</span>
+                {(()=>{const ri=r.item||{product:r.prod,color:"",size:"",style:""};if(matchItemIdx(items,ri)>=0)return null;return(<button onClick={()=>{if(window.confirm("➕ 加入備貨清單\n\n「"+(r.item?dispName(r.item):r.prod)+"」"+(r.qty||1)+" 件\n\n備貨清單目前沒有這個品項，將以「未訂購、已到貨 0」建立。\n不會變動補寄記錄，確定要建立？"))onAddToStock&&onAddToStock([{item:ri,qty:r.qty||1}]);}}
+                  style={{border:`1px solid ${C.stamp}`,color:C.stamp,background:"#fff",borderRadius:7,padding:"3px 8px",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>➕ 加入備貨</button>);})()}
+              </div>
               <div style={{display:"flex",gap:6,marginBottom:6}}>
                 <button onClick={()=>updateReship(r.id,{method:"store"})} style={{flex:1,padding:"6px 4px",fontSize:12,fontWeight:600,borderRadius:8,cursor:"pointer",border:`1px solid ${r.method!=="home"?C.info:C.line}`,background:r.method!=="home"?C.info:C.surface,color:r.method!=="home"?"#fff":C.inkMuted}}>超商店到店</button>
                 <button onClick={()=>updateReship(r.id,{method:"home"})} style={{flex:1,padding:"6px 4px",fontSize:12,fontWeight:600,borderRadius:8,cursor:"pointer",border:`1px solid ${r.method==="home"?C.info:C.line}`,background:r.method==="home"?C.info:C.surface,color:r.method==="home"?"#fff":C.inkMuted}}>宅配到府</button>
@@ -1590,7 +1596,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0724-Y</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0724-Z</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
