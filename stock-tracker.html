@@ -1163,7 +1163,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
             <span style={{fontSize:12,fontFamily:"monospace",color:C.inkMuted}}>NT${c.totalAmount.toLocaleString()}</span>
           </div>
 
-          {iopenInfo&&iopenInfo.customItems&&iopenInfo.customItems.length>0&&(()=>{
+          {catFilter!=="shipped"&&iopenInfo&&iopenInfo.customItems&&iopenInfo.customItems.length>0&&(()=>{
           const primaryKey=c.orders[0]&&c.orders[0].oKey;
           const shippedCI=(c.orders[0]&&c.orders[0].shippedCI)||[];
           return(
@@ -1211,8 +1211,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                   <button onClick={()=>{setNoteInputs(p=>({...p,[o.oKey]:""}));setEditingNote(o.oKey);}} style={{marginBottom:8,fontSize:11,color:C.inkMuted,border:`1px dashed ${C.line}`,background:"transparent",borderRadius:8,padding:"3px 10px",cursor:"pointer"}}>＋ 備註</button>
                 )}
 
-                {/* 出貨歷史記錄 */}
-                {shipments.map((s,si)=>{
+                {/* 出貨歷史記錄（只在「已出貨」分頁顯示） */}
+                {catFilter==="shipped"&&shipments.map((s,si)=>{
                   const sc=shipColor(si);
                   const sItems=(s.items||[]).filter(it=>it.allocatedQty>0);
                   return(
@@ -1233,8 +1233,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                   );
                 })}
 
-                {/* 可出貨/等待出貨品項 */}
-                {o.allocItems.filter(it=>it.allocatedQty>0).length>0&&(
+                {/* 可出貨/等待出貨品項（已出貨分頁不顯示） */}
+                {catFilter!=="shipped"&&o.allocItems.filter(it=>it.allocatedQty>0).length>0&&(
                   <div style={{marginBottom:6}}>
                     <div style={{fontSize:11,color:C.success,fontWeight:700,marginBottom:4,display:"flex",alignItems:"center",gap:8}}><span>✅ 可出貨{hasShipments?"（新一批）":""}</span>{(()=>{const rows=o.allocItems.filter(x=>x.allocatedQty>0);
                 const totalUnits=rows.reduce((s,x)=>s+x.allocatedQty,0);
@@ -1299,8 +1299,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                   </div>
                 )}
 
-                {/* 待補貨品項 */}
-                {o.waitingItems.filter(it=>(needQty(it))>0).length>0&&(
+                {/* 待補貨品項（已出貨分頁不顯示） */}
+                {catFilter!=="shipped"&&o.waitingItems.filter(it=>(needQty(it))>0).length>0&&(
                   <div style={{marginBottom:6}}>
                     <div style={{fontSize:11,color:C.orange,fontWeight:700,marginBottom:4}}>⏳ 待補貨</div>
                     {o.waitingItems.filter(it=>(needQty(it))>0).map((it,i)=>{
@@ -1347,7 +1347,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                 )}
 
                 {/* 出貨操作列（有可出貨品項就顯示） */}
-                {canShip&&(
+                {catFilter!=="shipped"&&canShip&&(
                   <div style={{marginTop:6}}>
                     <div style={{display:"flex",gap:6,marginBottom:6}}>
                       <button onClick={()=>setEditingKey(editingKey===o.oKey?null:o.oKey)} style={{background:editingKey===o.oKey?C.info:C.surface,color:editingKey===o.oKey?"#fff":C.inkMuted,border:`1px solid ${editingKey===o.oKey?C.info:C.line}`,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer"}}>
@@ -1565,7 +1565,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0724-U</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0724-V</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
