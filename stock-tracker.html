@@ -432,6 +432,19 @@ async function gCreate(token){
   if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(`建立失敗 (${r.status})：${e.message||"請確認Token是否有gist權限"}`);}
   return(await r.json()).id;
 }
+// 找備貨清單中對應的品項：完全相符 → 正規化 → flatKey 模糊（與配貨用同一套比對）
+function matchItemIdx(list,target){
+  if(!list||!list.length)return -1;
+  var ek=itemKey(target);
+  var i=list.findIndex(function(it){return itemKey(it)===ek;});
+  if(i>=0)return i;
+  var nk=normalizedKey(target);
+  i=list.findIndex(function(it){return normalizedKey(it)===nk;});
+  if(i>=0)return i;
+  var fk=flatKey(target);
+  return list.findIndex(function(it){return flatKey(it)===fk;});
+}
+
 function migrateItem(it){
   const _stock=it.stockQty||0;
   const _arrived=it.arrivedQty>0?it.arrivedQty:(it.allArrived?(it.orderedQty!=null?it.orderedQty:it.qty):(it.arrived?it.qty:0));
@@ -1545,7 +1558,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0723-N</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0724-P</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -1630,10 +1643,19 @@ function App(){
           });
         }}
         onUnarrive={(item,qty,newAlloc)=>{
-          // 配貨區退回待補：連動扣除備貨中心已到貨數量
+          // 配貨區退回待補：連動扣除備貨中心已到貨數量（模糊比對品名）
           setItems(prev=>{
-            const next=prev.map(it=>{
-              if(itemKey(it)!==itemKey(item))return it;
+            const j=matchItemIdx(prev,item);
+            if(j<0){
+              // 備貨清單沒有這個品項（例如來源品名不同）→ 直接建立，才追蹤得到訂貨/到貨
+              const created=migrateItem({id:"cust_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,7),product:item.product,color:item.color||"",size:item.size||"",style:item.style||"",qty:qty||1,orderedQty:qty||1,arrivedQty:0,allArrived:false,isCustomStock:true});
+              const nx=[...prev,created];
+              scheduleSave(nx,newAlloc);
+              setTimeout(()=>alert("備貨清單裡沒有這個品項，已為你新增：\n"+dispName(item)+"\n\n現在可在備貨追蹤裡登記訂購與到貨。"),50);
+              return nx;
+            }
+            const next=prev.map((it,k)=>{
+              if(k!==j)return it;
               const na=Math.max(0,(it.arrivedQty||0)-(qty||1));
               return{...it,arrivedQty:na,allArrived:false,...(na===0?{firstArrivedTs:"",arrivedTs:""}:{})};
             });
@@ -1642,14 +1664,20 @@ function App(){
           });
         }}
         onArrive={(item,qty,newAlloc)=>{
-          // 配貨區標記到貨：連動增加備貨中心已到貨數量
+          // 配貨區標記到貨：連動增加備貨中心已到貨數量（模糊比對；找不到則新增品項）
           setItems(prev=>{
-            const next=prev.map(it=>{
-              if(itemKey(it)!==itemKey(item))return it;
-              const maxQ=it.orderedQty!=null?it.orderedQty:it.qty;
-              const na=Math.min((it.arrivedQty||0)+(qty||1),maxQ);
-              return{...it,arrivedQty:na,allArrived:na>=maxQ,firstArrivedTs:it.firstArrivedTs||new Date().toISOString(),arrivedTs:na>=maxQ?(it.arrivedTs||new Date().toISOString()):it.arrivedTs};
-            });
+            const j=matchItemIdx(prev,item);
+            let next;
+            if(j<0){
+              next=[...prev,migrateItem({id:"cust_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,7),product:item.product,color:item.color||"",size:item.size||"",style:item.style||"",qty:qty||1,orderedQty:qty||1,arrivedQty:qty||1,allArrived:true,firstArrivedTs:new Date().toISOString(),arrivedTs:new Date().toISOString(),isCustomStock:true})];
+            }else{
+              next=prev.map((it,k)=>{
+                if(k!==j)return it;
+                const maxQ=Math.max(it.orderedQty!=null?it.orderedQty:it.qty,(it.arrivedQty||0)+(qty||1));
+                const na=Math.min((it.arrivedQty||0)+(qty||1),maxQ);
+                return{...it,arrivedQty:na,allArrived:na>=(it.orderedQty!=null?it.orderedQty:it.qty),firstArrivedTs:it.firstArrivedTs||new Date().toISOString(),arrivedTs:it.arrivedTs||new Date().toISOString()};
+              });
+            }
             scheduleSave(next,newAlloc);
             return next;
           });
