@@ -1165,7 +1165,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
               </div>
               <div style={{fontSize:13,color:r.shipped?C.inkMuted:C.orange,fontWeight:600,marginBottom:8,textDecoration:r.shipped?"line-through":"none",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 <span>📦 {r.prod}{r.qty>1?" ×"+r.qty:""}</span>
-                {(()=>{const ri=r.item||{product:r.prod,color:"",size:"",style:""};if(matchItemIdx(items,ri)>=0)return null;return(<button onClick={()=>{if(window.confirm("➕ 加入備貨清單\n\n「"+(r.item?dispName(r.item):r.prod)+"」"+(r.qty||1)+" 件\n\n備貨清單目前沒有這個品項，將以「未訂購、已到貨 0」建立。\n不會變動補寄記錄，確定要建立？"))onAddToStock&&onAddToStock([{item:ri,qty:r.qty||1}]);}}
+                {(()=>{const ri=r.item||{product:r.prod,color:"",size:"",style:""};return(<button onClick={()=>{if(window.confirm("➕ 加入備貨清單\n\n「"+(r.item?dispName(r.item):r.prod)+"」"+(r.qty||1)+" 件\n\n備貨清單目前沒有這個品項，將以「未訂購、已到貨 0」建立。\n不會變動補寄記錄，確定要建立？"))onAddToStock&&onAddToStock([{item:ri,qty:r.qty||1}]);}}
                   style={{border:`1px solid ${C.stamp}`,color:C.stamp,background:"#fff",borderRadius:7,padding:"3px 8px",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>➕ 加入備貨</button>);})()}
               </div>
               <div style={{display:"flex",gap:6,marginBottom:6}}>
@@ -1604,7 +1604,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0724-AB</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 0724-AC</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -1712,13 +1712,14 @@ function App(){
         onAddToStock={(list)=>{
           // 只在備貨清單建立品項（可批次），不動配貨資料
           setItems(prev=>{
-            let nx=[...prev];let added=0;
+            let nx=[...prev];let added=0;const dupInfo=[];
             (list||[]).forEach(({item,qty})=>{
-              if(matchItemIdx(nx,item)>=0)return;
+              const mi=matchItemIdx(nx,item);
+              if(mi>=0){dupInfo.push(dispName(item)+" → 已存在：\n   "+dispName(nx[mi]));return;}
               nx.push(migrateItem({id:"cust_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,7),product:item.product,color:item.color||"",size:item.size||"",style:item.style||"",qty:qty||1,orderedQty:qty||1,arrivedQty:0,allArrived:false,isCustomStock:true,source:"live"}));
               added++;
             });
-            if(!added){setTimeout(()=>alert("這些品項備貨清單裡都已經有了。"),50);return prev;}
+            if(!added){setTimeout(()=>alert("沒有新增，因為備貨清單裡已有對應品項：\n\n"+dupInfo.join("\n")),50);return prev;}
             scheduleSave(nx);
             setTimeout(()=>alert("已加入備貨清單 "+added+" 項。\n可在備貨追蹤的「直播訂單」分頁、「未訂貨」找到。"),50);
             return nx;
