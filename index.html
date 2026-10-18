@@ -1055,7 +1055,7 @@ function LiveOrderSorter() {
     const ts = new Date();
     const pad = (n) => String(n).padStart(2, "0");
     const stamp = `${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`;
-    XLSX.writeFile(wb, `iOpen_ProductImport_${stamp}.xlsx`);
+    XLSX.writeFile(wb, "iOpen_ProductImport_Template.xlsx");
   }
 
   // ---------- 核對撿貨單 ----------
