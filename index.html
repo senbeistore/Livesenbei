@@ -994,18 +994,20 @@ function LiveOrderSorter() {
   function iopenKey(c, idx) {
     return c.account || c.name || `row${idx}`;
   }
+  // 拆成多筆金額方案：每筆不少於 1499、筆數不設上限、同一客人各筆金額不得重複
   function splitForCoupons(total) {
-    let a = Math.floor(total / 2);
-    let b = total - a;
-    let big = Math.max(a, b);
-    let small = total - big;
-    if (big < 1499) {
-      big = 1499;
-      small = total - 1499;
-    }
-    return [small, big];
+    const MIN = 1499;
+    let n = 1;
+    while (MIN * (n + 1) + (n * (n + 1)) / 2 <= total) n++;
+    if (n < 2) return [total];
+    const parts = [];
+    for (let i = 0; i < n; i++) parts.push(MIN + i);
+    parts[n - 1] += total - parts.reduce((x, y) => x + y, 0);
+    return parts;
   }
   function exportIopenXLSX() {
+    // 結單日文字：每次結單日不同時，改這一行即可
+    const IOPEN_DEADLINE_TEXT = "10/26前需完成下單，10/26為結單日";
     const header = [
       "0", "*溫層設定", "稅別", "*商品名稱", "*商品分類編號", "*商品原始貨號", "商品定價", "*商品售價", "商品成本", "*商品上架",
       "主商品原始貨號", "商品規格1名稱", "商品規格1選項", "商品規格2名稱", "商品規格2選項",
@@ -1021,7 +1023,7 @@ function LiveOrderSorter() {
 
     function buildRow(c, sku, mainSku, specName, specValue, price, desc) {
       return [
-        "", 3, 0, `直播｜（${c.account || c.name}）`, categoryCode, sku,
+        "", 3, 0, `LIVE｜（${c.account || c.name}）｜${IOPEN_DEADLINE_TEXT}`, categoryCode, sku,
         "", price, "", 1,
         mainSku, specName, specValue, "", "",
         imageUrl, "", "", "", "", "", "", "", "", "", "",
@@ -1034,14 +1036,14 @@ function LiveOrderSorter() {
     selected.forEach((c, idx) => {
       const desc = c.items.join("<br>");
       const baseSku = `LIVE${String(idx + 1).padStart(4, "0")}`;
-      if (iopenSplitEnabled && c.amount >= 2498) {
-        const [small, big] = splitForCoupons(c.amount);
-        const skuA = `${baseSku}-A`;
-        const skuB = `${baseSku}-B`;
-        // 主商品行（mainSku="" 宣告自己為主商品）
-        rows.push(buildRow(c, skuA, "", "金額方案", `$${small}`, small, desc));
-        // 規格行（mainSku=skuA 連結到主商品，使用完整 buildRow 確保所有必填欄位）
-        rows.push(buildRow(c, skuB, skuA, "金額方案", `$${big}`, big, desc));
+      const parts = iopenSplitEnabled ? splitForCoupons(c.amount) : [c.amount];
+      if (parts.length >= 2) {
+        const mainSku = `${baseSku}-A`;
+        parts.forEach((price, pi) => {
+          const sku = `${baseSku}-${String.fromCharCode(65 + (pi % 26))}${pi >= 26 ? Math.floor(pi / 26) : ""}`;
+          // 第一筆為主商品行（mainSku=""），其餘為規格行並連結到主商品
+          rows.push(buildRow(c, sku, pi === 0 ? "" : mainSku, "金額方案", `$${price}`, price, desc));
+        });
       } else {
         rows.push(buildRow(c, baseSku, "", "", "", c.amount, desc));
       }
@@ -1826,7 +1828,7 @@ function LiveOrderSorter() {
                 </div>
                 <label className="flex items-center gap-2 mb-4 text-xs cursor-pointer" style={{ color: COLORS.ink }}>
                   <input type="checkbox" checked={iopenSplitEnabled} onChange={(e) => setIopenSplitEnabled(e.target.checked)} />
-                  客人金額滿 $2498（999+1499）自動拆成同一賣場的兩筆金額方案，盡量對半分、並自動調整到都滿足 999／1499 兩張折價券門檻，方便客人分兩次結帳都用得到券
+                  客人金額滿 $2999 自動拆成同一賣場的多筆金額方案：每筆不少於 $1499、筆數不設上限、同一客人各筆金額不重複（例如 1499／1500／1501…，餘額加在最後一筆）
                 </label>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -1904,9 +1906,9 @@ function LiveOrderSorter() {
                             </td>
                             <td className="text-right px-3 py-2.5 font-bold" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                               {c.amount}
-                              {iopenSplitEnabled && c.amount >= 2498 && (
+                              {iopenSplitEnabled && splitForCoupons(c.amount).length >= 2 && (
                                 <div className="text-xs font-normal mt-0.5" style={{ color: COLORS.info }}>
-                                  拆成 {splitForCoupons(c.amount)[0]} / {splitForCoupons(c.amount)[1]}
+                                  拆成 {splitForCoupons(c.amount).join(" / ")}
                                 </div>
                               )}
                             </td>
