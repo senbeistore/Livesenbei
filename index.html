@@ -1017,7 +1017,7 @@ function LiveOrderSorter() {
     const categoryCode = parseInt(iopenCategoryCode, 10) || 993;
     let shipDays = parseInt(iopenShipDays, 10);
     if (!shipDays || shipDays < 1) shipDays = 1;
-    if (shipDays > 180) shipDays = 180;
+    if (shipDays > 150) shipDays = 150;
     const imageUrl = iopenImageUrl.trim();
     const selected = customerOrderTotals.filter((c, idx) => iopenSelected.has(iopenKey(c, idx)));
 
@@ -1055,7 +1055,7 @@ function LiveOrderSorter() {
     const ts = new Date();
     const pad = (n) => String(n).padStart(2, "0");
     const stamp = `${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`;
-    XLSX.writeFile(wb, "iOpen_ProductImport_Template.xlsx");
+    XLSX.writeFile(wb, `iOpen_ProductImport_${stamp}.xlsx`);
   }
 
   // ---------- 核對撿貨單 ----------
@@ -1816,7 +1816,7 @@ function LiveOrderSorter() {
                     />
                   </label>
                   <label className="text-xs" style={{ color: COLORS.inkMuted }}>
-                    預計出貨天數（1～180）
+                    預計出貨天數（1～150）
                     <input
                       type="text"
                       value={iopenShipDays}
