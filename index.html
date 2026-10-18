@@ -1009,7 +1009,7 @@ function LiveOrderSorter() {
     // 結單日文字：每次結單日不同時，改這一行即可
     const IOPEN_DEADLINE_TEXT = "10/26前需完成下單，10/26為結單日";
     const header = [
-      "0", "*溫層設定", "稅別", "*商品名稱", "*商品分類編號", "*商品原始貨號", "商品定價", "*商品售價", "商品成本", "*商品上架",
+      0, "*溫層設定", "稅別", "*商品名稱", "*商品分類編號", "*商品原始貨號", "商品定價", "*商品售價", "商品成本", "*商品上架",
       "主商品原始貨號", "商品規格1名稱", "商品規格1選項", "商品規格2名稱", "商品規格2選項",
       "*商品圖(1)", "商品圖(2)", "商品圖(3)", "商品圖(4)", "商品圖(5)", "商品圖(6)", "商品圖(7)", "商品圖(8)", "商品圖(9)", "商品圖(10)", "商品圖(11)",
       "*商品簡介", "*商品描述", "商品影片", "重量(g)", "長(cm)", "寬(cm)", "高(cm)", "*商品庫存", "預計出貨天數",
@@ -1021,13 +1021,15 @@ function LiveOrderSorter() {
     const imageUrl = iopenImageUrl.trim();
     const selected = customerOrderTotals.filter((c, idx) => iopenSelected.has(iopenKey(c, idx)));
 
+    // 比照範例檔規範：空白欄位為真正的空儲存格（不是空字串）；商品定價／商品成本留空時，巨集會補成商品售價
     function buildRow(c, sku, mainSku, specName, specValue, price, desc) {
+      const nz = (v) => (v === "" || v === undefined ? null : v);
       return [
-        "", 3, 0, `LIVE｜（${c.account || c.name}）｜${IOPEN_DEADLINE_TEXT}`, categoryCode, sku,
-        "", price, "", 1,
-        mainSku, specName, specValue, "", "",
-        imageUrl, "", "", "", "", "", "", "", "", "", "",
-        `直播訂單代收 - ${c.name || c.account}`, desc, "", 1, 1, 1, 1,
+        null, 3, 0, `LIVE｜（${c.account || c.name}）｜${IOPEN_DEADLINE_TEXT}`, categoryCode, sku,
+        price, price, price, 1,
+        nz(mainSku), nz(specName), nz(specValue), null, null,
+        nz(imageUrl), null, null, null, null, null, null, null, null, null, null,
+        `直播訂單代收 - ${c.name || c.account}`, desc, null, 1, 1, 1, 1,
         1, shipDays,
       ];
     }
@@ -1041,8 +1043,8 @@ function LiveOrderSorter() {
         const mainSku = `${baseSku}-A`;
         parts.forEach((price, pi) => {
           const sku = `${baseSku}-${String.fromCharCode(65 + (pi % 26))}${pi >= 26 ? Math.floor(pi / 26) : ""}`;
-          // 第一筆為主商品行（mainSku=""），其餘為規格行並連結到主商品
-          rows.push(buildRow(c, sku, pi === 0 ? "" : mainSku, "金額方案", `$${price}`, price, desc));
+          // 同一商品的每一列（含第一列）都填相同的主商品原始貨號（範例檔：同商品內不同規格，需填寫相同主商品貨號）
+          rows.push(buildRow(c, sku, mainSku, "金額方案", `$${price}`, price, desc));
         });
       } else {
         rows.push(buildRow(c, baseSku, "", "", "", c.amount, desc));
@@ -1052,20 +1054,14 @@ function LiveOrderSorter() {
     const formatRow = ["錯誤\n註記","數字(2)","數字(1)","文字(60)","數字(5)","文字(20)","數字(6)","數字(6)","數字(6)","數字(1)","文字(20)","文字(50)","文字(50)","文字(50)","文字(50)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(24000)","文字(24000)","文字(500)","數字(8)","數字(8)","數字(8)","數字(8)","數字(6)","數字(2)"];
     const ws = XLSX.utils.aoa_to_sheet([header, formatRow, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, "Data_Import_Items");
-    const ts = new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    const stamp = `${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`;
-    // 檔名與副檔名依範例檔固定；用 xlsm 專屬 MIME，避免手機瀏覽器自動在檔名後補上 .xlsx
-    const xlsmData = XLSX.write(wb, { bookType: "xlsm", type: "array" });
-    const xlsmBlob = new Blob([xlsmData], { type: "application/vnd.ms-excel.sheet.macroEnabled.12" });
-    const xlsmUrl = URL.createObjectURL(xlsmBlob);
-    const xlsmLink = document.createElement("a");
-    xlsmLink.href = xlsmUrl;
-    xlsmLink.download = "iOpen_ProductImport_Template.xlsm";
-    document.body.appendChild(xlsmLink);
-    xlsmLink.click();
-    document.body.removeChild(xlsmLink);
-    setTimeout(() => URL.revokeObjectURL(xlsmUrl), 10000);
+    // 範例檔的匯出巨集：只輸出 Data_Import_Items 一張工作表、存成 .xlsx，並對該工作表設保護
+    ws["!protect"] = { sheet: true, objects: true, scenarios: true, formatCells: false, autoFilter: false, pivotTables: false };
+    try {
+      XLSX.writeFile(wb, "iOpen_ProductImport_Template.xlsx");
+    } catch (e) {
+      delete ws["!protect"];
+      XLSX.writeFile(wb, "iOpen_ProductImport_Template.xlsx");
+    }
   }
 
   // ---------- 核對撿貨單 ----------
