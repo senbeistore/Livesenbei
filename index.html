@@ -995,12 +995,12 @@ function LiveOrderSorter() {
     return c.account || c.name || `row${idx}`;
   }
   // 拆成多筆金額方案：每筆 ≥1499、筆數不設上限，餘額加在最後一筆；
-  // 總額超過 15000 時，先單獨拆出 15000 一筆，其餘再依 1499 拆（剩餘不足 1499 時不拆，整筆維持 ≥15000）
+  // 總額達 15000 以上時，先單獨拆出 15000 一筆，其餘再依 1499 拆（剩餘不足 1499 時不拆，整筆維持 ≥15000）
   function splitForCoupons(total) {
     const MIN = 1499, BIG = 15000;
     let head = [];
     let rest = total;
-    if (total > BIG) {
+    if (total >= BIG) {
       let big = BIG;
       if (total - big < MIN) return [total];
       head = [big];
@@ -1843,7 +1843,7 @@ function LiveOrderSorter() {
                 </div>
                 <label className="flex items-center gap-2 mb-4 text-xs cursor-pointer" style={{ color: COLORS.ink }}>
                   <input type="checkbox" checked={iopenSplitEnabled} onChange={(e) => setIopenSplitEnabled(e.target.checked)} />
-                  客人金額滿 $2998 自動拆成同一賣場的多筆金額方案：每筆 $1499、筆數不設上限，餘額加在最後一筆；總額超過 $15000 時先單獨拆出 $15000 一筆；iOPEN 規格名稱用「金額-序號」區分（例如 1499-1、1499-2）
+                  客人金額滿 $2998 自動拆成同一賣場的多筆金額方案：每筆 $1499、筆數不設上限，餘額加在最後一筆；總額達 $15000 以上時先單獨拆出 $15000 一筆；iOPEN 規格名稱用「金額-序號」區分（例如 1499-1、1499-2）
                 </label>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
