@@ -1055,7 +1055,17 @@ function LiveOrderSorter() {
     const ts = new Date();
     const pad = (n) => String(n).padStart(2, "0");
     const stamp = `${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`;
-    XLSX.writeFile(wb, "iOpen_ProductImport_Template.xlsm", { bookType: "xlsm" }); // 檔名與副檔名依範例檔固定
+    // 檔名與副檔名依範例檔固定；用 xlsm 專屬 MIME，避免手機瀏覽器自動在檔名後補上 .xlsx
+    const xlsmData = XLSX.write(wb, { bookType: "xlsm", type: "array" });
+    const xlsmBlob = new Blob([xlsmData], { type: "application/vnd.ms-excel.sheet.macroEnabled.12" });
+    const xlsmUrl = URL.createObjectURL(xlsmBlob);
+    const xlsmLink = document.createElement("a");
+    xlsmLink.href = xlsmUrl;
+    xlsmLink.download = "iOpen_ProductImport_Template.xlsm";
+    document.body.appendChild(xlsmLink);
+    xlsmLink.click();
+    document.body.removeChild(xlsmLink);
+    setTimeout(() => URL.revokeObjectURL(xlsmUrl), 10000);
   }
 
   // ---------- 核對撿貨單 ----------
