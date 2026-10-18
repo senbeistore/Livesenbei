@@ -1021,15 +1021,14 @@ function LiveOrderSorter() {
     const imageUrl = iopenImageUrl.trim();
     const selected = customerOrderTotals.filter((c, idx) => iopenSelected.has(iopenKey(c, idx)));
 
-    // 比照範例檔規範：空白欄位為真正的空儲存格（不是空字串）；商品定價／商品成本留空時，巨集會補成商品售價
+    // 比照已成功匯入的對照檔：空白欄位為空字串；商品定價／商品成本留空時，範例檔巨集會補成商品售價
     function buildRow(c, sku, mainSku, specName, specValue, price, desc) {
-      const nz = (v) => (v === "" || v === undefined ? null : v);
       return [
-        null, 3, 0, `LIVE｜（${c.account || c.name}）｜${IOPEN_DEADLINE_TEXT}`, categoryCode, sku,
+        "", 3, 0, `LIVE｜（${c.account || c.name}）｜${IOPEN_DEADLINE_TEXT}`, categoryCode, sku,
         price, price, price, 1,
-        nz(mainSku), nz(specName), nz(specValue), null, null,
-        nz(imageUrl), null, null, null, null, null, null, null, null, null, null,
-        `直播訂單代收 - ${c.name || c.account}`, desc, null, 1, 1, 1, 1,
+        mainSku, specName, specValue, "", "",
+        imageUrl, "", "", "", "", "", "", "", "", "", "",
+        `直播訂單代收 - ${c.name || c.account}`, desc, "", 1, 1, 1, 1,
         1, shipDays,
       ];
     }
@@ -1054,14 +1053,8 @@ function LiveOrderSorter() {
     const formatRow = ["錯誤\n註記","數字(2)","數字(1)","文字(60)","數字(5)","文字(20)","數字(6)","數字(6)","數字(6)","數字(1)","文字(20)","文字(50)","文字(50)","文字(50)","文字(50)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(500)","文字(24000)","文字(24000)","文字(500)","數字(8)","數字(8)","數字(8)","數字(8)","數字(6)","數字(2)"];
     const ws = XLSX.utils.aoa_to_sheet([header, formatRow, ...rows]);
     XLSX.utils.book_append_sheet(wb, ws, "Data_Import_Items");
-    // 範例檔的匯出巨集：只輸出 Data_Import_Items 一張工作表、存成 .xlsx，並對該工作表設保護；文字用共用字串表（bookSST），與 Excel 匯出的結構一致
-    ws["!protect"] = { sheet: true, objects: true, scenarios: true, formatCells: false, autoFilter: false, pivotTables: false };
-    try {
-      XLSX.writeFile(wb, "iOpen_ProductImport_Template.xlsx", { bookSST: true });
-    } catch (e) {
-      delete ws["!protect"];
-      XLSX.writeFile(wb, "iOpen_ProductImport_Template.xlsx", { bookSST: true });
-    }
+    // 比照已成功匯入的對照檔：單一工作表 Data_Import_Items、文字用共用字串表（bookSST）、不設工作表保護
+    XLSX.writeFile(wb, "iOpen_ProductImport_Template.xlsx", { bookSST: true });
   }
 
   // ---------- 核對撿貨單 ----------
