@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>折扣碼使用說明｜Senbei.Store</title>
+<style>
+  :root {
+    --brown: #854626;
+    --brown-dark: #6b3a20;
+    --cream: #faf5ee;
+    --ink: #2b2118;
+    --muted: #7a6a5c;
+    --line: #e6d9c9;
+    --warn: #b3261e;
+    --warn-bg: #fdecea;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--cream);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    line-height: 1.7;
+  }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 16px 16px 40px; }
+
+  .hero {
+    background: var(--brown);
+    color: #fff;
+    border-radius: 16px;
+    padding: 26px 22px;
+    text-align: center;
+  }
+  .hero .brand { font-size: 13px; letter-spacing: .28em; opacity: .8; }
+  .hero h1 { margin: 6px 0 10px; font-size: 28px; line-height: 1.3; }
+  .hero p { margin: 0; font-size: 16px; font-weight: 700; }
+  .hero p b { background: #fff; color: var(--brown-dark); padding: 0 6px; border-radius: 4px; }
+
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 20px 20px;
+    margin-top: 14px;
+  }
+  .label { font-size: 14px; color: var(--muted); margin: 0 0 8px; }
+
+  .code-row { display: flex; gap: 10px; align-items: stretch; }
+  .code {
+    flex: 1;
+    border: 2px dashed var(--brown);
+    border-radius: 12px;
+    padding: 12px 8px;
+    text-align: center;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    color: var(--brown-dark);
+    background: #fffaf3;
+    user-select: all;
+    -webkit-user-select: all;
+  }
+  .copy {
+    border: 0;
+    background: var(--brown);
+    color: #fff;
+    border-radius: 12px;
+    padding: 0 18px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .copy:active { background: var(--brown-dark); }
+
+  .coupon { margin: 14px 0 0; font-size: 17px; font-weight: 700; }
+  .period { margin: 0; font-size: 18px; font-weight: 700; }
+
+  ul.rules { margin: 0; padding: 0; list-style: none; }
+  ul.rules li {
+    padding: 10px 0 10px 26px;
+    position: relative;
+    border-bottom: 1px solid var(--line);
+    font-size: 16px;
+  }
+  ul.rules li:last-child { border-bottom: 0; }
+  ul.rules li::before {
+    content: "";
+    position: absolute;
+    left: 4px; top: 20px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--brown);
+  }
+
+  .warn {
+    margin-top: 14px;
+    background: var(--warn-bg);
+    border: 1px solid #f2b8b5;
+    color: var(--warn);
+    border-radius: 16px;
+    padding: 16px 20px;
+    font-weight: 700;
+    font-size: 17px;
+  }
+  .warn small { display: block; font-size: 15px; font-weight: 600; margin-top: 2px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 28px;
+    transform: translate(-50%, 20px);
+    background: #2b2118; color: #fff;
+    padding: 10px 18px; border-radius: 999px;
+    font-size: 14px; opacity: 0; pointer-events: none;
+    transition: opacity .2s, transform .2s;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <section class="hero">
+    <div class="brand">SENBEI.STORE</div>
+    <h1>已協助首次拆單</h1>
+    <p>務必<b>「所有」</b>金額都完成下單才正確喔！</p>
+  </section>
+
+  <section class="card">
+    <p class="label">結帳時請輸入此序號</p>
+    <div class="code-row">
+      <div class="code" id="code">NN95M-TP9</div>
+      <button class="copy" id="copy" type="button">複製</button>
+    </div>
+    <p class="coupon">$1499折$100－Senbei.Store限定折扣碼</p>
+  </section>
+
+  <section class="card">
+    <p class="label">使用期間</p>
+    <p class="period">10/17 00:00 － 10/23</p>
+  </section>
+
+  <section class="card">
+    <ul class="rules">
+      <li>一個訂單限使用乙次</li>
+      <li>結帳完一單，下一單仍可使用此序號</li>
+    </ul>
+  </section>
+
+  <section class="warn">
+    務必記得繳費
+    <small>沒有繳費成功折價卷會失效</small>
+  </section>
+
+</main>
+
+<div class="toast" id="toast">已複製序號</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById("copy");
+    var toast = document.getElementById("toast");
+    var code = document.getElementById("code").textContent.trim();
+
+    function show(msg) {
+      toast.textContent = msg;
+      toast.classList.add("show");
+      setTimeout(function () { toast.classList.remove("show"); }, 1600);
+    }
+    function fallback() {
+      var ta = document.createElement("textarea");
+      ta.value = code;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+      show(ok ? "已複製序號" : "請長按序號手動複製");
+    }
+    btn.addEventListener("click", function () {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(code).then(function () { show("已複製序號"); }, fallback);
+      } else {
+        fallback();
+      }
+    });
+  })();
+</script>
+</body>
+</html>
