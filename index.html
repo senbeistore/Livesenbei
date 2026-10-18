@@ -1022,13 +1022,13 @@ function LiveOrderSorter() {
     const selected = customerOrderTotals.filter((c, idx) => iopenSelected.has(iopenKey(c, idx)));
 
     // 比照已成功匯入的對照檔：空白欄位為空字串；商品定價／商品成本留空時，範例檔巨集會補成商品售價
-    function buildRow(c, sku, mainSku, specName, specValue, price, desc) {
+    function buildRow(c, sku, mainSku, specName, specValue, price, desc, intro) {
       return [
         "", 3, 0, `LIVE｜（${c.account || c.name}）｜${IOPEN_DEADLINE_TEXT}`, categoryCode, sku,
         price, price, price, 1,
         mainSku, specName, specValue, "", "",
         imageUrl, "", "", "", "", "", "", "", "", "", "",
-        `直播訂單代收 - ${c.name || c.account}`, desc, "", 1, 1, 1, 1,
+        intro, desc, "", 1, 1, 1, 1,
         1, shipDays,
       ];
     }
@@ -1037,20 +1037,21 @@ function LiveOrderSorter() {
     selected.forEach((c, idx) => {
       const baseSku = `LIVE${String(idx + 1).padStart(4, "0")}`;
       const parts = iopenSplitEnabled ? splitForCoupons(c.amount) : [c.amount];
-      // 商品描述：總金額、（有拆單才有）拆單用券金額、提醒，其後接購買品項
+      // 商品簡介：總金額、（有拆單才有）拆單用券金額、提醒，其後接「直播訂單代收」；商品描述只放購買品項
       const notes = [`總金額為 $${c.amount}`];
       if (parts.length >= 2) notes.push(`已協助拆單用卷金額：${parts.map((v) => "$" + v).join("、")}`);
       notes.push("請記得全部的金額都需下單完畢");
-      const desc = notes.join("<br>") + "<br><br>" + c.items.join("<br>");
+      const intro = notes.join("<br>") + "<br><br>" + `直播訂單代收 - ${c.name || c.account}`;
+      const desc = c.items.join("<br>");
       if (parts.length >= 2) {
         const mainSku = `${baseSku}-A`;
         parts.forEach((price, pi) => {
           const sku = `${baseSku}-${String.fromCharCode(65 + (pi % 26))}${pi >= 26 ? Math.floor(pi / 26) : ""}`;
           // 同一商品的每一列（含第一列）都填相同的主商品原始貨號（範例檔：同商品內不同規格，需填寫相同主商品貨號）
-          rows.push(buildRow(c, sku, mainSku, "金額方案", `$${price}`, price, desc));
+          rows.push(buildRow(c, sku, mainSku, "金額方案", `$${price}`, price, desc, intro));
         });
       } else {
-        rows.push(buildRow(c, baseSku, "", "", "", c.amount, desc));
+        rows.push(buildRow(c, baseSku, "", "", "", c.amount, desc, intro));
       }
     });
     const wb = XLSX.utils.book_new();
