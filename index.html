@@ -1035,9 +1035,13 @@ function LiveOrderSorter() {
 
     const rows = [];
     selected.forEach((c, idx) => {
-      const desc = c.items.join("<br>");
       const baseSku = `LIVE${String(idx + 1).padStart(4, "0")}`;
       const parts = iopenSplitEnabled ? splitForCoupons(c.amount) : [c.amount];
+      // 商品描述：總金額、（有拆單才有）拆單用券金額、提醒，其後接購買品項
+      const notes = [`總金額為 $${c.amount}`];
+      if (parts.length >= 2) notes.push(`已協助拆單用卷金額：${parts.map((v) => "$" + v).join("、")}`);
+      notes.push("請記得全部的金額都需下單完畢");
+      const desc = notes.join("<br>") + "<br><br>" + c.items.join("<br>");
       if (parts.length >= 2) {
         const mainSku = `${baseSku}-A`;
         parts.forEach((price, pi) => {
