@@ -995,14 +995,14 @@ function LiveOrderSorter() {
     return c.account || c.name || `row${idx}`;
   }
   // 拆成多筆金額方案：每筆 ≥1499、筆數不設上限，餘額加在最後一筆；
-  // 總額超過 15000 時，先單獨拆出 15000 一筆，其餘再依 1499 拆（剩餘不足 1499 時，15000 那筆減少，讓剩餘湊成 1499）
+  // 總額超過 15000 時，先單獨拆出 15000 一筆，其餘再依 1499 拆（剩餘不足 1499 時不拆，整筆維持 ≥15000）
   function splitForCoupons(total) {
     const MIN = 1499, BIG = 15000;
     let head = [];
     let rest = total;
     if (total > BIG) {
       let big = BIG;
-      if (total - big < MIN) big = total - MIN;
+      if (total - big < MIN) return [total];
       head = [big];
       rest = total - big;
     }
