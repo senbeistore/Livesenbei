@@ -994,15 +994,13 @@ function LiveOrderSorter() {
   function iopenKey(c, idx) {
     return c.account || c.name || `row${idx}`;
   }
-  // 拆成多筆金額方案：每筆不少於 1499、筆數不設上限、同一客人各筆金額不得重複
+  // 拆成多筆金額方案：每筆 1499、筆數不設上限，餘額加在最後一筆（金額可重複，iOPEN 規格名稱用「金額-序號」區分）
   function splitForCoupons(total) {
     const MIN = 1499;
-    let n = 1;
-    while (MIN * (n + 1) + (n * (n + 1)) / 2 <= total) n++;
+    const n = Math.floor(total / MIN);
     if (n < 2) return [total];
-    const parts = [];
-    for (let i = 0; i < n; i++) parts.push(MIN + i);
-    parts[n - 1] += total - parts.reduce((x, y) => x + y, 0);
+    const parts = new Array(n).fill(MIN);
+    parts[n - 1] += total - MIN * n;
     return parts;
   }
   function exportIopenXLSX() {
@@ -1048,7 +1046,7 @@ function LiveOrderSorter() {
         parts.forEach((price, pi) => {
           const sku = `${baseSku}-${String.fromCharCode(65 + (pi % 26))}${pi >= 26 ? Math.floor(pi / 26) : ""}`;
           // 同一商品的每一列（含第一列）都填相同的主商品原始貨號（範例檔：同商品內不同規格，需填寫相同主商品貨號）
-          rows.push(buildRow(c, sku, mainSku, "金額方案", `$${price}`, price, desc, intro));
+          rows.push(buildRow(c, sku, mainSku, "金額方案", `${price}-${pi + 1}`, price, desc, intro));
         });
       } else {
         rows.push(buildRow(c, baseSku, "", "", "", c.amount, desc, intro));
@@ -1832,7 +1830,7 @@ function LiveOrderSorter() {
                 </div>
                 <label className="flex items-center gap-2 mb-4 text-xs cursor-pointer" style={{ color: COLORS.ink }}>
                   <input type="checkbox" checked={iopenSplitEnabled} onChange={(e) => setIopenSplitEnabled(e.target.checked)} />
-                  客人金額滿 $2999 自動拆成同一賣場的多筆金額方案：每筆不少於 $1499、筆數不設上限、同一客人各筆金額不重複（例如 1499／1500／1501…，餘額加在最後一筆）
+                  客人金額滿 $2998 自動拆成同一賣場的多筆金額方案：每筆 $1499、筆數不設上限，餘額加在最後一筆；iOPEN 規格名稱用「金額-序號」區分（例如 1499-1、1499-2）
                 </label>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
