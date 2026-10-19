@@ -54,7 +54,7 @@ function overArrivedQty(it){return it.counted?Math.max(0,(it.arrivedQty||0)-effO
 function isShortOpen(it){return shortQty(it)>0&&it.shortStatus!=="done";}
 const SHORT_STATUS=[["","未反映"],["reported","已向廠商反映"],["reshipping","補寄中"],["done","已補齊/已處理"]];
 function isOrderedMarked(it){return !!(it.firstOrderDate||it.allOrdered);}
-function effOrderedQty(it){return it.orderedQty!=null?it.orderedQty:netNeed(it);}
+function effOrderedQty(it){if(it.orderedEdited)return it.orderedQty!=null?it.orderedQty:netNeed(it);if(isOrderedMarked(it))return it.orderedQty!=null?it.orderedQty:netNeed(it);return netNeed(it);}
 function toOrderQty(it){return Math.max(0,needTotal(it)-(isOrderedMarked(it)?effOrderedQty(it):0));}
 function overOrderQty(it){return isOrderedMarked(it)?Math.max(0,effOrderedQty(it)-needTotal(it)):0;}
 function excessOrderInput(it){return Math.max(0,effOrderedQty(it)-needTotal(it));}
@@ -580,7 +580,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
               <span style={{color:C.inkMuted,fontSize:11}}>需求</span>
               <span style={{background:C.stripe,color:C.inkMuted,borderRadius:20,padding:"2px 8px",fontSize:12}}>x{it.qty}</span>
               <span style={{color:C.inkMuted,fontSize:11}}>訂購</span>
-              <input type="number" min="0" value={effOrderedQty(it)} onChange={e=>onUpdate("orderedQty",Math.max(0,parseInt(e.target.value,10)||0))} style={{width:50,border:`1px solid ${C.info}`,borderRadius:8,padding:"2px 5px",fontSize:13,textAlign:"center",background:"#EFF6FC",color:C.info,fontWeight:600}}/>{(()=>{const over=overOrderQty(it);if(over>0)return <span style={{fontSize:11,fontWeight:700,padding:"2px 7px",borderRadius:10,marginLeft:4,background:"#DC2626",color:"#fff"}}>多叫{over}件</span>;return null;})()}
+              <input type="number" min="0" value={effOrderedQty(it)} onChange={e=>{onUpdate("orderedQty",Math.max(0,parseInt(e.target.value,10)||0));onUpdate("orderedEdited",true);}} style={{width:50,border:`1px solid ${C.info}`,borderRadius:8,padding:"2px 5px",fontSize:13,textAlign:"center",background:"#EFF6FC",color:C.info,fontWeight:600}}/>{(()=>{const over=overOrderQty(it);if(over>0)return <span style={{fontSize:11,fontWeight:700,padding:"2px 7px",borderRadius:10,marginLeft:4,background:"#DC2626",color:"#fff"}}>多叫{over}件</span>;return null;})()}
             </div>
           </div>
           {(it.color||it.size||it.style)&&<div style={{color:C.inkMuted,fontSize:12,marginTop:2}}>{it.product}</div>}
@@ -591,7 +591,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
         <div style={{flex:1}}>
           <div style={{color:C.inkMuted,fontSize:11,marginBottom:4}}>首次訂購日</div>
           <div style={{display:"flex",gap:4}}>
-            <input type="date" value={d1} onChange={e=>setD1(e.target.value)} onBlur={e=>{if(e.target.value&&e.target.value!==it.firstOrderDate)onUpdate("firstOrderDate",e.target.value);}} disabled={!!it.allOrdered} style={{flex:1,border:`1px solid ${it.allOrdered?"transparent":C.line}`,borderRadius:8,padding:"6px 8px",fontSize:13,color:it.allOrdered?C.inkMuted:C.ink,background:it.allOrdered?"transparent":C.bg,minWidth:0,opacity:it.allOrdered?0.6:1}}/>
+            <input type="date" value={d1} onChange={e=>setD1(e.target.value)} onBlur={e=>{if(e.target.value&&e.target.value!==it.firstOrderDate){if(!it.orderedEdited)onUpdate("orderedQty",netNeed(it));onUpdate("firstOrderDate",e.target.value);}}} disabled={!!it.allOrdered} style={{flex:1,border:`1px solid ${it.allOrdered?"transparent":C.line}`,borderRadius:8,padding:"6px 8px",fontSize:13,color:it.allOrdered?C.inkMuted:C.ink,background:it.allOrdered?"transparent":C.bg,minWidth:0,opacity:it.allOrdered?0.6:1}}/>
             {it.firstOrderDate&&!it.allOrdered&&<button onClick={()=>onUpdate("firstOrderDate","")} style={{width:26,height:34,borderRadius:6,border:`1px solid ${C.line}`,background:C.surface,color:C.inkMuted,fontSize:14,cursor:"pointer",flexShrink:0}}>×</button>}
           </div>
         </div>
@@ -604,12 +604,12 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
         </div>
       </div>
       <div style={{paddingLeft:32,marginBottom:10}}>
-        {it.allOrdered?(<div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,color:C.info,fontWeight:600}}>🔒 全數訂完，等待到貨</span><button onClick={()=>{if(window.confirm("確定要解鎖並修改訂貨資料？"))onUpdate("allOrdered",false);}} style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>解鎖</button></div>):(<label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}><input type="checkbox" checked={false} onChange={e=>{if(e.target.checked){const ov=excessOrderInput(it);if(ov>0&&!window.confirm(`「${dispName(it)}」訂購數比淨需求多 ${ov} 件（需求 ${it.qty}、現貨 ${it.stockQty||0}）。\n確定要多叫嗎？`))return;onUpdate("allOrdered",true);}}} style={{width:20,height:20,accentColor:C.info,cursor:"pointer"}}/><span style={{fontSize:13,color:C.inkMuted}}>全數訂完</span></label>)}
+        {it.allOrdered?(<div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,color:C.info,fontWeight:600}}>🔒 全數訂完，等待到貨</span><button onClick={()=>{if(window.confirm("確定要解鎖並修改訂貨資料？"))onUpdate("allOrdered",false);}} style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>解鎖</button></div>):(<label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}><input type="checkbox" checked={false} onChange={e=>{if(e.target.checked){if(!it.orderedEdited)onUpdate("orderedQty",netNeed(it));const ov=excessOrderInput(it);if(ov>0&&!window.confirm(`「${dispName(it)}」訂購數比淨需求多 ${ov} 件（需求 ${it.qty}、現貨 ${it.stockQty||0}）。\n確定要多叫嗎？`))return;onUpdate("allOrdered",true);}}} style={{width:20,height:20,accentColor:C.info,cursor:"pointer"}}/><span style={{fontSize:13,color:C.inkMuted}}>全數訂完</span></label>)}
       </div>
       <div style={{paddingLeft:32,borderTop:`1px solid ${C.line}`,paddingTop:10}}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{color:"#059669",fontSize:12}}>現貨</span><input type="number" min="0" value={it.stockQty||0} onChange={e=>{const n=Math.max(0,parseInt(e.target.value,10)||0);const autoOld=netNeed(it);onUpdate("stockQty",n);if(it.orderedQty==null||it.orderedQty===autoOld)onUpdate("orderedQty",Math.max(0,(it.qty||0)-n));}} style={{width:46,border:"1px solid #059669",borderRadius:8,padding:"5px 4px",fontSize:13,textAlign:"center",background:"#F0FFF4",color:"#059669",fontWeight:600}}/></div><span style={{color:C.inkMuted,fontSize:11,margin:"0 4px"}}>|</span><span style={{color:C.inkMuted,fontSize:12}}>已到貨</span>
+            <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{color:"#059669",fontSize:12}}>現貨</span><input type="number" min="0" value={it.stockQty||0} onChange={e=>{const n=Math.max(0,parseInt(e.target.value,10)||0);const autoOld=netNeed(it);onUpdate("stockQty",n);if(!it.orderedEdited)onUpdate("orderedQty",Math.max(0,(it.qty||0)-n));}} style={{width:46,border:"1px solid #059669",borderRadius:8,padding:"5px 4px",fontSize:13,textAlign:"center",background:"#F0FFF4",color:"#059669",fontWeight:600}}/></div><span style={{color:C.inkMuted,fontSize:11,margin:"0 4px"}}>|</span><span style={{color:C.inkMuted,fontSize:12}}>已到貨</span>
             <input type="number" min="0" value={it.arrivedQty||0} onChange={e=>handleArrivedQty(e.target.value)} style={{width:52,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 6px",fontSize:14,textAlign:"center",background:C.bg,color:C.ink}}/>
             <span style={{color:C.inkMuted,fontSize:12}}>/ {it.orderedQty!=null?it.orderedQty:it.qty} 件</span>
           </div>
@@ -1926,7 +1926,7 @@ function App(){
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <span style={{color:"rgba(255,255,255,0.7)",fontSize:12,width:60,flexShrink:0}}>首次訂購日</span>
                 <input type="date" value={batchDate1} onChange={e=>setBatchDate1(e.target.value)} style={{flex:1,background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:8,padding:"8px 10px",fontSize:14,color:"#fff"}}/>
-                <button onClick={()=>{setItems(prev=>{const next=prev.map(it=>batchSel.has(it.id)?{...it,firstOrderDate:batchDate1}:it);scheduleSave(next);return next;});setBatchDate1("");}} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"8px 12px",fontSize:13,fontWeight:600,cursor:"pointer",flexShrink:0}}>套用</button>
+                <button onClick={()=>{setItems(prev=>{const next=prev.map(it=>batchSel.has(it.id)?{...it,firstOrderDate:batchDate1,...(it.orderedEdited?{}:{orderedQty:netNeed(it)})}:it);scheduleSave(next);return next;});setBatchDate1("");}} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"8px 12px",fontSize:13,fontWeight:600,cursor:"pointer",flexShrink:0}}>套用</button>
                 <button onClick={()=>{setItems(prev=>{const next=prev.map(it=>batchSel.has(it.id)?{...it,firstOrderDate:""}:it);scheduleSave(next);return next;});}} style={{background:"rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"8px 10px",fontSize:12,cursor:"pointer",flexShrink:0}}>清除</button>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
