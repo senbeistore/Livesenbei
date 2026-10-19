@@ -451,7 +451,7 @@ async function gFetch(token,gistId){
   const r=await fetch(`https://api.github.com/gists/${gistId}`,{headers:{Authorization:`Bearer ${token}`,Accept:"application/vnd.github.v3+json"}});
   if(!r.ok)throw new Error(`無法讀取 (HTTP ${r.status})`);
   const d=await r.json();const content=d.files[GIST_FILE]?.content;
-  try{const p=JSON.parse(content||"{}");return{items:(p.items||[]).map(migrateItem),savedAlloc:p.savedAlloc||null,iopenCustom:p.iopenCustom||[],iopenData:p.iopenData||{}};}catch{return{items:[],savedAlloc:null,iopenCustom:[],iopenData:{}};}
+  try{const p=JSON.parse(content||"{}");return{items:(p.items||[]).filter(it=>!(isLiveMarkerProd(it.product)&&!(it.arrivedQty>0))).map(migrateItem),savedAlloc:p.savedAlloc||null,iopenCustom:p.iopenCustom||[],iopenData:p.iopenData||{}};}catch{return{items:[],savedAlloc:null,iopenCustom:[],iopenData:{}};}
 }
 async function gSave(token,gistId,items,savedAlloc,iopenCustom,iopenData){
   const r=await fetch(`https://api.github.com/gists/${gistId}`,{method:"PATCH",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify({items,savedAlloc,iopenCustom:iopenCustom||[],iopenData:iopenData||{}},null,2)}}})});
@@ -681,7 +681,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   const[err,setErr]=useState("");
   const[editingKey,setEditingKey]=useState(null);
   const[allocSearch,setAllocSearch]=useState("");
-  const[readyOpen,setReadyOpen]=useState(false);const[catFilter,setCatFilter]=useState("live");const[showScan,setShowScan]=useState(false);
+  const[readyOpen,setReadyOpen]=useState(false);const[missOpen,setMissOpen]=useState(false);const[catFilter,setCatFilter]=useState("live");const[showScan,setShowScan]=useState(false);
   const[batchSel,setBatchSel]=useState(()=>new Set());const[batchDate,setBatchDate]=useState("");const[batchOpen,setBatchOpen]=useState(false);
   const[copiedKey,setCopiedKey]=useState("");
   const[editingNote,setEditingNote]=useState("");
@@ -908,34 +908,38 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   }
 
   // 客人無法取貨：貨留在手上（不動備貨到貨數），這件讓給下一位等貨的客人
-  function passToNext(oKey,item){
-    let msg="";
+  function passToNext(oKey,item,n){
+    n=Math.max(1,n||1);const msgs=[];
     setEditAlloc(prev=>{
-      const order=prev[oKey];if(!order)return prev;
-      const fk=flatKey(item);
-      // 找下一位：未出貨、仍在等這個品項，依客人金額高→低
-      const cands=Object.entries(prev).filter(([k,o])=>k!==oKey&&k.indexOf("__")!==0&&o&&!(o.shipments&&o.shipments.length)&&!o.shippedAt&&(o.waitingItems||[]).some(w=>flatKey(w)===fk&&needQty(w)>0)&&!((o.skipItems||{})[itemKey(item)]))
-        .sort((a,b)=>(b[1].customerTotalAmount||0)-(a[1].customerTotalAmount||0));
-      if(!cands.length){msg="沒有其他客人在等這個品項，已取消。";return prev;}
-      const[nk,no]=cands[0];
-      const next={...prev};
-      // 原客人：可出貨 −1、待補 +1、記錄已讓出
-      const aI=(order.allocItems||[]).map(it=>itemKey(it)===itemKey(item)&&it.allocatedQty>0?{...it,allocatedQty:it.allocatedQty-1}:it).filter(it=>it.allocatedQty>0);
-      const wI=[...(order.waitingItems||[])];const ex=wI.find(it=>itemKey(it)===itemKey(item));
-      if(ex){const i=wI.indexOf(ex);wI[i]={...ex,orderedQty:needQty(ex)+1,qty:needQty(ex)+1};}else wI.push({...item,allocatedQty:0,orderedQty:1,qty:1});
-      const sk={...(order.skipItems||{})};sk[itemKey(item)]=(sk[itemKey(item)]||0)+1;
-      next[oKey]={...order,allocItems:aI,waitingItems:wI,skipItems:sk};
-      // 下一位：待補 −1、可出貨 +1
-      const nw=(no.waitingItems||[]).map(w=>flatKey(w)===fk&&needQty(w)>0?{...w,orderedQty:needQty(w)-1,qty:needQty(w)-1}:w).filter(w=>needQty(w)>0);
-      const na=[...(no.allocItems||[])];const ea=na.find(it=>itemKey(it)===itemKey(item));
-      if(ea){na[na.indexOf(ea)]={...ea,allocatedQty:ea.allocatedQty+1};}else na.push({...item,orderedQty:item.orderedQty||1,allocatedQty:1});
-      next[nk]={...no,allocItems:na,waitingItems:nw};
-      msg="已讓給 "+(no.customerAccount||nk)+"，請通知對方可出貨。";
-      onSaveAlloc(next);
-      return next;
+      let order=prev[oKey];if(!order)return prev;
+      const fk=flatKey(item);const next={...prev};
+      for(let t=0;t<n;t++){
+        const have=(order.allocItems||[]).some(it=>itemKey(it)===itemKey(item)&&it.allocatedQty>0);if(!have)break;
+        const cands=Object.entries(next).filter(([k,o])=>k!==oKey&&k.indexOf("__")!==0&&o&&!(o.shipments&&o.shipments.length)&&!o.shippedAt&&(o.waitingItems||[]).some(w=>flatKey(w)===fk&&needQty(w)>0))
+          .sort((a,b)=>(b[1].customerTotalAmount||0)-(a[1].customerTotalAmount||0));
+        if(!cands.length){msgs.push("沒有其他客人在等這個品項"+(t?"，已讓出 "+t+" 件":"，已取消")+"。");break;}
+        const[nk,no]=cands[0];
+        const aI=(order.allocItems||[]).map(it=>itemKey(it)===itemKey(item)&&it.allocatedQty>0?{...it,allocatedQty:it.allocatedQty-1}:it).filter(it=>it.allocatedQty>0);
+        const wI=[...(order.waitingItems||[])];const ex=wI.find(it=>itemKey(it)===itemKey(item));
+        if(ex){wI[wI.indexOf(ex)]={...ex,orderedQty:needQty(ex)+1,qty:needQty(ex)+1};}else wI.push({...item,allocatedQty:0,orderedQty:1,qty:1});
+        const sk={...(order.skipItems||{})};sk[itemKey(item)]=(sk[itemKey(item)]||0)+1;
+        order={...order,allocItems:aI,waitingItems:wI,skipItems:sk};next[oKey]=order;
+        const nw=(no.waitingItems||[]).map(w=>flatKey(w)===fk&&needQty(w)>0?{...w,orderedQty:needQty(w)-1,qty:needQty(w)-1}:w).filter(w=>needQty(w)>0);
+        const na=[...(no.allocItems||[])];const ea=na.find(it=>itemKey(it)===itemKey(item));
+        if(ea){na[na.indexOf(ea)]={...ea,allocatedQty:ea.allocatedQty+1};}else na.push({...item,orderedQty:item.orderedQty||1,allocatedQty:1});
+        next[nk]={...no,allocItems:na,waitingItems:nw};
+        msgs.push("已讓給 "+(no.customerAccount||nk));
+      }
+      if(next[oKey]===prev[oKey])return prev;
+      onSaveAlloc(next);return next;
     });
-    setPacked(p=>{const n={...p};Object.keys(n).forEach(k=>{if(k.indexOf(oKey+"|")===0)delete n[k];});return n;});
-    setTimeout(()=>{if(msg)alert(msg);},50);
+    setPacked(p=>{const nn={...p};Object.keys(nn).forEach(k=>{if(k.indexOf(oKey+"|")===0)delete nn[k];});return nn;});
+    setTimeout(()=>{if(msgs.length)alert(msgs.join("\n")+"\n請通知對方可出貨。");},50);
+  }
+
+  // 取消一件「讓給下一位」的記錄（下次重新計算時恢復正常配貨）
+  function cancelSkip(oKey,ik){
+    setEditAlloc(prev=>{const o=prev[oKey];if(!o||!o.skipItems||!o.skipItems[ik])return prev;const sk={...o.skipItems};sk[ik]-=1;if(sk[ik]<=0)delete sk[ik];const next={...prev,[oKey]:{...o,skipItems:sk}};onSaveAlloc(next);return next;});
   }
 
   function toggleNotified(oKey,idx){
@@ -1047,7 +1051,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   },[editAlloc]);
 
   // iOPEN 帳號比對不分大小寫（直播行 IG 大小寫可能與 hotsnet 帳號不同）
-  const iopenLC=useMemo(()=>{const m={};Object.keys(iopenData||{}).forEach(k=>{let v=iopenData[k];if(v&&Array.isArray(v.customItems))v={...v,customItems:v.customItems.filter(ci=>!isLiveMarkerProd(ci.prod))};m[String(k).toLowerCase()]=v;});return m;},[iopenData]);
+  const iopenLC=useMemo(()=>{const m={};Object.keys(iopenData||{}).forEach(k=>{let v=iopenData[k];if(v&&Array.isArray(v.customItems))v={...v,customItems:v.customItems.filter(ci=>!isLiveMarkerProd(ci.prod))};if(v&&Array.isArray(v.orders)){const seq=(o)=>{let mn=1e9;(o.liveSpecs||[]).forEach(sp=>{const m=String(sp).match(/-(\d+)$/);if(m)mn=Math.min(mn,parseInt(m[1],10));});return mn;};v={...v,orders:v.orders.map((o,i)=>({o,i})).sort((x,y)=>(seq(x.o)-seq(y.o))||(x.i-y.i)).map(x=>x.o)};}
+      m[String(k).toLowerCase()]=v;});return m;},[iopenData]);
   const iopenCount=useMemo(()=>Object.keys(iopenData||{}).filter(k=>k!=="__unmatched__"&&k!=="__reship__"&&k!=="__orders__").length,[iopenData]);
 
   // 搜尋：帳號 / 人名 / iOPEN訂單編號·出貨單號 / 已出貨單號
@@ -1317,6 +1322,31 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
         </div>);
       })()}
       {catFilter==="live"&&(()=>{
+        const miss=[];
+        displayData.forEach(c=>{
+          if(c.done||!(c.totalAmount>0))return;
+          const info=iopenLC[String(c.account||"").toLowerCase()];
+          const got=((info&&info.orders)||[]).reduce((a,x)=>a+Math.round(x.listPrice||x.amount||0),0);
+          if(c.totalAmount-got>=100)miss.push({c,got,diff:Math.round(c.totalAmount-got)});
+        });
+        if(!miss.length||!Object.keys(iopenData||{}).some(k=>k.indexOf("__")!==0))return null;
+        miss.sort((a,b)=>b.diff-a.diff);
+        return(<div style={{background:C.surface,border:`1px solid ${C.orange}`,borderRadius:12,marginBottom:12,padding:"10px 12px"}}>
+          <div onClick={()=>setMissOpen(!missOpen)} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
+            <span style={{fontSize:13,fontWeight:700,color:C.orange}}>🧾 子單尚未下完（{miss.length} 位）</span>
+            <span style={{marginLeft:"auto",fontSize:12,color:C.inkMuted}}>{missOpen?"收合 ▴":"展開 ▾"}</span>
+          </div>
+          {missOpen&&(<div style={{marginTop:8}}>
+            {miss.map((m,mi)=>(<div key={mi} style={{display:"flex",gap:8,flexWrap:"wrap",padding:"4px 0",borderTop:mi?`1px solid ${C.line}`:"none",fontSize:12}}>
+              <span style={{fontWeight:700,color:C.ink}}>{m.c.account||m.c.name}</span>
+              <span style={{color:C.inkMuted}}>直播 ${Math.round(m.c.totalAmount)} ／ 已下 ${m.got}</span>
+              <span style={{marginLeft:"auto",color:C.orange,fontWeight:700}}>差 ${m.diff}</span>
+            </div>))}
+            <div style={{fontSize:11,color:C.inkMuted,marginTop:6}}>以 iOPEN 原售價加總對照直播總金額；有額外折價券的客人金額可能略有差異。</div>
+          </div>)}
+        </div>);
+      })()}
+      {catFilter==="live"&&(()=>{
         const rows=[];
         displayData.forEach(c=>{
           if(c.done)return;
@@ -1480,7 +1510,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                                   <strong style={{fontSize:13,color:C.success,opacity:isPacked?0.45:1}}>× 1</strong>
                                   <button onClick={()=>{if(window.confirm("⚠️ 退回待補貨\n\n「"+dispName(it)+"」1 件將：\n・從這位客人的可出貨移到待補貨\n・備貨中心的「已到貨」數量 −1\n\n適用於實際還沒到貨、卻誤標成到貨的情況。\n此動作會同步影響備貨中心，確定要繼續？"))returnToWaiting(o.oKey,it);}} title="實際未到貨，退回待補並扣回備貨中心到貨數"
                                     style={{border:`1px solid ${C.orange}`,color:C.orange,background:"#fff",borderRadius:7,padding:"4px 8px",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>⏳ 退回待補</button>
-                                  <button onClick={()=>{if(window.confirm("「"+dispName(it)+"」1 件讓給下一位？\n\n・貨留在手上，備貨到貨數不變\n・這位客人改為待補，之後重新計算也不會再配給他\n・自動配給下一位在等這件的客人"))passToNext(o.oKey,it);}} title="客人無法取貨，貨讓給下一位"
+                                  <button onClick={()=>{const cnt=o.allocItems.filter(x=>itemKey(x)===itemKey(it)).reduce((a,x)=>a+x.allocatedQty,0);let n=1;if(cnt>1){const v=window.prompt("「"+dispName(it)+"」目前可出 "+cnt+" 件，讓出幾件？",String(cnt));if(v===null)return;n=Math.min(cnt,Math.max(1,parseInt(v,10)||1));}else if(!window.confirm("「"+dispName(it)+"」1 件讓給下一位？\n\n・貨留在手上，備貨到貨數不變\n・這位客人改為待補，之後重新計算也不會再配給他\n・自動配給下一位在等這件的客人"))return;passToNext(o.oKey,it,n);}} title="客人無法取貨，貨讓給下一位"
                                     style={{border:`1px solid ${C.line}`,color:C.sub||"#666",background:"#fff",borderRadius:7,padding:"4px 8px",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>➡️ 讓給下一位</button>
                                   <button onClick={()=>togglePacked(o.oKey,uKey)} title={isPacked?"取消裝袋":"標記已裝袋"}
                                     style={{width:28,height:28,padding:0,lineHeight:1,borderRadius:7,
@@ -1555,6 +1585,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                         {editingKey===o.oKey?"完成調整":"調整配貨"}
                       </button>
                     </div>
+                    {o.skipItems&&Object.keys(o.skipItems).length>0&&(<div style={{fontSize:11,color:C.inkMuted,marginBottom:4}}>已讓出：{Object.entries(o.skipItems).map(([ik,n])=>(<span key={ik} style={{marginRight:8}}>{ik.split("|||").filter(Boolean).join(" ")} ×{n} <button onClick={()=>cancelSkip(o.oKey,ik)} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:"#fff",borderRadius:8,padding:"0 6px",cursor:"pointer"}}>取消讓出</button></span>))}</div>)}
                     {(()=>{const typed=shipInputs[o.oKey];const ords=(iopenInfo&&iopenInfo.orders)||[];const isShippedOrd=(x)=>c.orders.some(oo=>(oo.shipments||[]).some(s=>String(s.orderNo)===String(x.orderNo)));const nextOrd=(typed&&ords.find(x=>x.orderNo===typed))||ords.find(x=>!isShippedOrd(x))||ords[shipments.length];if(!nextOrd||!(nextOrd.store||nextOrd.amount>0))return null;
                       const prods=o.allocItems.filter(it=>it.allocatedQty>0).map(it=>dispName(it)+(it.allocatedQty>1?" ×"+it.allocatedQty:""));
                       if(iopenInfo&&iopenInfo.customItems){const _sci2=(c.orders[0]&&c.orders[0].shippedCI)||[];iopenInfo.customItems.forEach(ci=>{const ck=custKey(ci);if(_sci2.indexOf(ck)===-1&&packed[o.oKey+"|CI|"+ck])prods.push(ci.prod+(ci.spec1?" "+ci.spec1:"")+(ci.spec2?" "+ci.spec2:""));});}
@@ -1582,7 +1613,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                         const dp=new Array(cap+1).fill(null);dp[0]=[];
                         units.forEach((x,i)=>{for(let sm=cap;sm>=x.price;sm--){if(dp[sm]===null&&dp[sm-x.price]!==null&&x.price>0)dp[sm]=dp[sm-x.price].concat(i);}});
                         let best=-1;for(let sm=1;sm<=cap;sm++){if(dp[sm]===null)continue;if(best<0||Math.abs(sm-target)<Math.abs(best-target)||(Math.abs(sm-target)===Math.abs(best-target)&&sm>=target))best=sm;}
-                        const chosen=new Set(best>0?dp[best]:[]);
+                        const chosen=new Set(best>0?dp[best]:[]);units.forEach((x,i)=>{if(!(x.price>0))chosen.add(i);});
                         setPacked(pv=>{const n={...pv};units.forEach((x,i)=>{n[x.key]=chosen.has(i);});return n;});
                       }
                       const diff=packedVal-target;
@@ -1855,7 +1886,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1019-K</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1019-L</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -1955,7 +1986,7 @@ function App(){
             const next=prev.map((it,k)=>{
               if(k!==j)return it;
               const na=Math.max(0,(it.arrivedQty||0)-(qty||1));
-              return{...it,arrivedQty:na,allArrived:false,counted:false,shortStatus:undefined,...(na===0?{firstArrivedTs:"",arrivedTs:""}:{})};
+              return{...it,arrivedQty:na,allArrived:false,counted:false,arrivalLog:[...(it.arrivalLog||[]),{ts:new Date().toISOString(),d:-((it.arrivedQty||0)-na),total:na}],shortStatus:undefined,...(na===0?{firstArrivedTs:"",arrivedTs:""}:{})};
             });
             scheduleSave(next,newAlloc);
             return next;
