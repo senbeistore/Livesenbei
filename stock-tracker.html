@@ -48,10 +48,15 @@ function normalizedKey(it){return[it.product,it.color,it.size,it.style].map(nkSt
 // 還需要的數量：orderedQty 為 0 是合法值，不可用 || 退回 qty（0 是 falsy）
 // ---- 避免多叫貨：該叫數 = 需求 − 現貨 − 已訂數量（尚未訂過者只扣現貨） ----
 function netNeed(it){return Math.max(0,(it.qty||0)-(it.stockQty||0));}
+function needTotal(it){return netNeed(it)+(it.defectQty||0);}
+function shortQty(it){return it.counted?Math.max(0,effOrderedQty(it)-(it.arrivedQty||0)):0;}
+function overArrivedQty(it){return it.counted?Math.max(0,(it.arrivedQty||0)-effOrderedQty(it)):0;}
+function isShortOpen(it){return shortQty(it)>0&&it.shortStatus!=="done";}
+const SHORT_STATUS=[["","未反映"],["reported","已向廠商反映"],["reshipping","補寄中"],["done","已補齊/已處理"]];
 function isOrderedMarked(it){return !!(it.firstOrderDate||it.allOrdered);}
 function effOrderedQty(it){return it.orderedQty!=null?it.orderedQty:netNeed(it);}
-function toOrderQty(it){return Math.max(0,netNeed(it)-(isOrderedMarked(it)?effOrderedQty(it):0));}
-function overOrderQty(it){return Math.max(0,effOrderedQty(it)-netNeed(it));}
+function toOrderQty(it){return Math.max(0,needTotal(it)-(isOrderedMarked(it)?effOrderedQty(it):0));}
+function overOrderQty(it){return Math.max(0,effOrderedQty(it)-needTotal(it));}
 function needQty(it){return it.orderedQty!=null?it.orderedQty:(it.qty||0);}
 function normProdName(s){
   let v=String(s||"");
@@ -550,12 +555,12 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
     const label=dispName(it);
     const maxQ2=it.orderedQty!=null?it.orderedQty:it.qty;
     if(checked){
-      if(!window.confirm(`確認「${label}」共 ${maxQ2} 件全數到貨？\n點確定後到貨數量會自動填入 ${maxQ2} 件。`))return;
+      if(!window.confirm(`確認「${label}」共 ${maxQ2} 件已清點、全數到貨？\n點確定後到貨數量會自動填入 ${maxQ2} 件。\n（還沒清點或有短少，請改用上方「清點」功能）`))return;
     }else{
       if(!window.confirm(`取消「${label}」的全數到貨？`))return;
     }
     const maxQ=it.orderedQty!=null?it.orderedQty:it.qty;onUpdate("allArrived",checked);
-    if(checked){if(!it.arrivedTs)onUpdate("arrivedTs",new Date().toISOString());if(!it.arrivedQty||it.arrivedQty<maxQ)onUpdate("arrivedQty",maxQ);if(!it.firstArrivedTs)onUpdate("firstArrivedTs",new Date().toISOString());}
+    if(checked){onUpdate("counted",true);if((it.arrivedQty||0)<maxQ)onUpdate("arrivalLog",[...(it.arrivalLog||[]),{ts:new Date().toISOString(),d:maxQ-(it.arrivedQty||0),total:maxQ}]);if(!it.arrivedTs)onUpdate("arrivedTs",new Date().toISOString());if(!it.arrivedQty||it.arrivedQty<maxQ)onUpdate("arrivedQty",maxQ);if(!it.firstArrivedTs)onUpdate("firstArrivedTs",new Date().toISOString());}
     else{onUpdate("arrivedTs","");}
   }
 
@@ -580,7 +585,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
           {(it.color||it.size||it.style)&&<div style={{color:C.inkMuted,fontSize:12,marginTop:2}}>{it.product}</div>}
         </div>
       </div>
-      {(()=>{const sq=it.stockQty||0;const nn=netNeed(it);const tq=toOrderQty(it);const over=overOrderQty(it);let bg="#FFF3CD",col="#B45309",txt=`該叫 ${tq} 件`;if(over>0){bg="#FEE2E2";col="#B91C1C";txt=`已多叫 ${over} 件，請減少訂購數`;}else if(nn===0){bg="#D1FAE5";col="#059669";txt="庫存充足，不用叫貨";}else if(tq===0){bg="#E8F0F7";col=C.info;txt="已叫足，不用再叫";}return(<div style={{paddingLeft:32,marginBottom:10}}><span style={{display:"inline-block",background:bg,color:col,borderRadius:10,padding:"4px 10px",fontSize:13,fontWeight:700}}>{txt}</span><span style={{color:C.inkMuted,fontSize:11,marginLeft:8}}>需求 {it.qty}{sq>0?` − 現貨 ${sq}`:""} = 淨需求 {nn}</span></div>);})()}
+      {(()=>{const sq=it.stockQty||0;const nn=netNeed(it);const tq=toOrderQty(it);const over=overOrderQty(it);let bg="#FFF3CD",col="#B45309",txt=`該叫 ${tq} 件`;if(over>0){bg="#FEE2E2";col="#B91C1C";txt=`已多叫 ${over} 件，請減少訂購數`;}else if(tq>0){}else if(nn===0){bg="#D1FAE5";col="#059669";txt="庫存充足，不用叫貨";}else{bg="#E8F0F7";col=C.info;txt="已叫足，不用再叫";}return(<div style={{paddingLeft:32,marginBottom:10}}><span style={{display:"inline-block",background:bg,color:col,borderRadius:10,padding:"4px 10px",fontSize:13,fontWeight:700}}>{txt}</span><span style={{color:C.inkMuted,fontSize:11,marginLeft:8}}>需求 {it.qty}{sq>0?` − 現貨 ${sq}`:""} = 淨需求 {nn}{(it.defectQty||0)>0?` ＋ 瑕疵補 ${it.defectQty}`:""}</span></div>);})()}
       <div style={{display:"flex",gap:8,marginBottom:10,paddingLeft:32}}>
         <div style={{flex:1}}>
           <div style={{color:C.inkMuted,fontSize:11,marginBottom:4}}>首次訂購日</div>
@@ -613,6 +618,12 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
           </label>
           {it.arrivedTs&&<span style={{color:C.success,fontSize:11}}>{fmtTs(it.arrivedTs)}</span>}
         </div>
+        {(()=>{const sh=shortQty(it);const ov=overArrivedQty(it);const df=it.defectQty||0;const log=it.arrivalLog||[];return(<div style={{marginTop:6}}>
+          {sh>0&&<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:4}}><span style={{background:"#FEE2E2",color:"#B91C1C",borderRadius:10,padding:"2px 8px",fontSize:12,fontWeight:700}}>短少 {sh} 件</span><select value={it.shortStatus||""} onChange={e=>onUpdate("shortStatus",e.target.value)} style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"3px 6px",fontSize:12,background:C.surface,color:C.ink}}>{SHORT_STATUS.map(([v,l])=>(<option key={v} value={v}>{l}</option>))}</select></div>}
+          {ov>0&&<div style={{fontSize:12,color:C.orange,fontWeight:600,marginBottom:4}}>多收 {ov} 件（請確認是否廠商多給）</div>}
+          <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{color:"#B91C1C",fontSize:12}}>瑕疵</span><input type="number" min="0" value={df} onChange={e=>onUpdate("defectQty",Math.max(0,parseInt(e.target.value,10)||0))} style={{width:46,border:`1px solid ${df>0?"#B91C1C":C.line}`,borderRadius:8,padding:"4px",fontSize:13,textAlign:"center",background:C.bg,color:df>0?"#B91C1C":C.ink}}/>{df>0&&<span style={{fontSize:11,color:C.inkMuted}}>良品 {Math.max(0,arrivedQty-df)} 件；瑕疵已計入待叫貨</span>}</div>
+          {log.length>0&&<div style={{fontSize:11,color:C.inkMuted,marginTop:4}}>到貨紀錄：{log.slice(-4).map((l,i)=>(<span key={i} style={{marginRight:8}}>{fmtTs(l.ts)} {l.d>0?"+":""}{l.d}（累計{l.total}）</span>))}</div>}
+        </div>);})()}
         {shippedQty>0&&<div style={{fontSize:11,color:fullyShipped?C.success:C.orange,marginTop:4}}>📦 已出貨 {shippedQty} 件{fullyShipped?" (全部出完)":` / 剩餘可配 ${arrivedQty-shippedQty} 件`}</div>}
         {it.arrivedQty>0&&!it.allArrived&&(<div style={{color:C.orange,fontSize:11,marginTop:4,display:"flex",gap:8}}><span>⚡ 部分到貨：{it.arrivedQty}/{it.orderedQty!=null?it.orderedQty:it.qty} 件</span>{it.firstArrivedTs&&<span style={{color:C.inkMuted}}>首次 {fmtTs(it.firstArrivedTs)}</span>}</div>)}
       </div>
@@ -1481,6 +1492,63 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
 }
 
 // ── 主應用 ──
+function CountView({items,onApply,onClose}){
+  const prods=useMemo(()=>{const m={};items.forEach(it=>{const has=isOrderedMarked(it)||(it.arrivedQty||0)>0;if(!has)return;if(effOrderedQty(it)<=0&&(it.arrivedQty||0)<=0)return;(m[it.product]=m[it.product]||[]).push(it);});return Object.keys(m).sort((a,b)=>a.localeCompare(b)).map(k=>({prod:k,rows:m[k].slice().sort((a,b)=>{const c=getGroupKey(a).localeCompare(getGroupKey(b));return c!==0?c:getSortSize(a)-getSortSize(b);})}));},[items]);
+  const [sel,setSel]=useState("");
+  const [draft,setDraft]=useState({});
+  const [closed,setClosed]=useState(true);
+  const cur=prods.find(p=>p.prod===sel);
+  const get=(id)=>draft[id]||{add:0,defect:0};
+  const setD=(id,patch)=>setDraft(pv=>({...pv,[id]:{...get(id),...pv[id],...patch}}));
+  function fillAll(){const d={};cur.rows.forEach(it=>{d[it.id]={add:Math.max(0,effOrderedQty(it)-(it.arrivedQty||0)),defect:(draft[it.id]||{}).defect||0};});setDraft(pv=>({...pv,...d}));}
+  function finish(){
+    if(!cur)return;
+    let shortN=0,addN=0;
+    cur.rows.forEach(it=>{const d=get(it.id);addN+=d.add;const tot=(it.arrivedQty||0)+d.add;if(closed&&effOrderedQty(it)>tot)shortN+=effOrderedQty(it)-tot;});
+    const msg=`「${cur.prod}」本次共收 ${addN} 件。`+(closed?(shortN>0?`\n有 ${shortN} 件短少，會列入短少追蹤。`:"\n數量完全相符。"):"\n未收齊的部分仍視為在途（不算短少）。")+"\n確定完成清點？";
+    if(!window.confirm(msg))return;
+    const now=new Date().toISOString();
+    const ups=cur.rows.map(it=>{const d=get(it.id);const tot=(it.arrivedQty||0)+d.add;const eff=effOrderedQty(it);const patch={arrivedQty:tot,defectQty:(it.defectQty||0)+d.defect,allArrived:eff>0&&tot>=eff};
+      if(closed)patch.counted=true;
+      if(d.add>0){patch.arrivalLog=[...(it.arrivalLog||[]),{ts:now,d:d.add,total:tot}];if(!it.firstArrivedTs)patch.firstArrivedTs=now;patch.arrivedTs=now;}
+      return{id:it.id,patch};});
+    onApply(ups);
+    setDraft({});
+    alert("已完成清點並儲存");
+  }
+  const btn={border:`1px solid ${C.line}`,background:C.surface,color:C.ink,borderRadius:8,width:36,height:36,fontSize:18,cursor:"pointer"};
+  return(<div style={{maxWidth:640,margin:"0 auto",padding:"14px"}}>
+    <div style={{display:"flex",alignItems:"center",marginBottom:10}}><div style={{fontWeight:700,fontSize:16,color:C.ink}}>📦 到貨清點</div><button onClick={onClose} style={{marginLeft:"auto",border:`1px solid ${C.line}`,background:C.surface,color:C.inkMuted,borderRadius:8,padding:"6px 12px",fontSize:13,cursor:"pointer"}}>返回</button></div>
+    <div style={{fontSize:12,color:C.inkMuted,marginBottom:8}}>選一個商品，逐款輸入「本次實收」與「瑕疵」，系統會比對應收並標出短少。</div>
+    <select value={sel} onChange={e=>{setSel(e.target.value);setDraft({});}} style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"10px",fontSize:14,background:C.surface,color:C.ink,marginBottom:12}}>
+      <option value="">選擇要清點的商品…</option>
+      {prods.map(p=>{const sh=p.rows.reduce((a,i)=>a+shortQty(i),0);const wait=p.rows.reduce((a,i)=>a+Math.max(0,effOrderedQty(i)-(i.arrivedQty||0)),0);return(<option key={p.prod} value={p.prod}>{displayProd(p.prod)}（待收 {wait}{sh>0?`／短少 ${sh}`:""}）</option>);})}
+    </select>
+    {!cur&&<div style={{color:C.inkMuted,textAlign:"center",padding:"32px 0",fontSize:13}}>{prods.length===0?"目前沒有已訂購的品項可清點":"請先選擇商品"}</div>}
+    {cur&&(<div>
+      <div style={{display:"flex",gap:8,marginBottom:8}}><button onClick={fillAll} style={{border:`1px solid ${C.success}`,color:C.success,background:"#f0faf4",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer"}}>照單全收（填入全部應收）</button><button onClick={()=>setDraft({})} style={{border:`1px solid ${C.line}`,color:C.inkMuted,background:C.surface,borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer"}}>全部歸零</button></div>
+      {cur.rows.map(it=>{const d=get(it.id);const eff=effOrderedQty(it);const prior=it.arrivedQty||0;const tot=prior+d.add;const diff=tot-eff;const label=[it.color,it.size,it.style].filter(Boolean).join(" · ")||it.product;
+        return(<div key={it.id} style={{background:C.surface,border:`1px solid ${diff<0?"#FCA5A5":C.line}`,borderRadius:12,padding:"10px 12px",marginBottom:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <span style={{fontWeight:700,fontSize:14,color:C.ink}}>{label}</span>
+            <span style={{fontSize:12,color:C.inkMuted}}>應收 {eff}・先前已收 {prior}</span>
+            <span style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:diff===0?C.success:diff<0?"#B91C1C":C.orange}}>{diff===0?"✓ 相符":diff<0?`缺 ${-diff}`:`多 ${diff}`}</span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,flexWrap:"wrap"}}>
+            <span style={{fontSize:12,color:C.inkMuted}}>本次收到</span>
+            <button style={btn} onClick={()=>setD(it.id,{add:Math.max(0,d.add-1)})}>−</button>
+            <input type="number" min="0" value={d.add} onChange={e=>setD(it.id,{add:Math.max(0,parseInt(e.target.value,10)||0)})} style={{width:56,height:36,border:`1px solid ${C.info}`,borderRadius:8,textAlign:"center",fontSize:15,fontWeight:700,background:"#EFF6FC",color:C.info}}/>
+            <button style={btn} onClick={()=>setD(it.id,{add:d.add+1})}>＋</button>
+            <span style={{fontSize:12,color:"#B91C1C",marginLeft:6}}>瑕疵</span>
+            <input type="number" min="0" value={d.defect} onChange={e=>setD(it.id,{defect:Math.max(0,parseInt(e.target.value,10)||0)})} style={{width:46,height:36,border:`1px solid ${d.defect>0?"#B91C1C":C.line}`,borderRadius:8,textAlign:"center",fontSize:14,background:C.bg}}/>
+          </div>
+        </div>);})}
+      <label style={{display:"flex",alignItems:"flex-start",gap:8,margin:"10px 0",cursor:"pointer"}}><input type="checkbox" checked={closed} onChange={e=>setClosed(e.target.checked)} style={{width:20,height:20,marginTop:1}}/><span style={{fontSize:13,color:C.ink}}>這批貨已全部到齊，未收齊的算<strong>短少</strong>（若還有貨在路上，請取消勾選）</span></label>
+      <button onClick={finish} style={{width:"100%",background:C.stamp,color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:15,fontWeight:700,cursor:"pointer"}}>完成清點並儲存</button>
+    </div>)}
+  </div>);
+}
+
 function App(){
   const[token,setToken]=useState(()=>localStorage.getItem("st_token")||"");
   const[iopenCustom,setIopenCustom]=useState([]);
@@ -1518,6 +1586,8 @@ function App(){
     },800);
   },[token,gistId]);
 
+  const [countMode,setCountMode]=useState(false);
+  function applyCount(ups){setItems(prev=>{const next=prev.map(it=>{const u=ups.find(x=>x.id===it.id);return u?{...it,...u.patch}:it;});scheduleSave(next);return next;});}
   function updateField(id,field,value){setItems(prev=>{const next=prev.map(it=>it.id===id?{...it,[field]:value}:it);scheduleSave(next);return next;});}
 
   function saveWorkspaces(ws,idx){localStorage.setItem("st_workspaces",JSON.stringify(ws));localStorage.setItem("st_active",String(idx));}
@@ -1654,11 +1724,12 @@ function App(){
           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
             {saving&&<span style={{color:C.inkMuted,fontSize:11}}>儲存中…</span>}
             {lastSaved&&!saving&&<span style={{color:C.inkMuted,fontSize:11}}>已儲存 {fmtSavedTime(lastSaved)}</span>}
-            {!allocMode&&<button onClick={()=>fileRef.current.click()} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>匯入備貨清單</button>}
-            {!allocMode&&<button onClick={()=>iopenAppRef.current.click()} style={{background:"#7C3AED",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>客訂XLS</button>}
+            {!allocMode&&!countMode&&<button onClick={()=>fileRef.current.click()} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>匯入備貨清單</button>}
+            {!allocMode&&!countMode&&<button onClick={()=>iopenAppRef.current.click()} style={{background:"#7C3AED",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>客訂XLS</button>}
             <input ref={iopenAppRef} type="file" accept=".xls,.xlsx" multiple style={{display:"none"}} onChange={e=>handleIopenAppXLS(e.target.files)}/>
             <input ref={fileRef} type="file" accept=".csv" multiple style={{display:"none"}} onChange={handleCSV}/>
-            <button onClick={()=>{setAllocMode(!allocMode);setShowWorkspaces(false);setShowSettings(false);}} style={{background:allocMode?C.info:C.surface,color:allocMode?"#fff":C.inkMuted,border:`1px solid ${allocMode?C.info:C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,fontWeight:allocMode?"600":"400",cursor:"pointer"}}>配貨</button>
+            <button onClick={()=>{setCountMode(!countMode);setAllocMode(false);setShowWorkspaces(false);setShowSettings(false);}} style={{background:countMode?C.success:C.surface,color:countMode?"#fff":C.inkMuted,border:`1px solid ${countMode?C.success:C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,fontWeight:countMode?"600":"400",cursor:"pointer"}}>清點</button>
+            <button onClick={()=>{setAllocMode(!allocMode);setCountMode(false);setShowWorkspaces(false);setShowSettings(false);}} style={{background:allocMode?C.info:C.surface,color:allocMode?"#fff":C.inkMuted,border:`1px solid ${allocMode?C.info:C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,fontWeight:allocMode?"600":"400",cursor:"pointer"}}>配貨</button>
             <button onClick={()=>{setShowSettings(!showSettings);setShowWorkspaces(false);}} style={{border:`1px solid ${C.line}`,background:C.surface,color:C.inkMuted,borderRadius:8,padding:"7px 10px",fontSize:14,cursor:"pointer"}}>⚙</button>
           </div>
         </div>
@@ -1798,7 +1869,8 @@ function App(){
         }}
       />}
 
-      {!allocMode&&(
+      {countMode&&!allocMode&&<CountView items={items} onApply={applyCount} onClose={()=>setCountMode(false)}/>}
+      {!allocMode&&!countMode&&(
         <div style={{maxWidth:640,margin:"0 auto",padding:"14px 14px"}}>
           {globalErr&&(<div style={{background:C.warningSoft,color:C.warning,border:`1px solid ${C.warning}`,borderRadius:10,padding:"8px 12px",marginBottom:12,fontSize:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>{globalErr}</span><button onClick={()=>setGlobalErr("")} style={{marginLeft:8,textDecoration:"underline",cursor:"pointer"}}>關閉</button></div>)}
           {(()=>{const liveN=items.filter(it=>itemSource(it)==="live").length;const ioN=items.filter(it=>itemSource(it)==="iopen").length;const tb=(k,l,c)=>(<button key={k} onClick={()=>setSrcTab(k)} style={{flex:1,padding:"8px 4px",fontSize:13,fontWeight:600,border:"none",borderBottom:`2px solid ${srcTab===k?C.stamp:"transparent"}`,background:"transparent",color:srcTab===k?C.stamp:C.inkMuted,cursor:"pointer"}}>{l} <span style={{fontSize:11,opacity:0.8}}>{c}</span></button>);return(<div style={{display:"flex",borderBottom:`1px solid ${C.line}`,marginBottom:10}}>{tb("live","直播訂單",liveN)}{tb("iopen","iOPEN Mall",ioN)}</div>);})()}
@@ -1806,6 +1878,7 @@ function App(){
             <span style={{color:C.ink,fontSize:14}}>已到貨 <strong style={{color:C.success}}>{arrivedCount}</strong> / {items.length} 筆</span>
             {late3Count>0&&<span style={{background:C.orangeSoft,color:C.orange,border:`1px solid ${C.orange}`,borderRadius:20,padding:"2px 10px",fontSize:11}}>⚠ {late3Count} 筆逾3天未訂</span>}
             {late14Count>0&&<span style={{background:C.warningSoft,color:C.warning,border:`1px solid ${C.warning}`,borderRadius:20,padding:"2px 10px",fontSize:11}}>🚨 {late14Count} 筆逾14天未到</span>}
+            {items.filter(isShortOpen).length>0&&<span style={{background:"#FEE2E2",color:"#B91C1C",border:"1px solid #B91C1C",borderRadius:20,padding:"2px 10px",fontSize:11}}>📦 {items.filter(isShortOpen).length} 筆短少未處理</span>}
             <div style={{display:"flex",gap:4,marginLeft:"auto"}}>
               {[["unordered","未訂貨"],["ordered","已訂待到"],["arrived","已到貨"]].map(([v,l])=>(<button key={v} onClick={()=>setFilter(v)} style={{background:filter===v?C.stamp:C.surface,color:filter===v?"#fff":C.inkMuted,border:`1px solid ${filter===v?C.stamp:C.line}`,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer"}}>{l}</button>))}
             </div>
@@ -1844,7 +1917,7 @@ function App(){
         </div>
       )}
 
-      {batchSel.size>0&&!allocMode&&(
+      {batchSel.size>0&&!allocMode&&!countMode&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:C.ink,zIndex:50,padding:"14px 16px",boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
           <div style={{maxWidth:640,margin:"0 auto"}}>
             <div style={{color:"rgba(255,255,255,0.7)",fontSize:12,marginBottom:10}}>已選 <strong style={{color:"#fff"}}>{batchSel.size}</strong> 筆，設定訂購日後按套用</div>
@@ -1868,6 +1941,19 @@ function App(){
       )}
       {/* 待叫貨清單（已扣現貨、已訂） */}
       {(()=>{
+        if(countMode||allocMode)return null;
+        const sOpen=items.filter(isShortOpen);
+        const sg={};sOpen.forEach(it=>{(sg[displayProd(it.product)]=sg[displayProd(it.product)]||[]).push(it);});
+        const sKeys=Object.keys(sg).sort((a,b)=>a.localeCompare(b));
+        if(!sKeys.length)return null;
+        const rep2=sKeys.map(k=>k+"\n"+sg[k].map(r=>"  "+[r.color,r.size,r.style].filter(Boolean).join(" ")+"：應收"+effOrderedQty(r)+"、實收"+(r.arrivedQty||0)+"、缺"+shortQty(r)+"件").join("\n")).join("\n");
+        return(<div style={{background:C.surface,border:"2px solid #B91C1C",borderRadius:14,padding:"14px 16px",margin:"16px 0"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:13,fontWeight:700,color:"#B91C1C"}}>📦 短少回報（{sOpen.length} 筆未處理）</span><button onClick={()=>{try{navigator.clipboard.writeText("您好，本次到貨清點後發現短少如下，麻煩協助補寄或確認：\n"+rep2);alert("已複製短少回報文字");}catch(e){}}} style={{marginLeft:"auto",fontSize:11,padding:"3px 10px",borderRadius:10,border:"1px solid #B91C1C",background:"transparent",color:"#B91C1C",cursor:"pointer"}}>複製給廠商</button></div>
+          {sKeys.map(k=>(<div key={k} style={{marginBottom:8}}><div style={{fontSize:12,fontWeight:700,color:C.ink}}>{k}</div>{sg[k].map(r=>(<div key={r.id} style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:3}}><span style={{fontSize:12,color:C.ink}}>{[r.color,r.size,r.style].filter(Boolean).join(" ")||"—"}</span><span style={{fontSize:11,color:"#B91C1C"}}>應收{effOrderedQty(r)}／實收{r.arrivedQty||0}／缺{shortQty(r)}</span><select value={r.shortStatus||""} onChange={e=>updateField(r.id,"shortStatus",e.target.value)} style={{marginLeft:"auto",border:`1px solid ${C.line}`,borderRadius:8,padding:"2px 6px",fontSize:11,background:C.surface}}>{SHORT_STATUS.map(([v,l])=>(<option key={v} value={v}>{l}</option>))}</select></div>))}</div>))}
+        </div>);
+      })()}
+      {(()=>{
+        if(countMode||allocMode)return null;
         const pend=items.filter(it=>toOrderQty(it)>0);
         const enough=items.filter(it=>netNeed(it)===0&&(it.qty||0)>0).length;
         const over=items.filter(it=>overOrderQty(it)>0);
@@ -1891,7 +1977,7 @@ function App(){
         </div>);
       })()}
       {/* 需求彙總（底部）*/}
-      {summaryData.length>0&&(
+      {summaryData.length>0&&!allocMode&&!countMode&&(
         <div style={{background:C.surface,border:`1px solid ${C.line}`,borderRadius:14,padding:"14px 16px",margin:"16px 0"}}>
           <div style={{fontSize:12,fontWeight:700,color:C.inkMuted,marginBottom:10}}>📋 需求彙總（未扣現貨）</div>
           {summaryData.map(({prod,prodTotal,variants})=>(
@@ -1902,13 +1988,13 @@ function App(){
                 const bg=allOrdered?"#d4edda":anyOrdered?"#fff3e0":C.stripe;
                 const canArrive=!allOrdered;
                 const handleGroupArrive=()=>{
-                  if(!window.confirm(`確認「${vk||prod}」共${total}件全數到貨？`))return;
+                  if(!window.confirm(`確認「${vk||prod}」共${total}件已清點、全數到貨？`))return;
                   const now=new Date().toISOString();
                   setItems(prev=>{
                     const next=prev.map(it=>{
                       if(!grpIds.includes(it.id))return it;
                       const maxQ=it.orderedQty!=null?it.orderedQty:it.qty;
-                      return{...it,allArrived:true,arrivedQty:maxQ,arrivedTs:it.arrivedTs||now,firstArrivedDate:it.firstArrivedDate||now.slice(0,10)};
+                      return{...it,allArrived:true,counted:true,arrivalLog:[...(it.arrivalLog||[]),...(maxQ-(it.arrivedQty||0)>0?[{ts:now,d:maxQ-(it.arrivedQty||0),total:maxQ}]:[])],arrivedQty:maxQ,arrivedTs:it.arrivedTs||now,firstArrivedDate:it.firstArrivedDate||now.slice(0,10)};
                     });
                     scheduleSave(next);
                     return next;
