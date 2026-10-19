@@ -56,7 +56,8 @@ const SHORT_STATUS=[["","未反映"],["reported","已向廠商反映"],["reshipp
 function isOrderedMarked(it){return !!(it.firstOrderDate||it.allOrdered);}
 function effOrderedQty(it){return it.orderedQty!=null?it.orderedQty:netNeed(it);}
 function toOrderQty(it){return Math.max(0,needTotal(it)-(isOrderedMarked(it)?effOrderedQty(it):0));}
-function overOrderQty(it){return Math.max(0,effOrderedQty(it)-needTotal(it));}
+function overOrderQty(it){return isOrderedMarked(it)?Math.max(0,effOrderedQty(it)-needTotal(it)):0;}
+function excessOrderInput(it){return Math.max(0,effOrderedQty(it)-needTotal(it));}
 function needQty(it){return it.orderedQty!=null?it.orderedQty:(it.qty||0);}
 function normProdName(s){
   let v=String(s||"");
@@ -585,7 +586,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
           {(it.color||it.size||it.style)&&<div style={{color:C.inkMuted,fontSize:12,marginTop:2}}>{it.product}</div>}
         </div>
       </div>
-      {(()=>{const sq=it.stockQty||0;const nn=netNeed(it);const tq=toOrderQty(it);const over=overOrderQty(it);let bg="#FFF3CD",col="#B45309",txt=`該叫 ${tq} 件`;if(over>0){bg="#FEE2E2";col="#B91C1C";txt=`已多叫 ${over} 件，請減少訂購數`;}else if(tq>0){}else if(nn===0){bg="#D1FAE5";col="#059669";txt="庫存充足，不用叫貨";}else{bg="#E8F0F7";col=C.info;txt="已叫足，不用再叫";}return(<div style={{paddingLeft:32,marginBottom:10}}><span style={{display:"inline-block",background:bg,color:col,borderRadius:10,padding:"4px 10px",fontSize:13,fontWeight:700}}>{txt}</span><span style={{color:C.inkMuted,fontSize:11,marginLeft:8}}>需求 {it.qty}{sq>0?` − 現貨 ${sq}`:""} = 淨需求 {nn}{(it.defectQty||0)>0?` ＋ 瑕疵補 ${it.defectQty}`:""}</span></div>);})()}
+      {(()=>{const sq=it.stockQty||0;const nn=netNeed(it);const tq=toOrderQty(it);const over=overOrderQty(it);let bg="#FFF3CD",col="#B45309",txt=`該叫 ${tq} 件`;if(over>0){bg="#FEE2E2";col="#B91C1C";txt=`已多叫 ${over} 件，請減少訂購數`;}else if(tq>0){if(!isOrderedMarked(it)&&excessOrderInput(it)>0)txt=`該叫 ${tq} 件（訂購數請改為 ${needTotal(it)}）`;}else if(nn===0){bg="#D1FAE5";col="#059669";txt="庫存充足，不用叫貨";}else{bg="#E8F0F7";col=C.info;txt="已叫足，不用再叫";}return(<div style={{paddingLeft:32,marginBottom:10}}><span style={{display:"inline-block",background:bg,color:col,borderRadius:10,padding:"4px 10px",fontSize:13,fontWeight:700}}>{txt}</span><span style={{color:C.inkMuted,fontSize:11,marginLeft:8}}>需求 {it.qty}{sq>0?` − 現貨 ${sq}`:""} = 淨需求 {nn}{(it.defectQty||0)>0?` ＋ 瑕疵補 ${it.defectQty}`:""}</span></div>);})()}
       <div style={{display:"flex",gap:8,marginBottom:10,paddingLeft:32}}>
         <div style={{flex:1}}>
           <div style={{color:C.inkMuted,fontSize:11,marginBottom:4}}>首次訂購日</div>
@@ -603,7 +604,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
         </div>
       </div>
       <div style={{paddingLeft:32,marginBottom:10}}>
-        {it.allOrdered?(<div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,color:C.info,fontWeight:600}}>🔒 全數訂完，等待到貨</span><button onClick={()=>{if(window.confirm("確定要解鎖並修改訂貨資料？"))onUpdate("allOrdered",false);}} style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>解鎖</button></div>):(<label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}><input type="checkbox" checked={false} onChange={e=>{if(e.target.checked){const ov=overOrderQty(it);if(ov>0&&!window.confirm(`「${dispName(it)}」訂購數比淨需求多 ${ov} 件（需求 ${it.qty}、現貨 ${it.stockQty||0}）。\n確定要多叫嗎？`))return;onUpdate("allOrdered",true);}}} style={{width:20,height:20,accentColor:C.info,cursor:"pointer"}}/><span style={{fontSize:13,color:C.inkMuted}}>全數訂完</span></label>)}
+        {it.allOrdered?(<div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,color:C.info,fontWeight:600}}>🔒 全數訂完，等待到貨</span><button onClick={()=>{if(window.confirm("確定要解鎖並修改訂貨資料？"))onUpdate("allOrdered",false);}} style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>解鎖</button></div>):(<label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}><input type="checkbox" checked={false} onChange={e=>{if(e.target.checked){const ov=excessOrderInput(it);if(ov>0&&!window.confirm(`「${dispName(it)}」訂購數比淨需求多 ${ov} 件（需求 ${it.qty}、現貨 ${it.stockQty||0}）。\n確定要多叫嗎？`))return;onUpdate("allOrdered",true);}}} style={{width:20,height:20,accentColor:C.info,cursor:"pointer"}}/><span style={{fontSize:13,color:C.inkMuted}}>全數訂完</span></label>)}
       </div>
       <div style={{paddingLeft:32,borderTop:`1px solid ${C.line}`,paddingTop:10}}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
