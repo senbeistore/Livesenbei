@@ -81,8 +81,8 @@ function newProduct() {
   return {
     mode: "stock", preShip: "21", id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
     name: "", sku: "", price: "", listPrice: "", cost: "",
-    spec1Name: "顏色", spec1Opts: "", spec2Name: "尺寸", spec2Opts: "",
-    defStock: "1", cells: {}, // cells["opt1|opt2"] = {stock, price}
+    spec1Name: "顏色", opts: [], // opts = [{n:"嫩黃90", stock:"", price:""}]（顏色＋尺寸合成一個選項，各自庫存）
+    genColors: "", genSizes: "", defStock: "1",
     images: "", intro: "", desc: "",
     weight: "", len: "", wid: "", hei: "",
     online: "1",
@@ -107,12 +107,28 @@ function splitOpts(s) {
   return out;
 }
 function combosOf(p) {
-  const o1 = splitOpts(p.spec1Opts), o2 = splitOpts(p.spec2Opts);
-  if (!o1.length && !o2.length) return [];
-  if (o1.length && !o2.length) return o1.map(a => ({ a, b: "" }));
-  if (!o1.length && o2.length) return o2.map(b => ({ a: "", b }));   // 只填規格2時當成規格1使用
-  const out = []; o1.forEach(a => o2.forEach(b => out.push({ a, b })));
+  migrate(p);
+  const seen = new Set(), out = [];
+  (p.opts || []).forEach(o => { const n = String(o.n || "").trim(); if (n && !seen.has(n)) { seen.add(n); out.push({ n, stock: o.stock, price: o.price }); } });
   return out;
+}
+// 舊版資料（規格1×規格2 / cells）轉成選項清單
+function migrate(p) {
+  if (p.opts) return;
+  p.opts = [];
+  const o1 = splitOpts(p.spec1Opts), o2 = splitOpts(p.spec2Opts);
+  const add = (a, b) => { const k = a + "|" + b, c = (p.cells && p.cells[k]) || {}; p.opts.push({ n: a + b, stock: c.stock || "", price: c.price || "" }); };
+  if (o1.length && o2.length) o1.forEach(a => o2.forEach(b => add(a, b)));
+  else (o1.length ? o1 : o2).forEach(a => add(a, ""));
+}
+function expandOpts(p) {
+  migrate(p);
+  const cs = splitOpts(p.genColors), ss = splitOpts(p.genSizes);
+  const have = new Set(p.opts.map(o => o.n));
+  const names = [];
+  if (cs.length && ss.length) cs.forEach(c => ss.forEach(z => names.push(c + z)));
+  else (cs.length ? cs : ss).forEach(x => names.push(x));
+  names.forEach(n => { if (!have.has(n)) { have.add(n); p.opts.push({ n, stock: "", price: "" }); } });
 }
 function toInt(v, d) { const n = parseInt(String(v).replace(/[^\d-]/g, ""), 10); return isNaN(n) ? d : n; }
 function imgUrl(u, base) { u = String(u).trim(); if (!u) return ""; return /^https?:\/\//i.test(u) || !base ? u : base + u; }
@@ -125,7 +141,8 @@ function buildRows(list, g) {
     const label = p.name || ("商品 " + (pi + 1));
     const pre = p.mode === "preorder";
     let name = String(p.name || "").trim();
-    if (pre && name && name.indexOf("預購") < 0) name = "【預購】" + name;
+    const pfx = pre ? "預購｜" : "現貨｜";
+    if (name && name.indexOf(pre ? "預購" : "現貨") !== 0 && name.indexOf("【預購】") !== 0) name = pfx + name;
     const sku = String(p.sku || "").trim();
     if (!name) { issues.push({ lv: "err", t: label + "：缺商品名稱" }); return; }
     if (name.length > MAX_NAME) issues.push({ lv: "err", t: label + "：商品名稱超過 " + MAX_NAME + " 字（" + name.length + "）" });
@@ -154,20 +171,15 @@ function buildRows(list, g) {
       rows.push([...r, "", "", "", "", "", ...imgCols, ...tail(toInt(p.defStock, 0))]);
       return;
     }
-    const names = new Set();
     combos.forEach((c, i) => {
-      const key = c.a + "|" + c.b;
-      const cell = (p.cells && p.cells[key]) || {};
-      const sp = cell.price !== undefined && cell.price !== "" ? toInt(cell.price, NaN) : price;
-      if (isNaN(sp)) { issues.push({ lv: "err", t: label + "：「" + (c.a || c.b) + (c.a && c.b ? " / " + c.b : "") + "」缺售價" }); return; }
-      const stock = cell.stock !== undefined && cell.stock !== "" ? toInt(cell.stock, 0) : toInt(p.defStock, 0);
+      const sp = c.price !== undefined && c.price !== "" ? toInt(c.price, NaN) : price;
+      if (isNaN(sp)) { issues.push({ lv: "err", t: label + "：「" + c.n + "」缺售價" }); return; }
+      const stock = c.stock !== undefined && c.stock !== "" ? toInt(c.stock, 0) : toInt(p.defStock, 0);
       const rowSku = sku + "-" + String(i + 1).padStart(2, "0");
       const mainSku = sku + "-" + "01";
       const r = base(sp); r[5] = rowSku;
-      const s1n = c.a ? p.spec1Name : p.spec2Name, s1v = c.a || c.b;
-      const hasBoth = c.a && c.b;
-      if (s1v.length > MAX_OPT) issues.push({ lv: "err", t: label + "：規格選項超過 " + MAX_OPT + " 字" });
-      rows.push([...r, mainSku, s1n || "規格", s1v, hasBoth ? (p.spec2Name || "規格2") : "", hasBoth ? c.b : "", ...imgCols, ...tail(stock)]);
+      if (c.n.length > MAX_OPT) issues.push({ lv: "err", t: label + "：規格選項超過 " + MAX_OPT + " 字" });
+      rows.push([...r, mainSku, p.spec1Name || "規格", c.n, "", "", ...imgCols, ...tail(stock)]);
     });
     if (combos.length > 1) {
       // 同一商品內，規格 1 + 規格 2 的組合不可重複（已由去重處理），這裡檢查數量上限
@@ -204,12 +216,10 @@ function field(label, key, p, extra) {
 function renderEditor() {
   const p = cur();
   const combos = combosOf(p);
-  const cellRows = combos.map(c => {
-    const key = c.a + "|" + c.b, cell = (p.cells && p.cells[key]) || {};
-    return `<tr><td>${esc(c.a)}${c.a && c.b ? " / " : ""}${esc(c.b)}</td>
-      <td style="width:90px"><input data-cell="${esc(key)}" data-f="stock" inputmode="numeric" placeholder="${esc(p.defStock)}" value="${esc(cell.stock == null ? "" : cell.stock)}"></td>
-      <td style="width:100px"><input data-cell="${esc(key)}" data-f="price" inputmode="numeric" placeholder="${esc(p.price)}" value="${esc(cell.price == null ? "" : cell.price)}"></td></tr>`;
-  }).join("");
+  const cellRows = combos.map((c, i) => `<tr><td><input data-opt="${i}" data-f="n" value="${esc(c.n)}"></td>
+      <td style="width:80px"><input data-opt="${i}" data-f="stock" inputmode="numeric" placeholder="${esc(p.defStock)}" value="${esc(c.stock == null ? "" : c.stock)}"></td>
+      <td style="width:90px"><input data-opt="${i}" data-f="price" inputmode="numeric" placeholder="${esc(p.price)}" value="${esc(c.price == null ? "" : c.price)}"></td>
+      <td style="width:36px"><button class="small" data-del="${i}">✕</button></td></tr>`).join("");
   $("editor").innerHTML = `
   <div class="card">
     <div class="row"><h2 style="margin:0">基本資料</h2><span style="flex:1"></span>
@@ -230,16 +240,16 @@ function renderEditor() {
     </div>
   </div>
   <div class="card">
-    <h2>規格與${p.mode === "preorder" ? "接單上限" : "庫存"} <span class="pill">${combos.length ? combos.length + " 個組合" : "無規格（單一品項）"}</span></h2>
+    <h2>規格${p.mode === "preorder" ? "與接單上限" : "與庫存"} <span class="pill">${combos.length ? combos.length + " 個選項" : "無規格（單一品項）"}</span></h2>
+    <div class="mute" style="margin-bottom:6px">每個選項＝顏色＋尺寸（例：嫩黃90），各自填${p.mode === "preorder" ? "接單上限" : "庫存"}。沒有的組合直接刪掉，不會上架。</div>
     <div class="grid">
-      ${field("規格 1 名稱", "spec1Name", p)}
-      <div style="grid-column:span 2"><label>規格 1 選項（用逗號分隔，例：黑,白,灰）</label><input data-k="spec1Opts" value="${esc(p.spec1Opts)}"></div>
-      ${field("規格 2 名稱", "spec2Name", p)}
-      <div style="grid-column:span 2"><label>規格 2 選項（例：80,90,100,110）</label><input data-k="spec2Opts" value="${esc(p.spec2Opts)}"></div>
-      ${field(p.mode === "preorder" ? "預設接單上限（每個組合沒個別填寫時使用）" : "預設庫存（每個組合沒個別填寫時使用）", "defStock", p, 'inputmode="numeric"')}
+      ${field("規格名稱（買家看到的標題）", "spec1Name", p)}
+      <div><label>顏色（逗號分隔）</label><input data-k="genColors" value="${esc(p.genColors)}" placeholder="嫩黃,牛油果綠,碳黑,紅"></div>
+      <div><label>尺寸（逗號分隔，可留空）</label><input data-k="genSizes" value="${esc(p.genSizes)}" placeholder="90,120"></div>
+      ${field(p.mode === "preorder" ? "預設接單上限" : "預設庫存（沒個別填的選項使用）", "defStock", p, 'inputmode="numeric"')}
     </div>
-    ${combos.length ? `<div class="mute" style="margin:8px 0 2px">每個組合的${p.mode === "preorder" ? "接單上限" : "庫存"}／售價（空白＝用預設）</div>
-      <table><tr><th>組合</th><th>${p.mode === "preorder" ? "接單上限" : "庫存"}</th><th>售價</th></tr>${cellRows}</table>` : ""}
+    <div class="row" style="margin:8px 0"><button class="small" id="btnExpand">⤵ 展開成選項</button><button class="small" id="btnAddOpt">＋ 新增一列</button><span class="mute">展開會把每個顏色配每個尺寸，已存在的不重複</span></div>
+    ${combos.length ? `<table><tr><th>選項</th><th>${p.mode === "preorder" ? "接單上限" : "庫存"}</th><th>售價</th><th></th></tr>${cellRows}</table>` : ""}
   </div>
   <div class="card">
     <h2>圖片與說明</h2>
@@ -254,11 +264,14 @@ function renderEditor() {
     </details>
   </div>`;
   $("editor").querySelectorAll("[data-k]").forEach(el => {
-    el.oninput = () => { p[el.dataset.k] = el.value; save(); if (["spec1Opts", "spec2Opts", "spec1Name", "spec2Name"].includes(el.dataset.k)) { const pos = el.dataset.k; renderEditor(); const n = $("editor").querySelector(`[data-k="${pos}"]`); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } } renderTabsLight(); renderPreview(); updNameLen(); };
+    el.oninput = () => { p[el.dataset.k] = el.value; save(); renderTabsLight(); renderPreview(); updNameLen(); };
   });
-  $("editor").querySelectorAll("[data-cell]").forEach(el => {
-    el.oninput = () => { p.cells = p.cells || {}; const k = el.dataset.cell; p.cells[k] = p.cells[k] || {}; p.cells[k][el.dataset.f] = el.value; save(); renderPreview(); };
+  $("editor").querySelectorAll("[data-opt]").forEach(el => {
+    el.oninput = () => { p.opts[+el.dataset.opt][el.dataset.f] = el.value; save(); renderPreview(); };
   });
+  $("editor").querySelectorAll("[data-del]").forEach(el => el.onclick = () => { p.opts.splice(+el.dataset.del, 1); save(); renderAll(); });
+  $("btnExpand").onclick = () => { expandOpts(p); save(); renderAll(); };
+  $("btnAddOpt").onclick = () => { migrate(p); p.opts.push({ n: "", stock: "", price: "" }); save(); renderAll(); };
   $("modeStock").onclick = () => { p.mode = "stock"; save(); renderAll(); };
   $("modePre").onclick = () => { p.mode = "preorder"; if (p.defStock === "1") p.defStock = "50"; save(); renderAll(); };
   $("btnDup").onclick = () => { const c = JSON.parse(JSON.stringify(p)); c.id = newProduct().id; c.name = p.name ? p.name + "（複製）" : ""; c.sku = ""; products.splice(products.indexOf(p) + 1, 0, c); activeId = c.id; save(); renderAll(); };
@@ -272,7 +285,7 @@ function renderPreview() {
   const { rows, issues } = buildRows(products, glob);
   $("issues").innerHTML = issues.length ? issues.map(i => `<div class="${i.lv}">${i.lv === "err" ? "✕" : "！"} ${esc(i.t)}</div>`).join("") : `<div class="mute">✓ 沒有發現問題</div>`;
   $("preview").innerHTML = `<tr><th>貨號</th><th>商品</th><th>規格</th><th>售價</th><th>庫存</th></tr>` + rows.map(r =>
-    `<tr><td>${esc(r[5])}</td><td>${esc(r[3])}</td><td>${esc([r[11] && r[11] + "：" + r[12], r[13] && r[13] + "：" + r[14]].filter(Boolean).join(" ／ "))}</td><td>${esc(r[7])}</td><td>${esc(r[33 - 1 + 0])}</td></tr>`).join("");
+    `<tr><td>${esc(r[5])}</td><td>${esc(r[3])}</td><td>${esc(r[11] ? r[11] + "：" + r[12] : "")}</td><td>${esc(r[7])}</td><td>${esc(r[33 - 1 + 0])}</td></tr>`).join("");
   $("btnExport").disabled = !rows.length || issues.some(i => i.lv === "err");
   return { rows, issues };
 }
