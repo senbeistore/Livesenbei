@@ -79,7 +79,7 @@ const MAX_NAME = 60, MAX_SKU = 20, MAX_OPT = 50;
 
 function newProduct() {
   return {
-    id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+    mode: "stock", preShip: "21", id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
     name: "", sku: "", price: "", listPrice: "", cost: "",
     spec1Name: "顏色", spec1Opts: "", spec2Name: "尺寸", spec2Opts: "",
     defStock: "1", cells: {}, // cells["opt1|opt2"] = {stock, price}
@@ -123,7 +123,9 @@ function buildRows(list, g) {
   let ship = toInt(g.ship, 7); ship = Math.min(150, Math.max(1, ship));
   list.forEach((p, pi) => {
     const label = p.name || ("商品 " + (pi + 1));
-    const name = String(p.name || "").trim();
+    const pre = p.mode === "preorder";
+    let name = String(p.name || "").trim();
+    if (pre && name && name.indexOf("預購") < 0) name = "【預購】" + name;
     const sku = String(p.sku || "").trim();
     if (!name) { issues.push({ lv: "err", t: label + "：缺商品名稱" }); return; }
     if (name.length > MAX_NAME) issues.push({ lv: "err", t: label + "：商品名稱超過 " + MAX_NAME + " 字（" + name.length + "）" });
@@ -140,9 +142,10 @@ function buildRows(list, g) {
     const base = (sellPrice) => [
       "", 3, 0, name, category, "", listPrice === "" ? sellPrice : listPrice, sellPrice, cost === "" ? sellPrice : cost, p.online === "0" ? 0 : 1,
     ];
+    const shipD = pre ? Math.min(150, Math.max(1, toInt(p.preShip, 21))) : ship;
     const tail = (stock) => [
       String(p.intro || "").trim().replace(/\n/g, "<br>"), String(p.desc || "").trim().replace(/\n/g, "<br>"), "",
-      toInt(p.weight, 1), toInt(p.len, 1), toInt(p.wid, 1), toInt(p.hei, 1), stock, ship,
+      toInt(p.weight, 1), toInt(p.len, 1), toInt(p.wid, 1), toInt(p.hei, 1), stock, shipD,
     ];
     const imgCols = Array.from({ length: 10 }, (_, i) => imgs[i] || "");
     if (!combos.length) {
@@ -211,26 +214,32 @@ function renderEditor() {
   <div class="card">
     <div class="row"><h2 style="margin:0">基本資料</h2><span style="flex:1"></span>
       <button class="small" id="btnDup">複製此商品</button><button class="small" id="btnDel">刪除</button></div>
+    <div class="row" style="margin-top:8px">
+      <button class="small tab ${p.mode !== "preorder" ? "on" : ""}" id="modeStock">現貨</button>
+      <button class="small tab ${p.mode === "preorder" ? "on" : ""}" id="modePre">預購</button>
+      <span class="mute">${p.mode === "preorder" ? "預購：名稱自動加【預購】，庫存＝可接單上限，出貨天數另外設定" : "現貨：庫存填實際數量，出貨天數用下方共用設定"}</span>
+    </div>
     <div class="grid" style="margin-top:8px">
       <div style="grid-column:1/-1"><label>商品名稱（最多 60 字）<span id="nameLen" class="mute"></span></label><input data-k="name" value="${esc(p.name)}"></div>
       ${field("商品原始貨號（最多 20 字，規格會自動加 -01、-02）", "sku", p)}
       ${field("售價（必填）", "price", p, 'inputmode="numeric"')}
       ${field("定價（選填，空白＝售價）", "listPrice", p, 'inputmode="numeric"')}
       ${field("成本（選填，空白＝售價）", "cost", p, 'inputmode="numeric"')}
+      ${p.mode === "preorder" ? field("預購出貨天數（1–150）", "preShip", p, 'inputmode="numeric"') : ""}
       <div><label>上架狀態</label><select data-k="online"><option value="1" ${p.online !== "0" ? "selected" : ""}>上架</option><option value="0" ${p.online === "0" ? "selected" : ""}>不上架</option></select></div>
     </div>
   </div>
   <div class="card">
-    <h2>規格與庫存 <span class="pill">${combos.length ? combos.length + " 個組合" : "無規格（單一品項）"}</span></h2>
+    <h2>規格與${p.mode === "preorder" ? "接單上限" : "庫存"} <span class="pill">${combos.length ? combos.length + " 個組合" : "無規格（單一品項）"}</span></h2>
     <div class="grid">
       ${field("規格 1 名稱", "spec1Name", p)}
       <div style="grid-column:span 2"><label>規格 1 選項（用逗號分隔，例：黑,白,灰）</label><input data-k="spec1Opts" value="${esc(p.spec1Opts)}"></div>
       ${field("規格 2 名稱", "spec2Name", p)}
       <div style="grid-column:span 2"><label>規格 2 選項（例：80,90,100,110）</label><input data-k="spec2Opts" value="${esc(p.spec2Opts)}"></div>
-      ${field("預設庫存（每個組合沒個別填寫時使用）", "defStock", p, 'inputmode="numeric"')}
+      ${field(p.mode === "preorder" ? "預設接單上限（每個組合沒個別填寫時使用）" : "預設庫存（每個組合沒個別填寫時使用）", "defStock", p, 'inputmode="numeric"')}
     </div>
-    ${combos.length ? `<details ${combos.length <= 30 ? "open" : ""}><summary>個別調整每個組合的庫存／售價（空白＝用預設）</summary>
-      <table><tr><th>組合</th><th>庫存</th><th>售價</th></tr>${cellRows}</table></details>` : ""}
+    ${combos.length ? `<div class="mute" style="margin:8px 0 2px">每個組合的${p.mode === "preorder" ? "接單上限" : "庫存"}／售價（空白＝用預設）</div>
+      <table><tr><th>組合</th><th>${p.mode === "preorder" ? "接單上限" : "庫存"}</th><th>售價</th></tr>${cellRows}</table>` : ""}
   </div>
   <div class="card">
     <h2>圖片與說明</h2>
@@ -250,6 +259,8 @@ function renderEditor() {
   $("editor").querySelectorAll("[data-cell]").forEach(el => {
     el.oninput = () => { p.cells = p.cells || {}; const k = el.dataset.cell; p.cells[k] = p.cells[k] || {}; p.cells[k][el.dataset.f] = el.value; save(); renderPreview(); };
   });
+  $("modeStock").onclick = () => { p.mode = "stock"; save(); renderAll(); };
+  $("modePre").onclick = () => { p.mode = "preorder"; if (p.defStock === "1") p.defStock = "50"; save(); renderAll(); };
   $("btnDup").onclick = () => { const c = JSON.parse(JSON.stringify(p)); c.id = newProduct().id; c.name = p.name ? p.name + "（複製）" : ""; c.sku = ""; products.splice(products.indexOf(p) + 1, 0, c); activeId = c.id; save(); renderAll(); };
   $("btnDel").onclick = () => { if (!confirm("刪除這個商品？")) return; products = products.filter(x => x !== p); if (!products.length) products = [newProduct()]; activeId = products[0].id; save(); renderAll(); };
   updNameLen();
