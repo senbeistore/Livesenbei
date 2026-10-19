@@ -370,11 +370,14 @@ function parseIopenXLS(aoa){
     var col=function(k){return hdr.findIndex(function(h){return h.indexOf(k)>-1;});};
     var CO=col('\u8a02\u55ae\u7de8\u865f'),CP=col('\u5546\u54c1\u540d\u7a31'),CS=col('\u51fa\u8ca8\u55ae\u7de8\u865f');
     var CA=col('\u8a02\u55ae\u91d1\u984d'),CM=col('\u9580\u5e02\u540d\u7a31'),CST=col('\u8a02\u55ae\u72c0\u614b'),CN=col('\u5099\u8a3b');
-    var CNM=col('\u6703\u54e1\u59d3\u540d');
+    var CNM=col('\u6703\u54e1\u59d3\u540d');var CLP=col('\u539f\u552e\u50f9');
     var CS1=hdr.findIndex(function(h){return h==='\u898f\u683c1';});
     var CS2=hdr.findIndex(function(h){return h==='\u898f\u683c2';});
     var CQ=hdr.findIndex(function(h){return h==='\u6578\u91cf';});
+    // 商品名稱格式：「直播｜（帳號）…」「連線｜（帳號）…」「LIVE｜（帳號）…」皆可辨識出 IG 帳號
     var extractLiveIg=function(prod){
+      var m=String(prod||'').match(/(?:\u76f4\u64ad|\u9023\u7dda|LIVE|live)\s*[\uff5c|]\s*[\uff08(]([^\uff09)]+)[\uff09)]/);
+      if(m)return m[1].trim();
       var li=prod.indexOf('\u76f4\u64ad');if(li<0)return '';
       var lp=prod.indexOf('\uff08',li),lp2=prod.indexOf('(',li);
       var ls=(lp>-1&&(lp2===-1||lp<lp2))?lp:lp2;if(ls<0)return '';
@@ -396,7 +399,7 @@ function parseIopenXLS(aoa){
       var om=orderMap[orderNo];
       var nm=CNM>=0?String(r[CNM]||'').trim():'';if(nm&&!om.name)om.name=nm;
       var liveIg=extractLiveIg(prod);
-      if(liveIg)om.igLive=liveIg;
+      if(liveIg){om.igLive=liveIg;var lpv=CLP>=0?(parseFloat(r[CLP])||0):0;if(lpv)om.listPrice=lpv;}
       if(!om.igNote&&note&&note.length<=30&&note.indexOf(' ')===-1&&note.indexOf('\uff0c')===-1&&note.indexOf(',')===-1)om.igNote=note;
       if(amt&&!om.amount)om.amount=amt;
       if(store&&!om.store)om.store=store;
@@ -422,7 +425,7 @@ function parseIopenXLS(aoa){
       oAmt[orderNo]=om.amount;
       if(!byIg[ig])byIg[ig]={orders:[],customItems:[],totalSpend:0,needGift:false};
       var dup=false;for(var q=0;q<byIg[ig].orders.length;q++)if(byIg[ig].orders[q].orderNo===orderNo)dup=true;
-      if(!dup)byIg[ig].orders.push({orderNo:orderNo,shipNo:om.shipNo,store:om.store,amount:om.amount});
+      if(!dup)byIg[ig].orders.push({orderNo:orderNo,shipNo:om.shipNo,store:om.store,amount:om.amount,listPrice:om.listPrice||0});
       var seen={};
       om.rows.forEach(function(row){
         if(row.isLiveMarker||!row.prod||row.prod.indexOf('\u904b\u8cbb')>-1)return;
@@ -1527,13 +1530,13 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                       const ords=(iopenInfo&&iopenInfo.orders)||[];const typed=shipInputs[o.oKey];
                       const isShippedOrd=(x)=>c.orders.some(oo=>(oo.shipments||[]).some(s=>String(s.orderNo)===String(x.orderNo)));
                       const nextOrd=(typed&&ords.find(x=>x.orderNo===typed))||ords.find(x=>!isShippedOrd(x))||ords[shipments.length];
-                      if(!nextOrd||!(nextOrd.amount>0))return null;
+                      if(!nextOrd||!((nextOrd.listPrice||nextOrd.amount)>0))return null;
                       const units=[];o.allocItems.filter(it=>it.allocatedQty>0).forEach(it=>{for(let u=0;u<it.allocatedQty;u++)units.push({key:o.oKey+"|"+unitPackKey(o.allocItems,it,u),price:Math.round(it.price||0)});});
                       if(!units.some(x=>x.price>0))return null;
                       const packedVal=units.filter(x=>packed[x.key]).reduce((a,x)=>a+x.price,0);
                       const totalVal=units.reduce((a,x)=>a+x.price,0);
                       const remainOrds=ords.filter(x=>!isShippedOrd(x));
-                      const target=Math.round(nextOrd.amount);
+                      const target=Math.round(nextOrd.listPrice||nextOrd.amount);
                       function autoPick(){
                         const maxP=Math.max.apply(null,units.map(x=>x.price));const cap=target+maxP;
                         const dp=new Array(cap+1).fill(null);dp[0]=[];
@@ -1550,7 +1553,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                           <span style={{color:C.inkMuted}}>可出貨合計 ${totalVal}</span>
                           <button onClick={autoPick} style={{marginLeft:"auto",background:C.info,color:"#fff",border:"none",borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>自動湊 ${target}</button>
                         </div>
-                        {remainOrds.length>1&&<div style={{color:C.inkMuted,marginTop:4}}>未出貨子單：{remainOrds.map(x=>"$"+Math.round(x.amount||0)).join("、")}</div>}
+                        {remainOrds.length>1&&<div style={{color:C.inkMuted,marginTop:4}}>未出貨子單：{remainOrds.map(x=>"$"+Math.round(x.listPrice||x.amount||0)).join("、")}</div>}
                       </div>);
                     })()}
                     {(()=>{
@@ -1812,7 +1815,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1019-F可出貨名單</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1019-G訂單對應</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
