@@ -1577,6 +1577,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                   </div>
                 )}
 
+                {o.skipItems&&Object.keys(o.skipItems).length>0&&(<div style={{fontSize:11,color:C.inkMuted,marginBottom:4}}>已讓出：{Object.entries(o.skipItems).map(([ik,n])=>(<span key={ik} style={{marginRight:8}}>{ik.split("|||").filter(Boolean).join(" ")} ×{n} <button onClick={()=>cancelSkip(o.oKey,ik)} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:"#fff",borderRadius:8,padding:"0 6px",cursor:"pointer"}}>取消讓出</button></span>))}</div>)}
                 {/* 出貨操作列（有可出貨品項就顯示） */}
                 {catFilter!=="shipped"&&canShip&&(
                   <div style={{marginTop:6}}>
@@ -1585,7 +1586,6 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                         {editingKey===o.oKey?"完成調整":"調整配貨"}
                       </button>
                     </div>
-                    {o.skipItems&&Object.keys(o.skipItems).length>0&&(<div style={{fontSize:11,color:C.inkMuted,marginBottom:4}}>已讓出：{Object.entries(o.skipItems).map(([ik,n])=>(<span key={ik} style={{marginRight:8}}>{ik.split("|||").filter(Boolean).join(" ")} ×{n} <button onClick={()=>cancelSkip(o.oKey,ik)} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:"#fff",borderRadius:8,padding:"0 6px",cursor:"pointer"}}>取消讓出</button></span>))}</div>)}
                     {(()=>{const typed=shipInputs[o.oKey];const ords=(iopenInfo&&iopenInfo.orders)||[];const isShippedOrd=(x)=>c.orders.some(oo=>(oo.shipments||[]).some(s=>String(s.orderNo)===String(x.orderNo)));const nextOrd=(typed&&ords.find(x=>x.orderNo===typed))||ords.find(x=>!isShippedOrd(x))||ords[shipments.length];if(!nextOrd||!(nextOrd.store||nextOrd.amount>0))return null;
                       const prods=o.allocItems.filter(it=>it.allocatedQty>0).map(it=>dispName(it)+(it.allocatedQty>1?" ×"+it.allocatedQty:""));
                       if(iopenInfo&&iopenInfo.customItems){const _sci2=(c.orders[0]&&c.orders[0].shippedCI)||[];iopenInfo.customItems.forEach(ci=>{const ck=custKey(ci);if(_sci2.indexOf(ck)===-1&&packed[o.oKey+"|CI|"+ck])prods.push(ci.prod+(ci.spec1?" "+ci.spec1:"")+(ci.spec2?" "+ci.spec2:""));});}
@@ -1886,7 +1886,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1019-L</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1019-M</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
