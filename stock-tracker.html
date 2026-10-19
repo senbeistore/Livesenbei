@@ -219,7 +219,9 @@ function parseSenbeiAOA(aoa){
 }
 
 // ── 配貨演算法 ── 回傳 savedAlloc 格式
-function computeAlloc(parsed,stockItems){
+function computeAlloc(parsed,stockItems,skipMap){
+  // skipMap[oKey][itemKey]=件數：客人無法取貨而讓給下一位，這些件數不參與該訂單的配貨
+  const skipLeft=(oKey)=>({...((skipMap&&skipMap[oKey])||{})});
   const{customers,orders}=parsed;
   const stock={};
   stockItems.forEach(it=>{const fk=flatKey(it);stock[fk]=(stock[fk]||0)+Math.max(0,Math.max(0,(it.arrivedQty||0)-(it.defectQty||0))+(it.stockQty||0)-(it.shippedQty||0));});
@@ -227,7 +229,7 @@ function computeAlloc(parsed,stockItems){
   const sorted=[...orders].sort((a,b)=>(customers[b.customerKey]?.totalAmount||0)-(customers[a.customerKey]?.totalAmount||0));
   const result={};
   // 先配「整張訂單能完整出貨」的客人，其餘再依金額順序配剩下的庫存
-  const fullFit=(o)=>{const need={};o.items.forEach(item=>{const k=flatKey(item);need[k]=(need[k]||0)+item.qty;});return Object.keys(need).every(k=>(stock[k]||0)>=need[k]);};
+  const fullFit=(o)=>{const need={};const sl=skipLeft(makeOrderKey(o.customerKey,o.items));if(Object.keys(sl).length)return false;o.items.forEach(item=>{const k=flatKey(item);need[k]=(need[k]||0)+item.qty;});return Object.keys(need).every(k=>(stock[k]||0)>=need[k]);};
   const first=[],rest=[];
   const pool=[...sorted];
   pool.forEach(o=>{if(fullFit(o)){first.push(o);o.items.forEach(item=>{const k=flatKey(item);stock[k]=Math.max(0,(stock[k]||0)-item.qty);});}else rest.push(o);});
@@ -237,10 +239,12 @@ function computeAlloc(parsed,stockItems){
   first.concat(rest).forEach(o=>{
     const oKey=makeOrderKey(o.customerKey,o.items);
     const allocItems=[],waitingItems=[];
+    const sl=skipLeft(oKey);
     o.items.forEach(item=>{
       const _k=flatKey(item);
       const rem=stock[_k]||0;
-      const give=Math.min(item.qty,rem);if(give>0)stock[_k]=Math.max(0,rem-give);
+      const ik=itemKey(item);const sk=Math.min(item.qty,sl[ik]||0);if(sk)sl[ik]-=sk;
+      const give=Math.min(item.qty-sk,rem);if(give>0)stock[_k]=Math.max(0,rem-give);
       if(give>0)allocItems.push({...item,orderedQty:item.qty,allocatedQty:give});
       if(give<item.qty)waitingItems.push({...item,orderedQty:item.qty-give,allocatedQty:0,qty:item.qty-give});
     });
@@ -349,7 +353,9 @@ function recalculateAlloc(currentAlloc,parsed,stockItems,method){
   // 未出貨訂單：用剩餘庫存重新計算
   if(unshippedArr.length>0){
     const sub={customers,orders:unshippedArr};
-    const fresh=method==="proportional"?computeProportionalAlloc(sub,stockItems):computeAlloc(sub,stockItems);
+    const skipMap={};if(currentAlloc)Object.keys(currentAlloc).forEach(k=>{if(currentAlloc[k]&&currentAlloc[k].skipItems)skipMap[k]=currentAlloc[k].skipItems;});
+    const fresh=method==="proportional"?computeProportionalAlloc(sub,stockItems):computeAlloc(sub,stockItems,skipMap);
+    Object.keys(fresh).forEach(k=>{if(skipMap[k])fresh[k].skipItems=skipMap[k];});
     Object.assign(result,fresh);
   }
   // 保留「已出貨但不在新檔」的訂單，避免昨日已出貨訂單因重匯而整筆消失（連出貨記錄一起不見）
@@ -901,6 +907,37 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
     setPacked(p=>{const n={...p};Object.keys(n).forEach(k=>{if(k.indexOf(oKey+"|")===0)delete n[k];});return n;});
   }
 
+  // 客人無法取貨：貨留在手上（不動備貨到貨數），這件讓給下一位等貨的客人
+  function passToNext(oKey,item){
+    let msg="";
+    setEditAlloc(prev=>{
+      const order=prev[oKey];if(!order)return prev;
+      const fk=flatKey(item);
+      // 找下一位：未出貨、仍在等這個品項，依客人金額高→低
+      const cands=Object.entries(prev).filter(([k,o])=>k!==oKey&&k.indexOf("__")!==0&&o&&!(o.shipments&&o.shipments.length)&&!o.shippedAt&&(o.waitingItems||[]).some(w=>flatKey(w)===fk&&needQty(w)>0)&&!((o.skipItems||{})[itemKey(item)]))
+        .sort((a,b)=>(b[1].customerTotalAmount||0)-(a[1].customerTotalAmount||0));
+      if(!cands.length){msg="沒有其他客人在等這個品項，已取消。";return prev;}
+      const[nk,no]=cands[0];
+      const next={...prev};
+      // 原客人：可出貨 −1、待補 +1、記錄已讓出
+      const aI=(order.allocItems||[]).map(it=>itemKey(it)===itemKey(item)&&it.allocatedQty>0?{...it,allocatedQty:it.allocatedQty-1}:it).filter(it=>it.allocatedQty>0);
+      const wI=[...(order.waitingItems||[])];const ex=wI.find(it=>itemKey(it)===itemKey(item));
+      if(ex){const i=wI.indexOf(ex);wI[i]={...ex,orderedQty:needQty(ex)+1,qty:needQty(ex)+1};}else wI.push({...item,allocatedQty:0,orderedQty:1,qty:1});
+      const sk={...(order.skipItems||{})};sk[itemKey(item)]=(sk[itemKey(item)]||0)+1;
+      next[oKey]={...order,allocItems:aI,waitingItems:wI,skipItems:sk};
+      // 下一位：待補 −1、可出貨 +1
+      const nw=(no.waitingItems||[]).map(w=>flatKey(w)===fk&&needQty(w)>0?{...w,orderedQty:needQty(w)-1,qty:needQty(w)-1}:w).filter(w=>needQty(w)>0);
+      const na=[...(no.allocItems||[])];const ea=na.find(it=>itemKey(it)===itemKey(item));
+      if(ea){na[na.indexOf(ea)]={...ea,allocatedQty:ea.allocatedQty+1};}else na.push({...item,orderedQty:item.orderedQty||1,allocatedQty:1});
+      next[nk]={...no,allocItems:na,waitingItems:nw};
+      msg="已讓給 "+(no.customerAccount||nk)+"，請通知對方可出貨。";
+      onSaveAlloc(next);
+      return next;
+    });
+    setPacked(p=>{const n={...p};Object.keys(n).forEach(k=>{if(k.indexOf(oKey+"|")===0)delete n[k];});return n;});
+    setTimeout(()=>{if(msg)alert(msg);},50);
+  }
+
   function toggleNotified(oKey,idx){
     setEditAlloc(prev=>{
       const order=prev[oKey];if(!order)return prev;
@@ -1443,6 +1480,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                                   <strong style={{fontSize:13,color:C.success,opacity:isPacked?0.45:1}}>× 1</strong>
                                   <button onClick={()=>{if(window.confirm("⚠️ 退回待補貨\n\n「"+dispName(it)+"」1 件將：\n・從這位客人的可出貨移到待補貨\n・備貨中心的「已到貨」數量 −1\n\n適用於實際還沒到貨、卻誤標成到貨的情況。\n此動作會同步影響備貨中心，確定要繼續？"))returnToWaiting(o.oKey,it);}} title="實際未到貨，退回待補並扣回備貨中心到貨數"
                                     style={{border:`1px solid ${C.orange}`,color:C.orange,background:"#fff",borderRadius:7,padding:"4px 8px",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>⏳ 退回待補</button>
+                                  <button onClick={()=>{if(window.confirm("「"+dispName(it)+"」1 件讓給下一位？\n\n・貨留在手上，備貨到貨數不變\n・這位客人改為待補，之後重新計算也不會再配給他\n・自動配給下一位在等這件的客人"))passToNext(o.oKey,it);}} title="客人無法取貨，貨讓給下一位"
+                                    style={{border:`1px solid ${C.line}`,color:C.sub||"#666",background:"#fff",borderRadius:7,padding:"4px 8px",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>➡️ 讓給下一位</button>
                                   <button onClick={()=>togglePacked(o.oKey,uKey)} title={isPacked?"取消裝袋":"標記已裝袋"}
                                     style={{width:28,height:28,padding:0,lineHeight:1,borderRadius:7,
                                       border:`2px solid ${isPacked?C.success:C.line}`,
@@ -1816,7 +1855,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1019-J</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1019-K</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
