@@ -40,7 +40,7 @@
 </head>
 <body>
 <header>
-  <h1>🛍️ 商品上架（iOPEN Mall 商品大量上傳）<span style="font-size:11px;font-weight:400;opacity:.8"> build 1020-A</span></h1>
+  <h1>🛍️ 商品上架（iOPEN Mall 商品大量上傳）<span style="font-size:11px;font-weight:400;opacity:.8"> build 1020-B</span></h1>
   <button class="ghost small" id="btnClear">全部清空</button>
   <button class="primary" id="btnExport" style="background:#fff;color:var(--accent)">匯出 Excel</button>
 </header>
@@ -60,6 +60,7 @@
     <div class="grid">
       <div><label>商品分類編號</label><input id="gCategory" inputmode="numeric" /></div>
       <div><label>預計出貨天數（1–150）</label><input id="gShip" inputmode="numeric" /></div>
+      <div><label>預設商品圖網址（沒填圖時使用）</label><input id="gDefImg" /></div>
       <div><label>商品圖片網址前綴（選填）</label><input id="gImgBase" placeholder="https://…/" /></div>
     </div>
     <div class="mute" style="margin-top:6px">圖片欄位若只填檔名，匯出時會自動接在前綴後面；填完整網址則不加。</div>
@@ -94,7 +95,7 @@ function newProduct() {
     online: "1",
   };
 }
-let products = [], activeId = null, glob = { category: "209", ship: "7", imgBase: "" };
+let products = [], activeId = null, glob = { category: "209", ship: "7", imgBase: "", defImg: "https://senbeistore.github.io/Livesenbei/IMG_0455.jpg" };
 
 function load() {
   try { products = JSON.parse(localStorage.getItem(STORE_KEY) || "[]"); } catch (e) { products = []; }
@@ -157,8 +158,9 @@ function buildRows(list, g) {
     if (sku.length > MAX_SKU - 4) issues.push({ lv: "warn", t: label + "：貨號偏長，加上規格序號可能超過 " + MAX_SKU + " 字" });
     const price = toInt(p.price, NaN);
     const combos = combosOf(p);
-    const imgs = String(p.images || "").split(/\n/).map(x => imgUrl(x, g.imgBase)).filter(Boolean).slice(0, 10);
-    if (!imgs.length) issues.push({ lv: "err", t: label + "：至少需要 1 張商品圖（商品圖(1) 為必填）" });
+    let imgs = String(p.images || "").split(/\n/).map(x => imgUrl(x, g.imgBase)).filter(Boolean).slice(0, 10);
+    if (!imgs.length && String(g.defImg || "").trim()) imgs = [String(g.defImg).trim()];
+    if (!imgs.length) issues.push({ lv: "err", t: label + "：沒有商品圖，且共用設定的預設圖也是空的（商品圖(1) 為必填）" });
     if (!String(p.intro || "").trim()) issues.push({ lv: "err", t: label + "：缺商品簡介" });
     if (!String(p.desc || "").trim()) issues.push({ lv: "err", t: label + "：缺商品描述" });
     const listPrice = p.listPrice === "" ? "" : toInt(p.listPrice, "");
@@ -270,8 +272,8 @@ function renderEditor() {
   </div>
   <div class="card">
     <h2>圖片與說明</h2>
-    <label>商品圖（一行一張，最多 10 張；第 1 張為主圖）</label>
-    <textarea data-k="images" placeholder="https://…/1.jpg">${esc(p.images)}</textarea>
+    <label>商品圖（一行一張，最多 10 張；留空＝使用預設橘色圖，上架後再到後台換）</label>
+    <textarea data-k="images" placeholder="留空使用預設圖">${esc(p.images)}</textarea>
     <label style="margin-top:8px">商品簡介（必填；換行會轉成 &lt;br&gt;）</label>
     <textarea data-k="intro">${esc(p.intro)}</textarea>
     <label style="margin-top:8px">商品描述（必填）</label>
@@ -341,8 +343,8 @@ function exportXlsx() {
 // ───────── 啟動 ─────────
 if (typeof document !== "undefined" && document.getElementById("editor")) {
   load();
-  $("gCategory").value = glob.category; $("gShip").value = glob.ship; $("gImgBase").value = glob.imgBase;
-  [["gCategory", "category"], ["gShip", "ship"], ["gImgBase", "imgBase"]].forEach(([id, k]) => $(id).oninput = () => { glob[k] = $(id).value; save(); renderPreview(); });
+  $("gCategory").value = glob.category; $("gShip").value = glob.ship; $("gImgBase").value = glob.imgBase; $("gDefImg").value = glob.defImg;
+  [["gCategory", "category"], ["gShip", "ship"], ["gImgBase", "imgBase"], ["gDefImg", "defImg"]].forEach(([id, k]) => $(id).oninput = () => { glob[k] = $(id).value; save(); renderPreview(); });
   $("btnAdd").onclick = () => { const p = newProduct(); p.sku = autoSku(); products.push(p); activeId = p.id; save(); renderAll(); };
   $("btnClear").onclick = () => { if (!confirm("清空所有商品？")) return; products = [newProduct()]; products[0].sku = autoSku(); activeId = products[0].id; save(); renderAll(); };
   $("btnExport").onclick = exportXlsx;
