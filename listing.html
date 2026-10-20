@@ -77,12 +77,18 @@ const STORE_KEY = "listing_v1";
 const GLOBAL_KEY = "listing_global_v1";
 const MAX_NAME = 60, MAX_SKU = 20, MAX_OPT = 50;
 
+function autoSku() {
+  const d = new Date(), z = (n) => String(n).padStart(2, "0"), pre = z(d.getMonth() + 1) + z(d.getDate());
+  const used = new Set(products.map(x => String(x.sku || "").toLowerCase()));
+  for (let i = 1; i < 100; i++) { const c = pre + "-" + z(i); if (!used.has(c)) return c; }
+  return pre + "-" + Date.now().toString(36).slice(-3);
+}
 function newProduct() {
   return {
     mode: "stock", preShip: "21", id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
     name: "", sku: "", price: "", listPrice: "", cost: "",
     spec1Name: "顏色", opts: [], // opts = [{n:"嫩黃90", stock:"", price:""}]（顏色＋尺寸合成一個選項，各自庫存）
-    genColors: "", genSizes: "", defStock: "1",
+    genColors: "", genSizes: "", defStock: "",
     images: "", intro: "", desc: "",
     weight: "", len: "", wid: "", hei: "",
     online: "1",
@@ -93,7 +99,7 @@ let products = [], activeId = null, glob = { category: "209", ship: "7", imgBase
 function load() {
   try { products = JSON.parse(localStorage.getItem(STORE_KEY) || "[]"); } catch (e) { products = []; }
   try { glob = Object.assign(glob, JSON.parse(localStorage.getItem(GLOBAL_KEY) || "{}")); } catch (e) {}
-  if (!products.length) products = [newProduct()];
+  if (!products.length) { products = [newProduct()]; products[0].sku = autoSku(); }
   activeId = products[0].id;
 }
 function save() {
@@ -168,13 +174,16 @@ function buildRows(list, g) {
     if (!combos.length) {
       if (isNaN(price)) { issues.push({ lv: "err", t: label + "：缺售價" }); return; }
       const r = base(price); r[5] = sku;
+      if (p.defStock === "" || p.defStock == null) { issues.push({ lv: "err", t: label + "：沒填" + (pre ? "接單上限" : "庫存") }); return; }
       rows.push([...r, "", "", "", "", "", ...imgCols, ...tail(toInt(p.defStock, 0))]);
       return;
     }
     combos.forEach((c, i) => {
       const sp = c.price !== undefined && c.price !== "" ? toInt(c.price, NaN) : price;
       if (isNaN(sp)) { issues.push({ lv: "err", t: label + "：「" + c.n + "」缺售價" }); return; }
-      const stock = c.stock !== undefined && c.stock !== "" ? toInt(c.stock, 0) : toInt(p.defStock, 0);
+      const stockRaw = c.stock !== undefined && c.stock !== "" ? c.stock : p.defStock;
+      if (stockRaw === "" || stockRaw == null) { issues.push({ lv: "err", t: label + "：「" + c.n + "」沒填" + (pre ? "接單上限" : "庫存") }); return; }
+      const stock = toInt(stockRaw, 0);
       const rowSku = sku + "-" + String(i + 1).padStart(2, "0");
       const mainSku = sku + "-" + "01";
       const r = base(sp); r[5] = rowSku;
@@ -186,6 +195,8 @@ function buildRows(list, g) {
       if (combos.length > 200) issues.push({ lv: "warn", t: label + "：規格組合共 " + combos.length + " 筆，數量偏多" });
     }
   });
+  const seenSku = {};
+  list.forEach((p, pi) => { const k = String(p.sku || "").trim().toLowerCase(); if (!k) return; if (seenSku[k] !== undefined) issues.push({ lv: "err", t: "貨號重複：「" + p.sku + "」（" + (list[seenSku[k]].name || "商品 " + (seenSku[k] + 1)) + " 與 " + (p.name || "商品 " + (pi + 1)) + "）" }); else seenSku[k] = pi; });
   return { rows, issues };
 }
 
@@ -199,6 +210,11 @@ function padRow(r) { const out = r.slice(0, 25); out.push(""); return out.concat
 
 // ───────── 畫面 ─────────
 const $ = (id) => document.getElementById(id);
+let tplOpen = false;
+const TPL_KEY = "listing_tpl_v1";
+function loadTpl() { try { return JSON.parse(localStorage.getItem(TPL_KEY) || "[]"); } catch (e) { return []; } }
+function saveTpl(t) { try { localStorage.setItem(TPL_KEY, JSON.stringify(t)); } catch (e) {} }
+function tplOptions() { const t = loadTpl(); return t.length ? t.map((x, i) => `<option value="${i}">${esc(x.name)}</option>`).join("") : `<option value="">（尚無範本）</option>`; }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function cur() { return products.find(p => p.id === activeId) || products[0]; }
 
@@ -223,7 +239,7 @@ function renderEditor() {
   $("editor").innerHTML = `
   <div class="card">
     <div class="row"><h2 style="margin:0">基本資料</h2><span style="flex:1"></span>
-      <button class="small" id="btnDup">複製此商品</button><button class="small" id="btnDel">刪除</button></div>
+      <button class="small" id="btnDup">複製此商品</button><button class="small" id="btnDupColor">複製並換顏色</button><button class="small" id="btnDel">刪除</button></div>
     <div class="row" style="margin-top:8px">
       <button class="small tab ${p.mode !== "preorder" ? "on" : ""}" id="modeStock">現貨</button>
       <button class="small tab ${p.mode === "preorder" ? "on" : ""}" id="modePre">預購</button>
@@ -231,7 +247,7 @@ function renderEditor() {
     </div>
     <div class="grid" style="margin-top:8px">
       <div style="grid-column:1/-1"><label>商品名稱（最多 60 字）<span id="nameLen" class="mute"></span></label><input data-k="name" value="${esc(p.name)}"></div>
-      ${field("商品原始貨號（最多 20 字，規格會自動加 -01、-02）", "sku", p)}
+      <div><label>商品原始貨號（最多 20 字，規格會自動加 -01、-02）</label><div class="row" style="flex-wrap:nowrap"><input data-k="sku" value="${esc(p.sku)}"><button class="small" id="btnSku" title="重新產生">🔄</button></div></div>
       ${field("售價（必填）", "price", p, 'inputmode="numeric"')}
       ${field("定價（選填，空白＝售價）", "listPrice", p, 'inputmode="numeric"')}
       ${field("成本（選填，空白＝售價）", "cost", p, 'inputmode="numeric"')}
@@ -259,6 +275,11 @@ function renderEditor() {
     <textarea data-k="intro">${esc(p.intro)}</textarea>
     <label style="margin-top:8px">商品描述（必填）</label>
     <textarea data-k="desc" style="min-height:110px">${esc(p.desc)}</textarea>
+    <details id="tplBox" ${tplOpen ? "open" : ""}><summary>文字範本（固定說明，存起來一鍵帶入）</summary>
+      <div class="row" style="margin:6px 0"><select id="tplSel" style="flex:1;min-width:140px">${tplOptions()}</select>
+        <button class="small" id="tplToIntro">加到簡介</button><button class="small" id="tplToDesc">加到描述</button><button class="small" id="tplDel">刪除範本</button></div>
+      <div class="row"><input id="tplName" placeholder="範本名稱（例：現貨出貨說明）" style="flex:1;min-width:140px"><button class="small" id="tplSaveIntro">存目前簡介</button><button class="small" id="tplSaveDesc">存目前描述</button></div>
+    </details>
     <details><summary>重量與尺寸（選填，空白＝1）</summary>
       <div class="grid">${field("重量(g)", "weight", p, 'inputmode="numeric"')}${field("長(cm)", "len", p, 'inputmode="numeric"')}${field("寬(cm)", "wid", p, 'inputmode="numeric"')}${field("高(cm)", "hei", p, 'inputmode="numeric"')}</div>
     </details>
@@ -273,8 +294,21 @@ function renderEditor() {
   $("btnExpand").onclick = () => { expandOpts(p); save(); renderAll(); };
   $("btnAddOpt").onclick = () => { migrate(p); p.opts.push({ n: "", stock: "", price: "" }); save(); renderAll(); };
   $("modeStock").onclick = () => { p.mode = "stock"; save(); renderAll(); };
-  $("modePre").onclick = () => { p.mode = "preorder"; if (p.defStock === "1") p.defStock = "50"; save(); renderAll(); };
-  $("btnDup").onclick = () => { const c = JSON.parse(JSON.stringify(p)); c.id = newProduct().id; c.name = p.name ? p.name + "（複製）" : ""; c.sku = ""; products.splice(products.indexOf(p) + 1, 0, c); activeId = c.id; save(); renderAll(); };
+  $("modePre").onclick = () => { p.mode = "preorder"; if (p.defStock === "") p.defStock = "50"; save(); renderAll(); };
+  $("tplBox").ontoggle = () => { tplOpen = $("tplBox").open; };
+  const addTo = (f) => { const t = loadTpl()[+$("tplSel").value]; if (!t) return; p[f] = (p[f] ? p[f] + "\n" : "") + t.text; save(); renderAll(); };
+  $("tplToIntro").onclick = () => addTo("intro"); $("tplToDesc").onclick = () => addTo("desc");
+  const saveFrom = (f) => { const n = $("tplName").value.trim(), txt = String(p[f] || "").trim(); if (!n || !txt) { alert("請填範本名稱，且該欄不能是空的。"); return; } const t = loadTpl(); const i = t.findIndex(x => x.name === n); if (i >= 0) t[i].text = txt; else t.push({ name: n, text: txt }); saveTpl(t); renderAll(); };
+  $("tplSaveIntro").onclick = () => saveFrom("intro"); $("tplSaveDesc").onclick = () => saveFrom("desc");
+  $("tplDel").onclick = () => { const t = loadTpl(), i = +$("tplSel").value; if (!t[i] || !confirm("刪除範本「" + t[i].name + "」？")) return; t.splice(i, 1); saveTpl(t); renderAll(); };
+  $("btnSku").onclick = () => { p.sku = ""; p.sku = autoSku(); save(); renderAll(); };
+  $("btnDup").onclick = () => { const c = JSON.parse(JSON.stringify(p)); c.id = newProduct().id; c.name = p.name ? p.name + "（複製）" : ""; c.sku = ""; c.sku = autoSku(); products.splice(products.indexOf(p) + 1, 0, c); activeId = c.id; save(); renderAll(); };
+  $("btnDupColor").onclick = () => {
+    const v = prompt("新的顏色（用逗號分隔）：", ""); if (v === null || !v.trim()) return;
+    const c = JSON.parse(JSON.stringify(p)); c.id = newProduct().id; c.sku = ""; c.opts = []; c.genColors = v;
+    if (!splitOpts(c.genSizes).length) { c.genSizes = ""; }
+    products.splice(products.indexOf(p) + 1, 0, c); c.sku = autoSku(); expandOpts(c); activeId = c.id; save(); renderAll();
+  };
   $("btnDel").onclick = () => { if (!confirm("刪除這個商品？")) return; products = products.filter(x => x !== p); if (!products.length) products = [newProduct()]; activeId = products[0].id; save(); renderAll(); };
   updNameLen();
 }
@@ -300,6 +334,7 @@ function exportXlsx() {
   const d = new Date(), z = (n) => String(n).padStart(2, "0");
   const ts = d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + z(d.getHours()) + z(d.getMinutes()) + z(d.getSeconds());
   XLSX.writeFile(wb, "iOpen_ProductImport_" + ts + ".xlsx", { bookSST: true });
+  setTimeout(() => { if (confirm("已匯出。要清空商品清單嗎？（避免下次混到這次的商品）")) { products = [newProduct()]; products[0].sku = autoSku(); activeId = products[0].id; save(); renderAll(); } }, 600);
 }
 
 // ───────── 啟動 ─────────
@@ -307,8 +342,8 @@ if (typeof document !== "undefined" && document.getElementById("editor")) {
   load();
   $("gCategory").value = glob.category; $("gShip").value = glob.ship; $("gImgBase").value = glob.imgBase;
   [["gCategory", "category"], ["gShip", "ship"], ["gImgBase", "imgBase"]].forEach(([id, k]) => $(id).oninput = () => { glob[k] = $(id).value; save(); renderPreview(); });
-  $("btnAdd").onclick = () => { const p = newProduct(); products.push(p); activeId = p.id; save(); renderAll(); };
-  $("btnClear").onclick = () => { if (!confirm("清空所有商品？")) return; products = [newProduct()]; activeId = products[0].id; save(); renderAll(); };
+  $("btnAdd").onclick = () => { const p = newProduct(); p.sku = autoSku(); products.push(p); activeId = p.id; save(); renderAll(); };
+  $("btnClear").onclick = () => { if (!confirm("清空所有商品？")) return; products = [newProduct()]; products[0].sku = autoSku(); activeId = products[0].id; save(); renderAll(); };
   $("btnExport").onclick = exportXlsx;
   renderAll();
 }
