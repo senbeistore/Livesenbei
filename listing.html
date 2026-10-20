@@ -40,7 +40,7 @@
 </head>
 <body>
 <header>
-  <h1>🛍️ 商品上架（iOPEN Mall 商品大量上傳）</h1>
+  <h1>🛍️ 商品上架（iOPEN Mall 商品大量上傳）<span style="font-size:11px;font-weight:400;opacity:.8"> build 1020-A</span></h1>
   <button class="ghost small" id="btnClear">全部清空</button>
   <button class="primary" id="btnExport" style="background:#fff;color:var(--accent)">匯出 Excel</button>
 </header>
@@ -99,7 +99,7 @@ let products = [], activeId = null, glob = { category: "209", ship: "7", imgBase
 function load() {
   try { products = JSON.parse(localStorage.getItem(STORE_KEY) || "[]"); } catch (e) { products = []; }
   try { glob = Object.assign(glob, JSON.parse(localStorage.getItem(GLOBAL_KEY) || "{}")); } catch (e) {}
-  products.forEach(x => { if (x.preShip === "21") x.preShip = "66"; });
+  products.forEach(x => { if (x.preShip === "21" || x.preShip === undefined || x.preShip === "") x.preShip = "66"; });
   if (!products.length) { products = [newProduct()]; products[0].sku = autoSku(); }
   activeId = products[0].id;
 }
@@ -319,8 +319,8 @@ function renderTabsLight() { renderTabs(); }
 function renderPreview() {
   const { rows, issues } = buildRows(products, glob);
   $("issues").innerHTML = issues.length ? issues.map(i => `<div class="${i.lv}">${i.lv === "err" ? "✕" : "！"} ${esc(i.t)}</div>`).join("") : `<div class="mute">✓ 沒有發現問題</div>`;
-  $("preview").innerHTML = `<tr><th>貨號</th><th>商品</th><th>規格</th><th>售價</th><th>庫存</th></tr>` + rows.map(r =>
-    `<tr><td>${esc(r[5])}</td><td>${esc(r[3])}</td><td>${esc(r[11] ? r[11] + "：" + r[12] : "")}</td><td>${esc(r[7])}</td><td>${esc(r[33 - 1 + 0])}</td></tr>`).join("");
+  $("preview").innerHTML = `<tr><th>貨號</th><th>商品</th><th>規格</th><th>售價</th><th>庫存</th><th>出貨天數</th></tr>` + rows.map(r =>
+    `<tr><td>${esc(r[5])}</td><td>${esc(r[3])}</td><td>${esc(r[11] ? r[11] + "：" + r[12] : "")}</td><td>${esc(r[7])}</td><td>${esc(r[32])}</td><td>${esc(r[33])}</td></tr>`).join("");
   $("btnExport").disabled = !rows.length || issues.some(i => i.lv === "err");
   return { rows, issues };
 }
