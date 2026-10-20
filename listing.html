@@ -85,7 +85,7 @@ function autoSku() {
 }
 function newProduct() {
   return {
-    mode: "stock", preShip: "21", id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+    mode: "stock", preShip: "66", id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
     name: "", sku: "", price: "", listPrice: "", cost: "",
     spec1Name: "顏色", opts: [], // opts = [{n:"嫩黃90", stock:"", price:""}]（顏色＋尺寸合成一個選項，各自庫存）
     genColors: "", genSizes: "", defStock: "",
@@ -99,6 +99,7 @@ let products = [], activeId = null, glob = { category: "209", ship: "7", imgBase
 function load() {
   try { products = JSON.parse(localStorage.getItem(STORE_KEY) || "[]"); } catch (e) { products = []; }
   try { glob = Object.assign(glob, JSON.parse(localStorage.getItem(GLOBAL_KEY) || "{}")); } catch (e) {}
+  products.forEach(x => { if (x.preShip === "21") x.preShip = "66"; });
   if (!products.length) { products = [newProduct()]; products[0].sku = autoSku(); }
   activeId = products[0].id;
 }
@@ -165,7 +166,7 @@ function buildRows(list, g) {
     const base = (sellPrice) => [
       "", 3, 0, name, category, "", listPrice === "" ? sellPrice : listPrice, sellPrice, cost === "" ? sellPrice : cost, p.online === "0" ? 0 : 1,
     ];
-    const shipD = pre ? Math.min(150, Math.max(1, toInt(p.preShip, 21))) : ship;
+    const shipD = pre ? Math.min(150, Math.max(1, toInt(p.preShip, 66))) : ship;
     const tail = (stock) => [
       String(p.intro || "").trim().replace(/\n/g, "<br>"), String(p.desc || "").trim().replace(/\n/g, "<br>"), "",
       toInt(p.weight, 1), toInt(p.len, 1), toInt(p.wid, 1), toInt(p.hei, 1), stock, shipD,
