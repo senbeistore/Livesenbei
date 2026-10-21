@@ -2013,7 +2013,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-N</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-O</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2171,6 +2171,13 @@ function App(){
         <div style={{maxWidth:640,margin:"0 auto",padding:"14px 14px"}}>
           {globalErr&&(<div style={{background:C.warningSoft,color:C.warning,border:`1px solid ${C.warning}`,borderRadius:10,padding:"8px 12px",marginBottom:12,fontSize:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>{globalErr}</span><button onClick={()=>setGlobalErr("")} style={{marginLeft:8,textDecoration:"underline",cursor:"pointer"}}>關閉</button></div>)}
           {(()=>{const liveN=items.filter(it=>itemSource(it)==="live").length;const ioN=items.filter(it=>itemSource(it)==="iopen").length;const tb=(k,l,c)=>(<button key={k} onClick={()=>setSrcTab(k)} style={{flex:1,padding:"8px 4px",fontSize:13,fontWeight:600,border:"none",borderBottom:`2px solid ${srcTab===k?C.stamp:"transparent"}`,background:"transparent",color:srcTab===k?C.stamp:C.inkMuted,cursor:"pointer"}}>{l} <span style={{fontSize:11,opacity:0.8}}>{c}</span></button>);return(<div style={{display:"flex",borderBottom:`1px solid ${C.line}`,marginBottom:10}}>{tb("live","直播訂單",liveN)}{tb("iopen","iOPEN Mall",ioN)}</div>);})()}
+          {(()=>{const L=items.filter(it=>itemSource(it)===srcTab);const need=L.reduce((a,x)=>a+(x.qty||0),0);const stk=L.reduce((a,x)=>a+(x.stockQty||0),0);const cover=L.reduce((a,x)=>a+Math.min(x.stockQty||0,x.qty||0),0);const ordered=L.reduce((a,x)=>a+(isOrderedMarked(x)?Math.min(effOrderedQty(x),needTotal(x)):0),0);const todo=L.reduce((a,x)=>a+toOrderQty(x),0);
+            return(<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8,fontSize:12}}>
+              <span style={{background:C.stripe,borderRadius:8,padding:"3px 10px",color:C.ink}}>{L.length} 筆｜需求 <b>{need}</b> 件</span>
+              <span style={{background:"#F0FFF4",border:"1px solid #059669",borderRadius:8,padding:"3px 10px",color:"#047857"}}>現貨共 <b>{stk}</b> 件（抵需求 <b>{cover}</b>{stk>cover?`，多出 ${stk-cover}`:""}）</span>
+              <span style={{background:"#E8F0F7",borderRadius:8,padding:"3px 10px",color:C.info}}>已叫 <b>{ordered}</b> 件</span>
+              <span style={{background:"#FFF3CD",borderRadius:8,padding:"3px 10px",color:"#B45309"}}>還需叫貨 <b>{todo}</b> 件</span>
+            </div>);})()}
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
             <span style={{color:C.ink,fontSize:14}}>已到貨 <strong style={{color:C.success}}>{arrivedCount}</strong> / {items.length} 筆</span>
             {late3Count>0&&<span style={{background:C.orangeSoft,color:C.orange,border:`1px solid ${C.orange}`,borderRadius:20,padding:"2px 10px",fontSize:11}}>⚠ {late3Count} 筆逾3天未訂</span>}
