@@ -1803,9 +1803,9 @@ function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose}){
   const set=(r,patch)=>setDec(p=>({...p,[r.oi+"_"+r.li]:{...get(r),...patch}}));
   const all=(act,to)=>{const m={};rows.filter(r=>!r.shipped).forEach(r=>{m[r.oi+"_"+r.li]={act,n:r.qty,to:to||""};});setDec(m);};
   const btn={fontSize:12,borderRadius:6,padding:"4px 10px",cursor:"pointer",border:`1px solid ${C.line}`,background:C.surface,color:C.ink};
-  const todo=rows.filter(r=>!r.shipped&&get(r).act!=="keep"&&(get(r).act==="cancel"||get(r).to));
+  const todo=rows.filter(r=>!r.shipped&&get(r).act!=="keep"&&(get(r).act==="cancel"||(get(r).to&&(get(r).to!=="__custom__"||String(get(r).cc||"").trim()))));
   const apply=()=>{
-    const ds=todo.map(r=>({oi:r.oi,li:r.li,act:get(r).act,n:Math.max(1,Math.min(r.qty,parseInt(get(r).n,10)||r.qty)),to:get(r).to}));
+    const ds=todo.map(r=>({oi:r.oi,li:r.li,act:get(r).act,n:Math.max(1,Math.min(r.qty,parseInt(get(r).n,10)||r.qty)),to:get(r).to==="__custom__"?"new|"+(item.style||"")+"|"+String(get(r).cc).trim()+"|"+(String(get(r).cz||"").trim()||item.size||""):get(r).to}));
     setDone(onApply(item,ds,soldOut));
   };
   return(
@@ -1831,7 +1831,8 @@ function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose}){
               <div style={{fontSize:13,color:C.ink,fontWeight:600}}>{r.account}{r.name&&r.name!==r.account?`（${r.name}）`:""}　<span style={{fontWeight:400,color:C.inkMuted}}>×{r.qty}{r.price?`　$${r.price}`:""}</span>{r.shipped&&<span style={{color:"#B91C1C",fontSize:11,marginLeft:8}}>已出貨，不可修改</span>}</div>
               {!r.shipped&&(<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
                 <select value={d.act} onChange={e=>set(r,{act:e.target.value})} style={{...btn,padding:"6px 6px"}}><option value="keep">不動</option><option value="cancel">取消這件</option><option value="swap">改成別款</option></select>
-                {d.act==="swap"&&<select value={d.to} onChange={e=>set(r,{to:e.target.value})} style={{...btn,padding:"6px 6px",maxWidth:240}}><option value="">選擇顏色／尺寸</option>{targets.map(t=><option key={t.id} value={t.id}>{[t.color,t.size,t.style].filter(Boolean).join(" · ")}{t.isNew?"（新增）":"（現貨"+t.stock+"）"}</option>)}</select>}
+                {d.act==="swap"&&<select value={d.to} onChange={e=>set(r,{to:e.target.value})} style={{...btn,padding:"6px 6px",maxWidth:240}}><option value="">選擇顏色／尺寸</option><option value="__custom__">＋自訂顏色／尺寸（系統沒有的）</option>{targets.map(t=><option key={t.id} value={t.id}>{[t.color,t.size,t.style].filter(Boolean).join(" · ")}{t.isNew?"（新增）":"（現貨"+t.stock+"）"}</option>)}</select>}
+                {d.act==="swap"&&d.to==="__custom__"&&<span style={{display:"flex",gap:4,alignItems:"center"}}><input placeholder="顏色" value={d.cc||""} onChange={e=>set(r,{cc:e.target.value})} style={{width:80,border:`1px solid ${C.line}`,borderRadius:6,padding:"5px"}}/><input placeholder={item.size||"尺寸"} value={d.cz||""} onChange={e=>set(r,{cz:e.target.value})} style={{width:60,border:`1px solid ${C.line}`,borderRadius:6,padding:"5px"}}/></span>}
                 {d.act!=="keep"&&r.qty>1&&<span style={{fontSize:12,color:C.inkMuted}}>件數<input type="number" min="1" max={r.qty} value={d.n} onChange={e=>set(r,{n:e.target.value})} style={{width:44,marginLeft:4,border:`1px solid ${C.line}`,borderRadius:6,padding:"4px",textAlign:"center"}}/></span>}
               </div>)}
             </div>);})}
@@ -2147,7 +2148,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-B</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-C</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
