@@ -1759,15 +1759,25 @@ function App(){
     if(!setupMode&&token&&gistId){setLoading(true);gFetch(token,gistId).then(({items:its,savedAlloc:sa,iopenCustom:ic,iopenData:idt})=>{setItems(its);setSavedAlloc(sa);if(ic&&ic.length){iopenCustomRef.current=ic;setIopenCustom(ic);}if(idt&&Object.keys(idt).length){iopenDataRef.current=idt;setIopenData(idt);}setLoading(false);}).catch(e=>{setGlobalErr(e.message);setLoading(false);});}
   },[]);
 
+  const retryTimer=useRef(null);const pendingSave=useRef(false);
   const scheduleSave=useCallback((newItems,newAlloc)=>{
     if(saveTimer.current)clearTimeout(saveTimer.current);
-    saveTimer.current=setTimeout(()=>{
+    if(retryTimer.current){clearTimeout(retryTimer.current);retryTimer.current=null;}
+    pendingSave.current=true;
+    const run=(attempt)=>{
       // 用 ref 讀最新值，避免閉包舊值覆蓋出貨記錄
       const allocToSave=newAlloc!==undefined?newAlloc:savedAllocRef.current;
       setSaving(true);
-      gSave(token,gistId,newItems,allocToSave,iopenCustomRef.current,iopenDataRef.current).then(()=>{setSaving(false);setLastSaved(new Date());}).catch(e=>{setSaving(false);setGlobalErr("自動儲存失敗："+e.message);});
-    },1500);
+      gSave(token,gistId,newItems,allocToSave,iopenCustomRef.current,iopenDataRef.current).then(()=>{pendingSave.current=false;setSaving(false);setLastSaved(new Date());setGlobalErr("");}).catch(e=>{
+        setSaving(false);
+        // 失敗（常見：GitHub 速率限制）→ 保留資料，每 90 秒自動重試，不用重新整理（重新整理會丟失未存的修改）
+        setGlobalErr("自動儲存失敗："+e.message+"\n資料還在這個畫面上，請不要重新整理或關閉；將在 90 秒後自動重試（第 "+(attempt+1)+" 次）。");
+        retryTimer.current=setTimeout(()=>run(attempt+1),90000);
+      });
+    };
+    saveTimer.current=setTimeout(()=>run(0),1500);
   },[token,gistId]);
+  useEffect(()=>{const h=(e)=>{if(pendingSave.current){e.preventDefault();e.returnValue="";}};window.addEventListener("beforeunload",h);return()=>window.removeEventListener("beforeunload",h);},[]);
 
   const [countMode,setCountMode]=useState(false);
   function applyCount(ups){setItems(prev=>{const next=prev.map(it=>{const u=ups.find(x=>x.id===it.id);return u?{...it,...u.patch}:it;});scheduleSave(next);return next;});}
@@ -1899,7 +1909,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-C</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-D</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
