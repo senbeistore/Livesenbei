@@ -1949,6 +1949,24 @@ function App(){
     stockByGroup[gk].sizes.push({size:it.size||it.color||"單一",qty:it.stockQty,ord:getSortSize(it)});stockByGroup[gk].total+=it.stockQty;
   });
   Object.values(stockByGroup).forEach(g=>g.sizes.sort((a,b)=>a.ord-b.ord));
+  // 另一分頁（直播／iOPEN）的現貨：商品名正規化後相同或互相包含、且顏色/款式相同才視為同款
+  const _normP=(p)=>String(p||"").replace(/^(現貨|預購)\s*[｜|]\s*/,"").replace(/[（(][^）)]*[）)]/g,"").replace(/兒童|上衣|\s/g,"");
+  const _sfx=(it)=>it.size?[it.style,it.color].filter(Boolean).join("·"):getBaseStyle(it.style||it.color||"");
+  const otherSrc=srcTab==="live"?"iopen":"live";
+  const otherStock=[];
+  items.filter(it=>itemSource(it)===otherSrc&&(it.stockQty||0)>0).forEach(it=>{
+    const np=_normP(it.product),sf=_sfx(it);
+    let g=otherStock.find(x=>x.np===np&&x.sf===sf);
+    if(!g){g={np,sf,product:it.product,sizes:[],total:0};otherStock.push(g);}
+    g.sizes.push({size:it.size||it.color||"單一",qty:it.stockQty,ord:getSortSize(it)});g.total+=it.stockQty;
+  });
+  otherStock.forEach(g=>g.sizes.sort((a,b)=>a.ord-b.ord));
+  const crossStockText=(it)=>{
+    const np=_normP(it.product),sf=_sfx(it);
+    const hit=otherStock.filter(g=>g.sf===sf&&np.length>=3&&g.np.length>=3&&(g.np===np||g.np.includes(np)||np.includes(g.np)));
+    return hit.map(g=>g.sizes.map(z=>z.size+"×"+z.qty).join("、")).join("；");
+  };
+  const otherLabel=otherSrc==="live"?"直播":"iOPEN";
   const stockSizeText=(gk)=>{const g=stockByGroup[gk];return g?g.sizes.map(z=>z.size+"×"+z.qty).join("、"):"";};
   const displayed=items.filter(it=>itemSource(it)===srcTab).filter(it=>{if(filter==="unordered")return sortPri(it)===1;if(filter==="ordered")return!it.allArrived&&(it.arrivedQty||0)===0&&!!it.firstOrderDate;if(filter==="arrived")return it.allArrived||(it.arrivedQty||0)>0;if(filter==="stock")return sortPri(it)===5;return true;}).filter(it=>!search.trim()||it.product.includes(search.trim())).slice().sort((a,b)=>{
   const pd=sortPri(a)-sortPri(b);if(pd!==0)return pd;
@@ -1966,7 +1984,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-I</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-J</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2138,13 +2156,13 @@ function App(){
             <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜尋商品名稱" style={{width:"100%",border:`1px solid ${search?C.info:C.line}`,borderRadius:10,padding:"9px 36px 9px 34px",fontSize:14,background:C.surface,color:C.ink,boxSizing:"border-box"}}/>
             {search&&<button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:C.inkMuted,fontSize:18,background:"none",border:"none",cursor:"pointer"}}>×</button>}
           </div>
-          {Object.keys(stockByGroup).length>0&&(
+          {(Object.keys(stockByGroup).length>0||otherStock.length>0)&&(
             <div style={{background:"#F0FFF4",border:"1px solid #059669",borderRadius:10,padding:"8px 12px",marginBottom:10}}>
               <div onClick={()=>setShowStockSum(!showStockSum)} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
                 <span style={{fontSize:13,fontWeight:700,color:"#059669"}}>📦 現貨總覽（{Object.keys(stockByGroup).length} 款，共 {Object.values(stockByGroup).reduce((a,g)=>a+g.total,0)} 件）</span>
                 <span style={{marginLeft:"auto",fontSize:12,color:C.inkMuted}}>{showStockSum?"收合 ▴":"展開 ▾"}</span>
               </div>
-              {showStockSum&&<div style={{marginTop:6}}>{Object.entries(stockByGroup).sort((a,b)=>a[1].label.localeCompare(b[1].label,"zh-Hant")).map(([gk,g])=>(<div key={gk} style={{display:"flex",gap:8,flexWrap:"wrap",padding:"4px 0",borderTop:`1px solid ${C.line}`,fontSize:12}}><span style={{fontWeight:700,color:C.ink}}>{g.label}</span><span style={{color:"#059669"}}>{g.sizes.map(z=>z.size+"×"+z.qty).join("、")}</span></div>))}</div>}
+              {showStockSum&&<div style={{marginTop:6}}>{otherStock.length>0&&<div style={{fontSize:11,color:C.inkMuted,padding:"4px 0"}}>{otherLabel}分頁現貨（{otherStock.length} 款）</div>}{otherStock.map((g,i)=>(<div key={"o"+i} style={{display:"flex",gap:8,flexWrap:"wrap",padding:"4px 0",borderTop:`1px solid ${C.line}`,fontSize:12}}><span style={{fontWeight:700,color:C.ink}}>{(g.sf?g.sf+" ":"")+g.product}</span><span style={{color:"#059669"}}>{g.sizes.map(z=>z.size+"×"+z.qty).join("、")}</span></div>))}{Object.keys(stockByGroup).length>0&&<div style={{fontSize:11,color:C.inkMuted,padding:"4px 0"}}>本分頁現貨</div>}{Object.entries(stockByGroup).sort((a,b)=>a[1].label.localeCompare(b[1].label,"zh-Hant")).map(([gk,g])=>(<div key={gk} style={{display:"flex",gap:8,flexWrap:"wrap",padding:"4px 0",borderTop:`1px solid ${C.line}`,fontSize:12}}><span style={{fontWeight:700,color:C.ink}}>{g.label}</span><span style={{color:"#059669"}}>{g.sizes.map(z=>z.size+"×"+z.qty).join("、")}</span></div>))}</div>}
             </div>
           )}
           {displayed.length>0&&(
@@ -2171,6 +2189,7 @@ function App(){
     <span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>共{groupTotal}件</span>
     {getGroupLabel(it)!==it.product&&<span style={{fontSize:10,color:C.inkMuted,marginLeft:6}}>{it.product}</span>}
     {stockByGroup[groupKey]&&<div style={{fontSize:12,color:"#059669",fontWeight:600,marginTop:2}}>現貨：{stockSizeText(groupKey)}</div>}
+    {(()=>{const t=crossStockText(it);return t?<div style={{fontSize:12,color:"#059669",fontWeight:600,marginTop:2}}>{otherLabel}分頁現貨：{t}</div>:null;})()}
   </div>;
 })()}<ItemCard it={it} sel={batchSel.has(it.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(it.id)?n.delete(it.id):n.add(it.id);return n;})} onUpdate={(field,value)=>updateField(it.id,field,value)}/></React.Fragment>);}))
           }
