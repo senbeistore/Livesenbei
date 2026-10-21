@@ -137,7 +137,7 @@ function getGroupLabel(it){
   return [it.style,it.color].filter(Boolean).join(" ")||it.product;
 }
 function getSortSize(it){return sizeOrder(it.size||it.color);}
-function sortPri(it){if((it.qty||0)>0&&netNeed(it)===0&&(it.arrivedQty||0)===0&&!it.firstOrderDate&&!it.allOrdered)return 5;if(it.allArrived)return 4;if(it.allOrdered)return 3;if(it.firstOrderDate)return 2;return 1;}
+function sortPri(it){if((it.qty||0)>0&&netNeed(it)===0&&(it.arrivedQty||0)===0&&!it.firstOrderDate&&!it.allOrdered)return 5;if(it.allArrived)return 4;if(isOrderedMarked(it)&&toOrderQty(it)>0&&(it.arrivedQty||0)===0)return 1;if(it.allOrdered)return 3;if(it.firstOrderDate)return 2;return 1;}
 const GROUP_LABEL={1:"📋 未開始訂貨",2:"🚚 訂貨中",3:"📦 全數訂完，待到貨",4:"✅ 已到貨",5:"🟢 庫存充足，不用叫貨"};
 function makeOrderKey(customerKey,items){return customerKey+"||"+items.map(it=>itemKey(it)+"x"+it.qty).sort().join("|");}
 
@@ -611,6 +611,22 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
     if(ex>0&&!window.confirm(`「${dispName(it)}」訂購數比淨需求多 ${ex} 件（需求 ${it.qty}、現貨 ${sq}）。\n確定要多叫嗎？`))return;
     onUpdate("firstOrderDate",it.firstOrderDate||todayStr());onUpdate("allOrdered",true);
   }
+  // 分批叫貨：記錄每一批的日期與件數（例如前天叫 2 件、今天再叫 1 件）
+  function addBatch(){
+    const need=needTotal(it);const done=isOrderedMarked(it)?effOrderedQty(it):0;const left=Math.max(0,need-done);
+    const q=window.prompt(`「${dispName(it)}」這批叫幾件？\n（需求 ${it.qty}、現貨 ${sq}，已叫 ${done}，還差 ${left}）`,String(left||1));
+    if(q===null)return;const n=parseInt(q,10);if(!n||n<1){alert("件數要是 1 以上的數字");return;}
+    const dt=window.prompt("這批的叫貨日期（YYYY-MM-DD）：",todayStr());
+    if(dt===null)return;if(!/^\d{4}-\d{2}-\d{2}$/.test(dt.trim())){alert("日期格式要像 2026-10-19");return;}
+    let batches=[...(it.orderBatches||[])];
+    if(!batches.length&&done>0)batches.push({date:it.firstOrderDate||todayStr(),qty:done}); // 之前已標記叫貨、但沒分批的，當作第一批
+    batches.push({date:dt.trim(),qty:n});
+    const total=batches.reduce((a,b)=>a+b.qty,0);
+    if(total>need&&!window.confirm(`累計叫 ${total} 件，比需要的 ${need} 件多 ${total-need} 件。確定嗎？`))return;
+    const dates=batches.map(b=>b.date).sort();
+    onUpdate("orderBatches",batches);onUpdate("orderedQty",total);onUpdate("orderedEdited",true);
+    onUpdate("firstOrderDate",dates[0]);onUpdate("secondOrderDate",dates[1]||"");onUpdate("allOrdered",total>=need);
+  }
   function unmarkOrdered(){if(!window.confirm("取消「已叫貨」？"))return;onUpdate("allOrdered",false);onUpdate("firstOrderDate","");}
   function quickArrive(){
     const now=new Date().toISOString();
@@ -641,10 +657,12 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
         <span style={{color:C.inkMuted,fontSize:12,marginLeft:4}}>已到貨</span><input type="number" inputMode="numeric" min="0" placeholder="0" value={arrivedQty||""} onChange={e=>handleArrivedQty(e.target.value)} style={{...numIn,width:50}}/><span style={{color:C.stamp,fontSize:12,fontWeight:600,marginLeft:2}}>叫貨 {eff}</span>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10,paddingLeft:32}}>
+        {tq>0&&<button onClick={addBatch} style={{background:C.surface,color:C.stamp,border:`1px solid ${C.stamp}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>＋分批叫貨</button>}
         {!marked&&tq>0&&<button onClick={markOrdered} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer"}}>已叫貨</button>}
         {eff>0&&arrivedQty<eff&&<button onClick={quickArrive} style={{background:"#f0faf4",color:C.success,border:`1px solid ${C.success}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>全數到貨</button>}
         <button onClick={()=>setOpen(!open)} style={{marginLeft:"auto",background:"none",border:"none",color:C.inkMuted,fontSize:12,cursor:"pointer"}}>{open?"收合 ▴":"更多 ▾"}</button>
       </div>
+      {(it.orderBatches||[]).length>0&&<div style={{fontSize:11,color:C.stamp,marginTop:6,paddingLeft:32}}>叫貨批次：{(it.orderBatches||[]).map((b,i)=>(<span key={i} style={{marginRight:10}}>{b.date.slice(5).replace("-","/")} ×{b.qty}</span>))}累計 {(it.orderBatches||[]).reduce((a,b)=>a+b.qty,0)}</div>}
       {(sq>0||it.firstStockTs)&&<div style={{fontSize:11,color:"#059669",marginTop:6,paddingLeft:32}}>現貨 {it.qty}−{sq}＝該叫 {nn}{it.firstStockTs?`　｜首筆登記 ${fmtTs(it.firstStockTs)}`:""}{(it.stockLog||[]).length>1?`　｜最近 ${fmtTs((it.stockLog||[])[(it.stockLog||[]).length-1].ts)} ${(it.stockLog||[])[(it.stockLog||[]).length-1].d>0?"+":""}${(it.stockLog||[])[(it.stockLog||[]).length-1].d}`:""}</div>}
       {sh>0&&<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:8,paddingLeft:32}}><span style={{color:"#B91C1C",fontSize:12,fontWeight:700}}>短少處理</span><select value={it.shortStatus||""} onChange={e=>onUpdate("shortStatus",e.target.value)} style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"3px 6px",fontSize:12,background:C.surface,color:C.ink}}>{SHORT_STATUS.map(([v,l])=>(<option key={v} value={v}>{l}</option>))}</select></div>}
       {ov2>0&&<div style={{fontSize:12,color:C.orange,fontWeight:600,marginTop:6,paddingLeft:32}}>多收 {ov2} 件（請確認是否廠商多給）</div>}
@@ -1909,7 +1927,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-D</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-E</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
