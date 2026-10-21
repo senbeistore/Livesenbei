@@ -447,8 +447,16 @@ function parseIopenXLS(aoa){
   }catch(e){console.error('parseIopenXLS:',e);return{byIg:{},allCustom:[],unmatched:[]};}
 }
 
+// 記錄 GitHub 額度與本頁請求次數，方便查出額度為什麼被用完
+function noteRL(r,kind){
+  window.__apiCount=(window.__apiCount||0)+1;window.__apiLog=(window.__apiLog||[]).concat([kind+" "+new Date().toLocaleTimeString("zh-TW",{hour12:false})]).slice(-30);
+  try{const rem=r.headers.get("x-ratelimit-remaining"),rs=r.headers.get("x-ratelimit-reset"),lim=r.headers.get("x-ratelimit-limit");
+    if(rem!==null)window.__rl={remaining:+rem,limit:+lim,reset:rs?new Date(+rs*1000):null};}catch(e){}
+}
+function rlText(){const x=window.__rl;if(!x)return"";return `（GitHub 額度剩 ${x.remaining}/${x.limit}${x.reset?"，預計 "+x.reset.toLocaleTimeString("zh-TW",{hour12:false,hour:"2-digit",minute:"2-digit"})+" 重置":""}；本頁已發出 ${window.__apiCount||0} 次請求）`;}
 async function gFetch(token,gistId){
   const r=await fetch(`https://api.github.com/gists/${gistId}`,{headers:{Authorization:`Bearer ${token}`,Accept:"application/vnd.github.v3+json"}});
+  noteRL(r,"GET");
   if(!r.ok)throw new Error(`無法讀取 (HTTP ${r.status})`);
   const d=await r.json();const content=d.files[GIST_FILE]?.content;
   try{const p=JSON.parse(content||"{}");window.__stRev=p.rev||"";return{rev:p.rev||"",items:(p.items||[]).filter(it=>!(isLiveMarkerProd(it.product)&&!(it.arrivedQty>0))).map(migrateItem),savedAlloc:p.savedAlloc||null,iopenCustom:p.iopenCustom||[],iopenData:p.iopenData||{}};}catch{return{items:[],savedAlloc:null,iopenCustom:[],iopenData:{}};}
@@ -456,7 +464,8 @@ async function gFetch(token,gistId){
 async function gSave(token,gistId,items,savedAlloc,iopenCustom,iopenData){
   const rev=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   const r=await fetch(`https://api.github.com/gists/${gistId}`,{method:"PATCH",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify({rev,items,savedAlloc,iopenCustom:iopenCustom||[],iopenData:iopenData||{}},null,2)}}})});
-  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(`儲存失敗 (HTTP ${r.status})${e.message?"："+e.message:""}`);}
+  noteRL(r,"PATCH");
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(`儲存失敗 (HTTP ${r.status})${e.message?"："+String(e.message).split(". If you reach")[0]:""}${rlText()}`);}
   window.__stRev=rev;
 }
 async function gCreate(token){
@@ -1957,7 +1966,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-H</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-I</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
