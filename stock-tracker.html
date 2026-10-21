@@ -1988,6 +1988,19 @@ function App(){
   const cd=gka.localeCompare(gkb);if(cd!==0)return cd;
   return getSortSize(a)-getSortSize(b);
 });
+  // 直播分頁：同商品的 iOPEN 品項（卡片不混用）接在直播品項下方，並以框格標示
+  const ioBlockAt={};const ioQtyByGroup={};
+  if(srcTab==="live"){
+    const ioAll=items.filter(it=>itemSource(it)==="iopen");const seenG={};
+    displayed.forEach((it,i)=>{
+      const gk=getGroupKey(it);if(seenG[gk])return;seenG[gk]=true;
+      const np=_normP(it.product),sf=_sfx(it);if(np.length<3)return;
+      const ms=ioAll.filter(o=>{const on=_normP(o.product);return on.length>=3&&(on===np||on.includes(np)||np.includes(on))&&_sfx(o)===sf;}).sort((a,b)=>getSortSize(a)-getSortSize(b));
+      if(!ms.length)return;
+      let j=i;while(displayed[j+1]&&getGroupKey(displayed[j+1])===gk)j++;
+      ioBlockAt[j]=ms;ioQtyByGroup[gk]=ms.reduce((a,o)=>a+(o.qty||0),0);
+    });
+  }
   const arrivedCount=items.filter(it=>it.allArrived).length;
   const late3Count=items.filter(isLateOrder).length;
   const late14Count=items.filter(isLateArrival).length;
@@ -1998,7 +2011,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-K</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-L</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2200,12 +2213,15 @@ function App(){
   const groupTotal=displayed.filter(x=>getGroupKey(x)===groupKey).reduce((s,x)=>s+x.qty,0);
   return <div style={{background:C.stripe,borderRadius:10,padding:"6px 12px",marginBottom:4,marginTop:showStatus?0:8}}>
     <span style={{fontSize:14,fontWeight:700,color:C.ink}}>{getGroupLabel(it)}</span>
-    <span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>共{groupTotal}件</span>
+    <span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>共{groupTotal}件</span>{ioQtyByGroup[groupKey]>0&&<span style={{fontSize:12,color:"#7C3AED",marginLeft:6,fontWeight:600}}>＋iOPEN {ioQtyByGroup[groupKey]}件＝{groupTotal+ioQtyByGroup[groupKey]}</span>}
     {getGroupLabel(it)!==it.product&&<span style={{fontSize:10,color:C.inkMuted,marginLeft:6}}>{it.product}</span>}
     {stockByGroup[groupKey]&&<div style={{fontSize:12,color:"#059669",fontWeight:600,marginTop:2}}>現貨：{stockSizeText(groupKey)}</div>}
     {(()=>{const t=crossStockText(it);return t?<div style={{fontSize:12,color:"#059669",fontWeight:600,marginTop:2}}>{otherLabel}分頁現貨：{t}</div>:null;})()}
   </div>;
-})()}<ItemCard it={it} xinfo={crossInfo(it)} sel={batchSel.has(it.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(it.id)?n.delete(it.id):n.add(it.id);return n;})} onUpdate={(field,value)=>updateField(it.id,field,value)}/></React.Fragment>);}))
+})()}<ItemCard it={it} xinfo={srcTab==="live"?null:crossInfo(it)} sel={batchSel.has(it.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(it.id)?n.delete(it.id):n.add(it.id);return n;})} onUpdate={(field,value)=>updateField(it.id,field,value)}/>{ioBlockAt[idx]&&(<div style={{margin:"4px 0 12px 12px",border:"2px dashed #7C3AED",borderRadius:12,padding:"6px 8px 2px",background:"#FAF5FF"}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#7C3AED",marginBottom:6}}>🟣 iOPEN Mall 同商品（{ioBlockAt[idx].length} 項，需求共 {ioBlockAt[idx].reduce((a,o)=>a+(o.qty||0),0)} 件）</div>
+              {ioBlockAt[idx].map(o=>(<ItemCard key={o.id} it={o} xinfo={null} sel={batchSel.has(o.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(o.id)?n.delete(o.id):n.add(o.id);return n;})} onUpdate={(field,value)=>updateField(o.id,field,value)}/>))}
+            </div>)}</React.Fragment>);}))
           }
         </div>
       )}
