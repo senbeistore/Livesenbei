@@ -594,6 +594,16 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
   else if(marked)chip={bg:"#E8F0F7",col:C.info,txt:`已叫貨，待到 ${Math.max(0,eff-arrivedQty)} 件`};
   else chip={bg:"#D1FAE5",col:"#059669",txt:"庫存充足，不用叫"};
   const [open,setOpen]=useState(false);
+  // 現貨登記：記錄每次異動時間；2 分鐘內連續輸入合併成同一筆，避免逐字產生紀錄
+  function setStock(n){
+    const prev=it.stockQty||0;if(n===prev)return;
+    const now=new Date().toISOString();const slog=[...(it.stockLog||[])];const last=slog[slog.length-1];
+    if(last&&Date.now()-new Date(last.ts).getTime()<120000){slog[slog.length-1]={...last,d:last.d+(n-prev),total:n};}
+    else slog.push({ts:now,d:n-prev,total:n});
+    onUpdate("stockQty",n);onUpdate("stockLog",slog.filter(l=>l.d!==0||l.total>0));
+    if(!it.firstStockTs&&n>0)onUpdate("firstStockTs",now);
+    if(!it.orderedEdited)onUpdate("orderedQty",Math.max(0,(it.qty||0)-n));
+  }
   function markOrdered(){
     if(!it.orderedEdited)onUpdate("orderedQty",netNeed(it));
     const ex=excessOrderInput(it);
@@ -626,14 +636,15 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10,paddingLeft:32}}>
         <span style={{color:C.inkMuted,fontSize:12}}>需求</span><span style={{background:C.stripe,color:C.ink,borderRadius:20,padding:"2px 10px",fontSize:13,fontWeight:700}}>{it.qty}</span>
-        <span style={{color:"#059669",fontSize:12,marginLeft:4}}>現貨</span><input type="number" min="0" value={sq} onChange={e=>{const n=Math.max(0,parseInt(e.target.value,10)||0);onUpdate("stockQty",n);if(!it.orderedEdited)onUpdate("orderedQty",Math.max(0,(it.qty||0)-n));}} style={{...numIn,width:46,border:"1px solid #059669",background:"#F0FFF4",color:"#059669",fontWeight:600}}/>
-        <span style={{color:C.inkMuted,fontSize:12,marginLeft:4}}>已到貨</span><input type="number" min="0" value={arrivedQty} onChange={e=>handleArrivedQty(e.target.value)} style={{...numIn,width:50}}/><span style={{color:C.inkMuted,fontSize:12}}>/ {eff} 件</span>
+        <span style={{color:"#059669",fontSize:12,marginLeft:4}}>現貨</span><input type="number" min="0" value={sq} onChange={e=>{const n=Math.max(0,parseInt(e.target.value,10)||0);setStock(n);}} style={{...numIn,width:46,border:"1px solid #059669",background:"#F0FFF4",color:"#059669",fontWeight:600}}/>
+        <span style={{color:C.inkMuted,fontSize:12,marginLeft:4}}>已到貨</span><input type="number" min="0" value={arrivedQty} onChange={e=>handleArrivedQty(e.target.value)} style={{...numIn,width:50}}/><span style={{color:C.stamp,fontSize:12,fontWeight:600,marginLeft:2}}>叫貨 {eff}</span>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:10,paddingLeft:32}}>
         {!marked&&tq>0&&<button onClick={markOrdered} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer"}}>已叫貨</button>}
         {eff>0&&arrivedQty<eff&&<button onClick={quickArrive} style={{background:"#f0faf4",color:C.success,border:`1px solid ${C.success}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>全數到貨</button>}
         <button onClick={()=>setOpen(!open)} style={{marginLeft:"auto",background:"none",border:"none",color:C.inkMuted,fontSize:12,cursor:"pointer"}}>{open?"收合 ▴":"更多 ▾"}</button>
       </div>
+      {(sq>0||it.firstStockTs)&&<div style={{fontSize:11,color:"#059669",marginTop:6,paddingLeft:32}}>現貨 {it.qty}−{sq}＝該叫 {nn}{it.firstStockTs?`　｜首筆登記 ${fmtTs(it.firstStockTs)}`:""}{(it.stockLog||[]).length>1?`　｜最近 ${fmtTs((it.stockLog||[])[(it.stockLog||[]).length-1].ts)} ${(it.stockLog||[])[(it.stockLog||[]).length-1].d>0?"+":""}${(it.stockLog||[])[(it.stockLog||[]).length-1].d}`:""}</div>}
       {sh>0&&<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:8,paddingLeft:32}}><span style={{color:"#B91C1C",fontSize:12,fontWeight:700}}>短少處理</span><select value={it.shortStatus||""} onChange={e=>onUpdate("shortStatus",e.target.value)} style={{border:`1px solid ${C.line}`,borderRadius:8,padding:"3px 6px",fontSize:12,background:C.surface,color:C.ink}}>{SHORT_STATUS.map(([v,l])=>(<option key={v} value={v}>{l}</option>))}</select></div>}
       {ov2>0&&<div style={{fontSize:12,color:C.orange,fontWeight:600,marginTop:6,paddingLeft:32}}>多收 {ov2} 件（請確認是否廠商多給）</div>}
       {shippedQty>0&&<div style={{fontSize:11,color:fullyShipped?C.success:C.orange,marginTop:6,paddingLeft:32}}>📦 已出貨 {shippedQty} 件{fullyShipped?" (全部出完)":` / 剩餘可配 ${arrivedQty-shippedQty} 件`}</div>}
@@ -663,6 +674,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate}){
           </div>
         </div>
         {marked&&<button onClick={unmarkOrdered} style={{fontSize:12,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer",marginBottom:8}}>取消「已叫貨」</button>}
+        {(it.stockLog||[]).length>0&&<div style={{fontSize:11,color:"#059669"}}>現貨紀錄：{(it.stockLog||[]).slice(-6).map((l,i)=>(<span key={i} style={{marginRight:8}}>{fmtTs(l.ts)} {l.d>0?"+":""}{l.d}（累計{l.total}）</span>))}</div>}
         {log.length>0&&<div style={{fontSize:11,color:C.inkMuted}}>到貨紀錄：{log.slice(-6).map((l,i)=>(<span key={i} style={{marginRight:8}}>{fmtTs(l.ts)} {l.d>0?"+":""}{l.d}（累計{l.total}）</span>))}</div>}
       </div>)}
     </div>
@@ -1886,7 +1898,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1019-M</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-A</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
