@@ -55,7 +55,7 @@ function isShortOpen(it){return shortQty(it)>0&&it.shortStatus!=="done";}
 const SHORT_STATUS=[["","未反映"],["reported","已向廠商反映"],["reshipping","補寄中"],["done","已補齊/已處理"]];
 function isOrderedMarked(it){return !!(it.firstOrderDate||it.allOrdered);}
 function effOrderedQty(it){if(it.orderedEdited)return it.orderedQty!=null?it.orderedQty:netNeed(it);if(isOrderedMarked(it))return it.orderedQty!=null?it.orderedQty:netNeed(it);return netNeed(it);}
-function toOrderQty(it){return Math.max(0,needTotal(it)-(isOrderedMarked(it)?effOrderedQty(it):0));}
+function toOrderQty(it){if(it.soldOut)return 0;return Math.max(0,needTotal(it)-(isOrderedMarked(it)?effOrderedQty(it):0));}
 function overOrderQty(it){return isOrderedMarked(it)?Math.max(0,effOrderedQty(it)-needTotal(it)):0;}
 function excessOrderInput(it){return Math.max(0,effOrderedQty(it)-needTotal(it));}
 function needQty(it){return it.orderedQty!=null?it.orderedQty:(it.qty||0);}
@@ -137,8 +137,8 @@ function getGroupLabel(it){
   return [it.style,it.color].filter(Boolean).join(" ")||it.product;
 }
 function getSortSize(it){return sizeOrder(it.size||it.color);}
-function sortPri(it){if((it.qty||0)>0&&netNeed(it)===0&&(it.arrivedQty||0)===0&&!it.firstOrderDate&&!it.allOrdered)return 5;if(it.allArrived)return 4;if(isOrderedMarked(it)&&toOrderQty(it)>0&&(it.arrivedQty||0)===0)return 1;if(it.allOrdered)return 3;if(it.firstOrderDate)return 2;return 1;}
-const GROUP_LABEL={1:"📋 未開始訂貨",2:"🚚 訂貨中",3:"📦 全數訂完，待到貨",4:"✅ 已到貨",5:"🟢 庫存充足，不用叫貨"};
+function sortPri(it){if(it.soldOut)return 6;if((it.qty||0)>0&&netNeed(it)===0&&(it.arrivedQty||0)===0&&!it.firstOrderDate&&!it.allOrdered)return 5;if(it.allArrived)return 4;if(isOrderedMarked(it)&&toOrderQty(it)>0&&(it.arrivedQty||0)===0)return 1;if(it.allOrdered)return 3;if(it.firstOrderDate)return 2;return 1;}
+const GROUP_LABEL={1:"📋 未開始訂貨",2:"🚚 訂貨中",3:"📦 全數訂完，待到貨",4:"✅ 已到貨",5:"🟢 庫存充足，不用叫貨",6:"🚫 斷貨（已處理，不叫貨）"};
 function makeOrderKey(customerKey,items){return customerKey+"||"+items.map(it=>itemKey(it)+"x"+it.qty).sort().join("|");}
 
 // ── CSV 解析 ──
@@ -556,7 +556,7 @@ function Setup({onDone}){
 }
 
 // ── 商品卡 ──
-function ItemCard({it,sel,onToggleSel,onUpdate,xinfo}){
+function ItemCard({it,sel,onToggleSel,onUpdate,xinfo,onChange}){
   const [d1,setD1]=useState(it.firstOrderDate||"");
   const [d2,setD2]=useState(it.secondOrderDate||"");
   // 同步外部 it 的變更（例如批次設定日期）
@@ -599,7 +599,8 @@ function ItemCard({it,sel,onToggleSel,onUpdate,xinfo}){
 
   const eff=effOrderedQty(it);const nn=netNeed(it);const tq=toOrderQty(it);const over=overOrderQty(it);const sh=shortQty(it);const marked=isOrderedMarked(it);const sq=it.stockQty||0;const ov2=overArrivedQty(it);const df=it.defectQty||0;const log=it.arrivalLog||[];
   let chip;
-  if(over>0)chip={bg:"#FEE2E2",col:"#B91C1C",txt:`已多叫 ${over} 件，請減少訂購數`};
+  if(it.soldOut)chip={bg:"#E5E7EB",col:"#374151",txt:"🚫 斷貨"};
+  else if(over>0)chip={bg:"#FEE2E2",col:"#B91C1C",txt:`已多叫 ${over} 件，請減少訂購數`};
   else if(tq>0)chip={bg:"#FFF3CD",col:"#B45309",txt:marked?`還差 ${tq} 件沒叫`:`該叫 ${tq} 件`};
   else if(sh>0)chip={bg:"#FEE2E2",col:"#B91C1C",txt:`短少 ${sh} 件`};
   else if(it.allArrived||(eff>0&&arrivedQty>=eff))chip={bg:"#D1FAE5",col:"#059669",txt:"已到齊"};
@@ -707,6 +708,10 @@ function ItemCard({it,sel,onToggleSel,onUpdate,xinfo}){
               {it.secondOrderDate&&<button onClick={()=>onUpdate("secondOrderDate","")} style={{width:26,height:34,borderRadius:6,border:`1px solid ${C.line}`,background:C.surface,color:C.inkMuted,fontSize:14,cursor:"pointer",flexShrink:0}}>×</button>}
             </div>
           </div>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+          {onChange&&<button onClick={onChange} style={{fontSize:12,color:"#B91C1C",border:"1px solid #B91C1C",background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}>🚫 斷貨／改色／取消客人訂單</button>}
+          {it.soldOut&&<button onClick={()=>onUpdate("soldOut",false)} style={{fontSize:12,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}>取消斷貨標記</button>}
         </div>
         {marked&&<button onClick={unmarkOrdered} style={{fontSize:12,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer",marginBottom:8}}>取消「已叫貨」</button>}
         {(it.stockLog||[]).length>0&&<div style={{fontSize:11,color:"#059669"}}>現貨紀錄：{(it.stockLog||[]).slice(-6).map((l,i)=>(<span key={i} style={{marginRight:8}}>{fmtTs(l.ts)} {l.d>0?"+":""}{l.d}（累計{l.total}）</span>))}</div>}
@@ -1766,6 +1771,71 @@ function CountView({items,onApply,onClose}){
   </div>);
 }
 
+// ── 斷貨／改色／取消：逐位客人處理，並同步修改本工具內的訂單資料 ──
+function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose}){
+  const fk=flatKey(item);
+  const rows=[];
+  if(parsed&&parsed.orders){
+    parsed.orders.forEach((o,oi)=>{o.items.forEach((ln,li)=>{
+      if(flatKey(ln)!==fk)return;
+      const ex=savedAlloc&&savedAlloc[makeOrderKey(o.customerKey,o.items)];
+      const shipped=!!(ex&&((ex.shipments&&ex.shipments.length>0)||ex.shippedAt));
+      const c=parsed.customers[o.customerKey]||{};
+      rows.push({oi,li,qty:ln.qty,price:ln.price||0,account:c.account||o.customerKey,name:c.name||"",shipped});
+    });});
+  }
+  const targets=items.filter(x=>x.id!==item.id&&x.product===item.product&&itemSource(x)===itemSource(item)&&!x.soldOut).sort((a,b)=>(a.color||"").localeCompare(b.color||"")||getSortSize(a)-getSortSize(b));
+  const[dec,setDec]=useState({});
+  const[soldOut,setSoldOut]=useState(true);
+  const[done,setDone]=useState(null);
+  const get=(r)=>dec[r.oi+"_"+r.li]||{act:"keep",n:r.qty,to:""};
+  const set=(r,patch)=>setDec(p=>({...p,[r.oi+"_"+r.li]:{...get(r),...patch}}));
+  const all=(act,to)=>{const m={};rows.filter(r=>!r.shipped).forEach(r=>{m[r.oi+"_"+r.li]={act,n:r.qty,to:to||""};});setDec(m);};
+  const btn={fontSize:12,borderRadius:6,padding:"4px 10px",cursor:"pointer",border:`1px solid ${C.line}`,background:C.surface,color:C.ink};
+  const todo=rows.filter(r=>!r.shipped&&get(r).act!=="keep"&&(get(r).act==="cancel"||get(r).to));
+  const apply=()=>{
+    const ds=todo.map(r=>({oi:r.oi,li:r.li,act:get(r).act,n:Math.max(1,Math.min(r.qty,parseInt(get(r).n,10)||r.qty)),to:get(r).to}));
+    setDone(onApply(item,ds,soldOut));
+  };
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:60,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"20px 10px"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:14,maxWidth:560,width:"100%",padding:"16px 16px 20px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{fontWeight:800,fontSize:16,color:C.ink}}>🚫 斷貨／改色／取消</div>
+          <button onClick={onClose} style={btn}>關閉</button>
+        </div>
+        <div style={{fontSize:13,color:C.ink,marginTop:6,fontWeight:700}}>{dispName(item)}　<span style={{fontWeight:400,color:C.inkMuted}}>需求 {item.qty} 件</span></div>
+        <div style={{fontSize:11,color:C.inkMuted,marginTop:4,lineHeight:1.6}}>這裡只會修改本工具內的訂單資料（配貨、出貨單會跟著更新）。iOPEN Mall／直播平台上的原始訂單不會被改，請依下方「異動紀錄」自行到平台修改或通知客人。</div>
+        {done?(<div style={{marginTop:12}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#059669",marginBottom:6}}>✓ 已套用 {done.length} 筆異動</div>
+          <textarea readOnly value={done.join("\n")} style={{width:"100%",height:140,fontSize:12,border:`1px solid ${C.line}`,borderRadius:8,padding:8,boxSizing:"border-box"}}/>
+          <div style={{display:"flex",gap:8,marginTop:8}}><button style={btn} onClick={()=>{try{navigator.clipboard.writeText(done.join("\n"));}catch(e){}}}>複製紀錄</button><button style={{...btn,background:C.stamp,color:"#fff",border:"none"}} onClick={onClose}>完成</button></div>
+        </div>):(<div>
+        {!parsed&&<div style={{marginTop:10,fontSize:12,color:C.warning}}>尚未上傳客訂XLS，沒有客人訂單可修改；只能標記斷貨。</div>}
+        {parsed&&rows.length===0&&<div style={{marginTop:10,fontSize:12,color:C.inkMuted}}>客訂XLS 內找不到訂這個品項的客人（iOPEN 品項沒有逐位客人資料）。</div>}
+        {rows.filter(r=>!r.shipped).length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}><button style={btn} onClick={()=>all("cancel")}>全部取消</button><button style={btn} onClick={()=>all("keep")}>全部不動</button></div>}
+        <div style={{marginTop:10}}>
+          {rows.map(r=>{const d=get(r);return(
+            <div key={r.oi+"_"+r.li} style={{borderTop:`1px solid ${C.line}`,padding:"8px 0",opacity:r.shipped?.55:1}}>
+              <div style={{fontSize:13,color:C.ink,fontWeight:600}}>{r.account}{r.name&&r.name!==r.account?`（${r.name}）`:""}　<span style={{fontWeight:400,color:C.inkMuted}}>×{r.qty}{r.price?`　$${r.price}`:""}</span>{r.shipped&&<span style={{color:"#B91C1C",fontSize:11,marginLeft:8}}>已出貨，不可修改</span>}</div>
+              {!r.shipped&&(<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
+                <select value={d.act} onChange={e=>set(r,{act:e.target.value})} style={{...btn,padding:"6px 6px"}}><option value="keep">不動</option><option value="cancel">取消這件</option><option value="swap">改成別款</option></select>
+                {d.act==="swap"&&<select value={d.to} onChange={e=>set(r,{to:e.target.value})} style={{...btn,padding:"6px 6px",maxWidth:200}}><option value="">選擇顏色／尺寸</option>{targets.map(t=><option key={t.id} value={t.id}>{[t.color,t.size,t.style].filter(Boolean).join(" · ")}（現貨{t.stockQty||0}）</option>)}</select>}
+                {d.act!=="keep"&&r.qty>1&&<span style={{fontSize:12,color:C.inkMuted}}>件數<input type="number" min="1" max={r.qty} value={d.n} onChange={e=>set(r,{n:e.target.value})} style={{width:44,marginLeft:4,border:`1px solid ${C.line}`,borderRadius:6,padding:"4px",textAlign:"center"}}/></span>}
+              </div>)}
+            </div>);})}
+        </div>
+        <label style={{display:"flex",alignItems:"center",gap:6,marginTop:12,fontSize:13,color:C.ink}}><input type="checkbox" checked={soldOut} onChange={e=>setSoldOut(e.target.checked)}/>標記這個品項斷貨（之後不再叫貨）</label>
+        <div style={{display:"flex",gap:8,marginTop:12}}>
+          <button onClick={apply} disabled={!todo.length&&!soldOut} style={{...btn,background:C.stamp,color:"#fff",border:"none",padding:"8px 16px",fontWeight:700,opacity:(!todo.length&&!soldOut)?.5:1}}>套用{todo.length?`（${todo.length} 筆客人異動）`:""}</button>
+          <button onClick={onClose} style={{...btn,padding:"8px 16px"}}>取消</button>
+        </div>
+        {(changes||[]).filter(c=>c.fk===fk).length>0&&<div style={{marginTop:14,fontSize:11,color:C.inkMuted,lineHeight:1.6}}><b>此品項過去的異動紀錄</b>{(changes||[]).filter(c=>c.fk===fk).slice(-10).map((c,i)=><div key={i}>{c.text}</div>)}</div>}
+        </div>)}
+      </div>
+    </div>);
+}
+
 function App(){
   const[token,setToken]=useState(()=>localStorage.getItem("st_token")||"");
   const[iopenCustom,setIopenCustom]=useState([]);
@@ -1781,7 +1851,7 @@ function App(){
   const[items,setItems]=useState([]);
   const[savedAlloc,setSavedAlloc]=useState(null);
   const savedAllocRef=useRef(null); // 用 ref 避免閉包舊值問題
-  const[filter,setFilter]=useState("unordered");const[search,setSearch]=useState("");const[srcTab,setSrcTab]=useState("live");const[collapsedPri,setCollapsedPri]=useState(()=>new Set([4]));const[showStockSum,setShowStockSum]=useState(false);
+  const[filter,setFilter]=useState("unordered");const[search,setSearch]=useState("");const[srcTab,setSrcTab]=useState("live");const[collapsedPri,setCollapsedPri]=useState(()=>new Set([4,6]));const[showStockSum,setShowStockSum]=useState(false);
   const[loading,setLoading]=useState(false);const[saving,setSaving]=useState(false);const[lastSaved,setLastSaved]=useState(null);const[globalErr,setGlobalErr]=useState("");
   const[showSettings,setShowSettings]=useState(false);
   const[batchSel,setBatchSel]=useState(new Set());const[batchDate1,setBatchDate1]=useState("");const[batchDate2,setBatchDate2]=useState("");
@@ -1836,6 +1906,55 @@ function App(){
 
   const [countMode,setCountMode]=useState(false);
   function applyCount(ups){setItems(prev=>{const next=prev.map(it=>{const u=ups.find(x=>x.id===it.id);return u?{...it,...u.patch}:it;});scheduleSave(next);return next;});}
+  const[chgItem,setChgItem]=useState(null);
+  function applyOrderChanges(item,decisions,soldOut){
+    const store=iopenDataRef.current||{};
+    const op=store.__orders__&&store.__orders__.parsed;
+    const logs=[];const delta={};const changesNew=[];
+    const nowTxt=new Date().toLocaleString("zh-TW",{hour12:false,timeZone:"Asia/Taipei"});
+    let newStore=store,newAlloc=savedAllocRef.current;
+    if(op&&decisions.length){
+      const parsed=JSON.parse(JSON.stringify(op));const cur=JSON.parse(JSON.stringify(savedAllocRef.current||{}));
+      const refs=decisions.map(d=>({d,o:parsed.orders[d.oi],ln:parsed.orders[d.oi].items[d.li],oldKey:null}));
+      const oldKeys=new Map();refs.forEach(r=>{if(!oldKeys.has(r.o))oldKeys.set(r.o,makeOrderKey(r.o.customerKey,r.o.items));});
+      refs.forEach(({d,o,ln})=>{
+        const n=Math.min(d.n,ln.qty);if(n<=0)return;
+        const c=parsed.customers[o.customerKey]||{};const who=(c.account||o.customerKey)+(c.name&&c.name!==c.account?"（"+c.name+"）":"");
+        const price=ln.price||0;
+        ln.qty-=n;delta[item.id]=(delta[item.id]||0)-n;
+        let text;
+        if(d.act==="cancel"){o.amount=Math.max(0,(o.amount||0)-n*price);if(c.totalAmount!=null)c.totalAmount=Math.max(0,c.totalAmount-n*price);text=nowTxt+"　"+who+"　"+dispName(item)+" ×"+n+" → 取消";}
+        else{
+          const t=items.find(x=>x.id===d.to);if(!t)return;
+          const ex=o.items.find(x=>flatKey(x)===flatKey(t)&&x!==ln);
+          if(ex)ex.qty+=n;else o.items.push({product:ln.product,color:t.color,size:t.size,style:t.style,qty:n,price});
+          delta[t.id]=(delta[t.id]||0)+n;
+          text=nowTxt+"　"+who+"　"+dispName(item)+" ×"+n+" → 改成 "+dispName(t);
+        }
+        logs.push(text);changesNew.push({ts:new Date().toISOString(),fk:flatKey(item),text});
+      });
+      // 清掉件數為 0 的行；整張訂單都空了就移除
+      parsed.orders.forEach(o=>{o.items=o.items.filter(x=>x.qty>0);});
+      const dropped=parsed.orders.filter(o=>o.items.length===0);
+      parsed.orders=parsed.orders.filter(o=>o.items.length>0);
+      // 訂單鍵改變：保留該單的讓貨（skipItems）等狀態，已移除的訂單刪除
+      oldKeys.forEach((ok,o)=>{const nk=dropped.includes(o)?null:makeOrderKey(o.customerKey,o.items);if(nk!==ok&&cur[ok]){if(nk&&!cur[nk])cur[nk]=cur[ok];delete cur[ok];}});
+      let recomputed=cur;try{recomputed=recalculateAlloc(cur,parsed,items.map(x=>delta[x.id]?{...x,qty:Math.max(0,(x.qty||0)+delta[x.id])}:x),"amount");}catch(e){}
+      newAlloc=recomputed;
+      newStore={...store,__orders__:{...store.__orders__,parsed,changes:[...((store.__orders__&&store.__orders__.changes)||[]),...changesNew].slice(-300)}};
+    }
+    iopenDataRef.current=newStore;setIopenData(newStore);savedAllocRef.current=newAlloc;setSavedAlloc(newAlloc);
+    setItems(prev=>{
+      const next=prev.map(x=>{
+        let y=x;
+        if(delta[x.id]){const q=Math.max(0,(x.qty||0)+delta[x.id]);y={...y,qty:q};if(!y.orderedEdited)y.orderedQty=Math.max(0,q-(y.stockQty||0));}
+        if(x.id===item.id&&soldOut)y={...y,soldOut:true};
+        return y;});
+      scheduleSave(next,newAlloc);return next;
+    });
+    if(soldOut)logs.push(nowTxt+"　"+dispName(item)+" 標記斷貨");
+    return logs.length?logs:["（沒有客人異動）"];
+  }
   function updateField(id,field,value){setItems(prev=>{const next=prev.map(it=>it.id===id?{...it,[field]:value}:it);scheduleSave(next);return next;});}
 
   function saveWorkspaces(ws,idx){localStorage.setItem("st_workspaces",JSON.stringify(ws));localStorage.setItem("st_active",String(idx));}
@@ -1984,7 +2103,7 @@ function App(){
     return{same:same.reduce((a,o)=>a+o.stockQty,0),others:others.map(o=>(o.size||o.color||"單一")+"×"+o.stockQty).join("、"),label:otherLabel,prod:hit[0].product};
   };
   const stockSizeText=(gk)=>{const g=stockByGroup[gk];return g?g.sizes.map(z=>z.size+"×"+z.qty).join("、"):"";};
-  const displayed=items.filter(it=>itemSource(it)===srcTab).filter(it=>{if(filter==="unordered")return sortPri(it)===1;if(filter==="ordered")return!it.allArrived&&(it.arrivedQty||0)===0&&!!it.firstOrderDate;if(filter==="arrived")return it.allArrived||(it.arrivedQty||0)>0;if(filter==="stock")return sortPri(it)===5;return true;}).filter(it=>!search.trim()||it.product.includes(search.trim())).slice().sort((a,b)=>{
+  const displayed=items.filter(it=>itemSource(it)===srcTab).filter(it=>{if(filter==="unordered")return sortPri(it)===1;if(filter==="ordered")return!it.allArrived&&(it.arrivedQty||0)===0&&!!it.firstOrderDate;if(filter==="arrived")return it.allArrived||(it.arrivedQty||0)>0;if(filter==="stock")return sortPri(it)===5;if(filter==="soldout")return sortPri(it)===6;return true;}).filter(it=>!search.trim()||it.product.includes(search.trim())).slice().sort((a,b)=>{
   const pd=sortPri(a)-sortPri(b);if(pd!==0)return pd;
   const gka=getGroupKey(a),gkb=getGroupKey(b);
   const cd=gka.localeCompare(gkb);if(cd!==0)return cd;
@@ -2013,7 +2132,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1021-O</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-A</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2184,7 +2303,7 @@ function App(){
             {late14Count>0&&<span style={{background:C.warningSoft,color:C.warning,border:`1px solid ${C.warning}`,borderRadius:20,padding:"2px 10px",fontSize:11}}>🚨 {late14Count} 筆逾14天未到</span>}
             {items.filter(isShortOpen).length>0&&<span style={{background:"#FEE2E2",color:"#B91C1C",border:"1px solid #B91C1C",borderRadius:20,padding:"2px 10px",fontSize:11}}>📦 {items.filter(isShortOpen).length} 筆短少未處理</span>}
             <div style={{display:"flex",gap:4,marginLeft:"auto"}}>
-              {[["unordered","未訂貨"],["ordered","已訂待到"],["arrived","已到貨"],["stock","庫存充足"]].map(([v,l])=>(<button key={v} onClick={()=>setFilter(v)} style={{background:filter===v?C.stamp:C.surface,color:filter===v?"#fff":C.inkMuted,border:`1px solid ${filter===v?C.stamp:C.line}`,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer"}}>{l}</button>))}
+              {[["unordered","未訂貨"],["ordered","已訂待到"],["arrived","已到貨"],["stock","庫存充足"],["soldout","斷貨"]].map(([v,l])=>(<button key={v} onClick={()=>setFilter(v)} style={{background:filter===v?C.stamp:C.surface,color:filter===v?"#fff":C.inkMuted,border:`1px solid ${filter===v?C.stamp:C.line}`,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer"}}>{l}</button>))}
             </div>
           </div>
           <div style={{position:"relative",marginBottom:10}}>
@@ -2227,14 +2346,15 @@ function App(){
     {stockByGroup[groupKey]&&<div style={{fontSize:12,color:"#059669",fontWeight:600,marginTop:2}}>現貨：{stockSizeText(groupKey)}</div>}
     {(()=>{const t=crossStockText(it);return t?<div style={{fontSize:12,color:"#059669",fontWeight:600,marginTop:2}}>{otherLabel}分頁現貨：{t}</div>:null;})()}
   </div>;
-})()}<ItemCard it={it} xinfo={srcTab==="live"?null:crossInfo(it)} sel={batchSel.has(it.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(it.id)?n.delete(it.id):n.add(it.id);return n;})} onUpdate={(field,value)=>updateField(it.id,field,value)}/>{ioBlockAt[idx]&&(<div style={{margin:"4px 0 12px 12px",border:"2px dashed #7C3AED",borderRadius:12,padding:"6px 8px 2px",background:"#FAF5FF"}}>
+})()}<ItemCard it={it} onChange={()=>setChgItem(it)} xinfo={srcTab==="live"?null:crossInfo(it)} sel={batchSel.has(it.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(it.id)?n.delete(it.id):n.add(it.id);return n;})} onUpdate={(field,value)=>updateField(it.id,field,value)}/>{ioBlockAt[idx]&&(<div style={{margin:"4px 0 12px 12px",border:"2px dashed #7C3AED",borderRadius:12,padding:"6px 8px 2px",background:"#FAF5FF"}}>
               <div style={{fontSize:12,fontWeight:700,color:"#7C3AED",marginBottom:6}}>🟣 iOPEN Mall 同商品（{ioBlockAt[idx].length} 項，需求共 {ioBlockAt[idx].reduce((a,o)=>a+(o.qty||0),0)} 件）</div>
-              {ioBlockAt[idx].map(o=>(<ItemCard key={o.id} it={o} xinfo={null} sel={batchSel.has(o.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(o.id)?n.delete(o.id):n.add(o.id);return n;})} onUpdate={(field,value)=>updateField(o.id,field,value)}/>))}
+              {ioBlockAt[idx].map(o=>(<ItemCard key={o.id} it={o} onChange={()=>setChgItem(o)} xinfo={null} sel={batchSel.has(o.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(o.id)?n.delete(o.id):n.add(o.id);return n;})} onUpdate={(field,value)=>updateField(o.id,field,value)}/>))}
             </div>)}</React.Fragment>);}))
           }
         </div>
       )}
 
+      {chgItem&&<ChangeModal item={items.find(x=>x.id===chgItem.id)||chgItem} items={items} parsed={(iopenData&&iopenData.__orders__&&iopenData.__orders__.parsed)||null} savedAlloc={savedAlloc} changes={(iopenData&&iopenData.__orders__&&iopenData.__orders__.changes)||[]} onApply={applyOrderChanges} onClose={()=>setChgItem(null)}/>}
       {batchSel.size>0&&!allocMode&&!countMode&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:C.ink,zIndex:50,padding:"14px 16px",boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
           <div style={{maxWidth:640,margin:"0 auto"}}>
