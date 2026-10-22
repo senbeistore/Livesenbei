@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-R</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-S</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -391,7 +391,27 @@ async function removeOrder(ref){
     await loadSrc();refresh();
   }catch(e){$("oldMsg").innerHTML='<span class="err">'+esc(e.message||e)+'</span>';}
 }
-function refresh(){renderMap();renderResult();renderOld();}
+function refresh(){renderMap();renderResult();renderOld();updMapBadge();}
+function updMapBadge(){
+  const h=$("cMap")&&$("cMap").querySelector("h2");if(!h||!LINES.length)return;
+  const titles=[...new Set(LINES.map(l=>l.title))];
+  let bad=titles.filter(t=>!MAP.prod[t]).length;
+  titles.forEach(t=>{if(MAP.prod[t]&&MAP.prod[t]!=="__skip__")[...new Set(LINES.filter(l=>l.title===t).map(l=>l.color))].forEach(c=>{if(!MAP.color[t+"|"+c])bad++;});});
+  let b=h.querySelector(".bdg");if(!b){b=document.createElement("span");b.className="bdg";b.style.cssText="font-size:12px;font-weight:600;margin-left:8px";h.appendChild(b);}
+  b.innerHTML=bad?'<span class="warn">（'+bad+' 項待設定）</span>':'<span class="ok">（全部已設定）</span>';
+}
+function makeCollapsible(id,open){
+  const card=$(id);if(!card)return;const h=card.querySelector("h2");if(!h)return;
+  const body=document.createElement("div");
+  [...card.children].forEach(c=>{if(c!==h)body.appendChild(c);});card.appendChild(body);
+  let st=open;try{const v=localStorage.getItem("imp1688_open_"+id);if(v!==null)st=v==="1";}catch(e){}
+  const arrow=document.createElement("span");arrow.style.cssText="margin-right:6px;color:#888";h.prepend(arrow);
+  h.style.cursor="pointer";
+  const set=o=>{body.style.display=o?"":"none";arrow.textContent=o?"▾":"▸";try{localStorage.setItem("imp1688_open_"+id,o?"1":"0");}catch(e){}};
+  set(st);h.onclick=()=>set(body.style.display==="none");
+}
+document.querySelector("main .card:nth-child(2)").id="cFile";
+makeCollapsible("cSrc",false);makeCollapsible("cFile",true);makeCollapsible("cMap",false);makeCollapsible("cOld",false);
 
 // ---- 寫回備貨追蹤 ----
 async function writeItems(mut){   // mut(freshItems)->新 items；寫入前重新讀取，避免蓋掉其他裝置的修改
