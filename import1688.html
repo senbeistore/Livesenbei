@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-F</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-G</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -278,22 +278,26 @@ function statusTag(r){
   return'<span class="tag t-more">多叫 '+r.diff+'</span>';
 }
 let LAST=null;
+var FILT='all';
 function renderResult(){
   if(!LINES.length||!SRC){$("cRes").style.display="none";$("cMiss").style.display="none";return;}
   const res=LAST=compute();
   $("cRes").style.display="";
   const ok=res.rows.filter(r=>r.diff===0).length,less=res.rows.filter(r=>r.diff<0).length,more=res.rows.filter(r=>r.diff>0).length;
-  $("sum").innerHTML='<span class="tag t-ok">吻合 '+ok+'</span><span class="tag t-less">少叫 '+less+'</span><span class="tag t-more">多叫 '+more+'</span><span class="tag t-miss">漏叫 '+res.forgot.length+'</span><span class="tag t-done">比對不到 '+res.miss.length+'</span>';
+  const tg=(f,c,n,x)=>'<span class="tag '+c+'" data-f="'+f+'" style="cursor:pointer;margin-right:4px;'+(FILT===f?'outline:2px solid #333;':'')+'">'+n+' '+x+'</span>';
+  $("sum").innerHTML=tg('all','t-done','全部',res.rows.length+res.forgot.length)+tg('ok','t-ok','吻合',ok)+tg('less','t-less','少叫',less)+tg('more','t-more','多叫',more)+tg('miss','t-miss','漏叫',res.forgot.length)+'<span class="tag t-done" data-f="unm" style="cursor:pointer">比對不到 '+res.miss.length+'</span>';
+  $("sum").querySelectorAll("[data-f]").forEach(e=>e.onclick=()=>{if(e.dataset.f==="unm"){const m=$("cMiss");if(m.style.display!=="none")m.scrollIntoView({behavior:"smooth"});return;}FILT=FILT===e.dataset.f&&FILT!=="all"?"all":e.dataset.f;renderResult();});
   const sortKey=r=>gProd(r.it)+"|"+colorLabel(r.it)+"|"+String(sizeNum(r.it.size)).padStart(4,"0");
-  const rows=res.rows.slice().sort((a,b)=>sortKey(a).localeCompare(sortKey(b),"zh-Hant"));
+  const rows=res.rows.filter(r=>FILT==='all'||(FILT==='ok'&&r.diff===0)||(FILT==='less'&&r.diff<0)||(FILT==='more'&&r.diff>0)).sort((a,b)=>sortKey(a).localeCompare(sortKey(b),"zh-Hant"));
   let h='<tr><th></th><th>品項</th><th>1688 清單</th><th>備貨追蹤該叫</th><th>狀態</th></tr>';
   rows.forEach((r,i)=>{
     const can=r.appliedHere<r.fileQty;
     h+='<tr><td>'+(can?'<input type="checkbox" class="ck" data-id="'+esc(r.key)+'" checked/>':"")+'</td><td>'+esc(colorLabel(r.it))+' · '+esc(r.it.size||"")+'<div class="mute">'+esc(gProd(r.it))+(r.items.length>1?' <span class="pill">直播＋iOPEN</span>':(srcOf(r.it)==='iopen'?' <span class="pill">iOPEN</span>':''))+'</div></td><td>'+r.fileQty+(Object.keys(r.srcs).length>1?'<div class="warn" style="font-size:12px">⚠ '+Object.keys(r.srcs).map(c=>esc(c)+'×'+r.srcs[c]).join('＋')+'</div>':'')+'<div class="mute">'+Object.keys(r.orders).map(n=>esc(n.slice(-6))+"×"+r.orders[n].qty).join(" ")+'</div></td><td>'+r.expect+'<div class="mute">需求 '+r.qtySum+(r.stockSum>0?' − 現貨 '+r.stockSum:'')+(r.defSum>0?' ＋瑕疵 '+r.defSum:'')+(r.others?' − 另已叫 '+r.others:'')+'</div></td><td>'+statusTag(r)+(r.diff<0?'<div style="margin-top:4px"><button class="mini" data-stock="'+esc(r.it.id)+'" data-n="'+(-r.diff)+'">差 '+(-r.diff)+' 件是現貨<br>→記入現貨</button></div>':"")+'</td></tr>';
   });
-  res.forgot.sort((a,b)=>(gProd(a.it)+colorLabel(a.it)).localeCompare(gProd(b.it)+colorLabel(b.it),"zh-Hant")).forEach(f=>{
+  (FILT==='all'||FILT==='miss'?res.forgot:[]).slice().sort((a,b)=>(gProd(a.it)+colorLabel(a.it)).localeCompare(gProd(b.it)+colorLabel(b.it),"zh-Hant")).forEach(f=>{
     h+='<tr><td></td><td>'+esc(colorLabel(f.it))+' · '+esc(f.it.size||"")+'<div class="mute">'+esc(gProd(f.it))+'</div></td><td>0</td><td>'+f.toOrder+'</td><td><span class="tag t-miss">漏叫 '+f.toOrder+'</span></td></tr>';
   });
+  if(rows.length===0&&!(FILT==='all'||FILT==='miss'))h+='<tr><td colspan="5" class="mute">沒有符合的品項</td></tr>';
   $("resTbl").innerHTML=h;
   const canAny=rows.some(r=>r.appliedHere<r.fileQty);
   $("applyBar").innerHTML='<button class="primary" id="btnApply"'+(canAny?"":" disabled")+'>把勾選的品項標記為「已叫貨」</button><span class="mute">叫貨日用 1688 的付款日（沒有則用建立日）。多叫、少叫的也可以標記，備貨追蹤會顯示差異。</span>';
