@@ -557,7 +557,7 @@ function Setup({onDone}){
 }
 
 // ── 商品卡 ──
-function ItemCard({it,sel,onToggleSel,onUpdate,xinfo,onChange,onHome}){
+function ItemCard({it,sel,onToggleSel,onUpdate,xinfo,onChange,onHome,onAddVariant}){
   const [d1,setD1]=useState(it.firstOrderDate||"");
   const [d2,setD2]=useState(it.secondOrderDate||"");
   // 同步外部 it 的變更（例如批次設定日期）
@@ -712,6 +712,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate,xinfo,onChange,onHome}){
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
           {onChange&&<button onClick={onChange} style={{fontSize:12,color:"#B91C1C",border:"1px solid #B91C1C",background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}>🚫 斷貨／改色／取消客人訂單</button>}
+          {onAddVariant&&<button onClick={onAddVariant} style={{fontSize:12,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}>＋新增花色／尺寸</button>}
           {onHome&&<button onClick={onHome} style={{fontSize:12,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}>📌 對應原商品{it.homeProduct?"（已對應）":""}</button>}
           {it.soldOut&&<button onClick={()=>onUpdate("soldOut",false)} style={{fontSize:12,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}>取消斷貨標記</button>}
         </div>
@@ -1800,6 +1801,37 @@ function ChangesModal({changes,onToggle,onAllDone,onClose}){
     </div></div>);
 }
 
+// ── 新增花色／尺寸：先把選項建好（需求 0），之後「改成別款」就能直接選 ──
+function AddVariantModal({item,items,onApply,onClose}){
+  const src=itemSource(item);const pool0=items.filter(x=>itemSource(x)===src);
+  const groups=[];pool0.forEach(x=>{const g=gProd(x);if(!groups.includes(g))groups.push(g);});groups.sort((a,b)=>(a===gProd(item)?-1:b===gProd(item)?1:a.localeCompare(b,"zh-Hant")));
+  const[prod,setProd]=useState(gProd(item));const[colorsTxt,setColorsTxt]=useState("");const[sizesTxt,setSizesTxt]=useState("");
+  const pool=pool0.filter(x=>gProd(x)===prod);
+  const useStyle=pool.filter(x=>!x.color&&x.style).length>pool.filter(x=>x.color).length;
+  const splitList=(t)=>String(t||"").split(/[,，、\n]+/).map(x=>x.trim()).filter(Boolean);
+  const sizes=(()=>{const out=[];String(sizesTxt||"").split(/[,，、\s]+/).filter(Boolean).forEach(tok=>{const m=tok.match(/^(\d+)\s*[-~～－]\s*(\d+)$/);if(m){const a=parseInt(m[1],10),b=parseInt(m[2],10);for(let v=a;v<=b;v+=10)out.push(String(v));}else out.push(tok);});return out.filter((v,i,a)=>a.indexOf(v)===i);})();
+  const exColors=[];pool.forEach(x=>{const k=(x.style||"")+"\u0001"+(x.color||"");if(!exColors.includes(k))exColors.push(k);});
+  const exSizes=[];pool.forEach(x=>{const z=x.size||"";if(!exSizes.includes(z))exSizes.push(z);});
+  const colorKeys=splitList(colorsTxt).length?splitList(colorsTxt).map(c=>useStyle?c+"\u0001":"\u0001"+c):exColors;
+  const useSizes=sizes.length?sizes:exSizes;
+  const plan=[];colorKeys.forEach(k=>{const[st,co]=k.split("\u0001");useSizes.forEach(z=>{if(pool.some(x=>(x.style||"")===st&&(x.color||"")===co&&(x.size||"")===z))return;plan.push({style:st,color:co,size:z});});});
+  const btn={fontSize:12,borderRadius:6,padding:"6px 12px",cursor:"pointer",border:`1px solid ${C.line}`,background:C.surface,color:C.ink};
+  const inp={width:"100%",boxSizing:"border-box",border:`1px solid ${C.line}`,borderRadius:8,padding:"8px",fontSize:14,marginTop:4};
+  return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:70,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"20px 10px"}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:14,maxWidth:520,width:"100%",padding:16}}>
+      <div style={{display:"flex",justifyContent:"space-between"}}><b style={{fontSize:16,color:C.ink}}>＋新增花色／尺寸</b><button style={btn} onClick={onClose}>關閉</button></div>
+      <div style={{fontSize:11,color:C.inkMuted,marginTop:6,lineHeight:1.6}}>先把選項建好（需求 0，不影響任何訂單），之後在「改成別款」就能直接選。沒有需求的品項不會出現在清單上。</div>
+      <div style={{marginTop:10,fontSize:12,color:C.inkMuted}}>商品</div>
+      <select value={prod} onChange={e=>setProd(e.target.value)} style={{...inp,padding:"8px"}}>{groups.map(g=><option key={g} value={g}>{g}</option>)}</select>
+      <div style={{marginTop:10,fontSize:12,color:C.inkMuted}}>新花色（多個用「、」或逗號分開；只想補尺寸就留空）</div>
+      <input value={colorsTxt} onChange={e=>setColorsTxt(e.target.value)} placeholder="例：淺綠小狗、淡藍機器人、藍灰小車" style={inp}/>
+      <div style={{marginTop:10,fontSize:12,color:C.inkMuted}}>尺寸（可寫範圍 90-140，每 10 一階；或 80、90；留空＝沿用此商品現有尺寸）</div>
+      <input value={sizesTxt} onChange={e=>setSizesTxt(e.target.value)} placeholder="例：90-140" style={inp}/>
+      <div style={{marginTop:10,fontSize:12,color:C.ink,lineHeight:1.6}}>{plan.length?<>將新增 <b>{plan.length}</b> 個品項：{plan.slice(0,8).map(x=>[x.color,x.size,x.style].filter(Boolean).join("·")).join("、")}{plan.length>8?"…":""}</>:<span style={{color:C.inkMuted}}>沒有需要新增的（都已存在，或尚未填寫）</span>}</div>
+      <button disabled={!plan.length} onClick={()=>{onApply(prod,plan);onClose();}} style={{...btn,marginTop:12,background:C.stamp,color:"#fff",border:"none",fontWeight:700,padding:"8px 16px",opacity:plan.length?1:.5}}>新增</button>
+    </div></div>);
+}
+
 // ── 對應原商品：把品項（或整個顏色、整款）歸到指定商品底下，不影響訂單比對 ──
 function HomeModal({item,items,onApply,onClose}){
   const src=itemSource(item);const pool=items.filter(x=>itemSource(x)===src);
@@ -1825,7 +1857,7 @@ function HomeModal({item,items,onApply,onClose}){
 }
 
 // ── 斷貨／改色／取消：逐位客人處理，並同步修改本工具內的訂單資料 ──
-function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose}){
+function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose,onAddVariant}){
   const fk=flatKey(item);
   const rows=[];
   if(parsed&&parsed.orders){
@@ -1877,6 +1909,7 @@ function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose}){
           <button onClick={onClose} style={btn}>關閉</button>
         </div>
         <div style={{fontSize:13,color:C.ink,marginTop:6,fontWeight:700}}>{dispName(item)}　<span style={{fontWeight:400,color:C.inkMuted}}>需求 {item.qty} 件</span></div>
+        {onAddVariant&&<button onClick={onAddVariant} style={{fontSize:12,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer",marginTop:6}}>＋新增花色／尺寸（選單裡沒有時先建立）</button>}
         <div style={{fontSize:11,color:C.inkMuted,marginTop:4,lineHeight:1.6}}>這裡只會修改本工具內的訂單資料（配貨、出貨單會跟著更新）。iOPEN Mall／直播平台上的原始訂單不會被改，請依下方「異動紀錄」自行到平台修改或通知客人。</div>
         {done?(<div style={{marginTop:12}}>
           <div style={{fontSize:13,fontWeight:700,color:"#059669",marginBottom:6}}>✓ 已套用 {done.length} 筆異動</div>
@@ -1980,7 +2013,15 @@ function App(){
 
   const [countMode,setCountMode]=useState(false);
   function applyCount(ups){setItems(prev=>{const next=prev.map(it=>{const u=ups.find(x=>x.id===it.id);return u?{...it,...u.patch}:it;});scheduleSave(next);return next;});}
-  const[chgItem,setChgItem]=useState(null);const[homeItem,setHomeItem]=useState(null);const[showChanges,setShowChanges]=useState(false);
+  const[chgItem,setChgItem]=useState(null);const[homeItem,setHomeItem]=useState(null);const[showChanges,setShowChanges]=useState(false);const[addVarItem,setAddVarItem]=useState(null);
+  function applyAddVariants(prod,plan){
+    setItems(prev=>{
+      const pool=prev.filter(x=>gProd(x)===prod&&itemSource(x)===itemSource(addVarItem||{}));const tpl=pool[0]||addVarItem;if(!tpl)return prev;
+      const m={};pool.forEach(x=>{m[x.product]=(m[x.product]||0)+1;});const bp=Object.keys(m).sort((a,b)=>m[b]-m[a])[0]||tpl.product;
+      const add=plan.map((v,i)=>({...tpl,id:"n"+Date.now().toString(36)+i+Math.random().toString(36).slice(2,5),product:bp,homeProduct:prod!==bp?prod:undefined,style:v.style,color:v.color,size:v.size,qty:0,orderedQty:0,orderedEdited:false,arrivedQty:0,stockQty:0,shippedQty:0,defectQty:0,allArrived:false,allOrdered:false,firstOrderDate:"",secondOrderDate:"",orderBatches:[],stockLog:[],arrivalLog:[],firstStockTs:"",arrivedTs:"",firstArrivedTs:"",counted:false,soldOut:false,shortStatus:undefined}));
+      const next=prev.concat(add);scheduleSave(next);return next;
+    });
+  }
   function saveChanges(mut){const store=iopenDataRef.current||{};if(!store.__orders__)return;const ch=(store.__orders__.changes||[]).map(mut);const ns={...store,__orders__:{...store.__orders__,changes:ch}};iopenDataRef.current=ns;setIopenData(ns);setItems(prev=>{scheduleSave(prev,savedAllocRef.current);return prev;});}
   const toggleChange=(i)=>saveChanges((c,j)=>j===i?{...c,done:!c.done}:c);
   const allChangesDone=()=>saveChanges(c=>({...c,done:true}));
@@ -2187,7 +2228,7 @@ function App(){
     return{same:same.reduce((a,o)=>a+o.stockQty,0),others:others.map(o=>(o.size||o.color||"單一")+"×"+o.stockQty).join("、"),label:otherLabel,prod:hit[0].product};
   };
   const stockSizeText=(gk)=>{const g=stockByGroup[gk];return g?g.sizes.map(z=>z.size+"×"+z.qty).join("、"):"";};
-  const displayed=items.filter(it=>itemSource(it)===srcTab).filter(it=>{if(filter==="unordered")return sortPri(it)===1;if(filter==="ordered")return!it.allArrived&&(it.arrivedQty||0)===0&&!!it.firstOrderDate;if(filter==="arrived")return it.allArrived||(it.arrivedQty||0)>0;if(filter==="stock")return sortPri(it)===5;if(filter==="soldout")return sortPri(it)===6;return true;}).filter(it=>!search.trim()||it.product.includes(search.trim())).slice().sort((a,b)=>{
+  const displayed=items.filter(it=>itemSource(it)===srcTab).filter(it=>!((it.qty||0)===0&&!(it.stockQty>0)&&!(it.arrivedQty>0)&&!it.firstOrderDate&&!it.soldOut)).filter(it=>{if(filter==="unordered")return sortPri(it)===1;if(filter==="ordered")return!it.allArrived&&(it.arrivedQty||0)===0&&!!it.firstOrderDate;if(filter==="arrived")return it.allArrived||(it.arrivedQty||0)>0;if(filter==="stock")return sortPri(it)===5;if(filter==="soldout")return sortPri(it)===6;return true;}).filter(it=>!search.trim()||it.product.includes(search.trim())).slice().sort((a,b)=>{
   const pd=sortPri(a)-sortPri(b);if(pd!==0)return pd;
   const gka=getGroupKey(a),gkb=getGroupKey(b);
   const cd=gka.localeCompare(gkb);if(cd!==0)return cd;
@@ -2216,7 +2257,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-G</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-H</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2374,9 +2415,9 @@ function App(){
         <div style={{maxWidth:640,margin:"0 auto",padding:"14px 14px"}}>
           {globalErr&&(<div style={{background:C.warningSoft,color:C.warning,border:`1px solid ${C.warning}`,borderRadius:10,padding:"8px 12px",marginBottom:12,fontSize:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>{globalErr}</span><button onClick={()=>setGlobalErr("")} style={{marginLeft:8,textDecoration:"underline",cursor:"pointer"}}>關閉</button></div>)}
           {(()=>{const liveN=items.filter(it=>itemSource(it)==="live").length;const ioN=items.filter(it=>itemSource(it)==="iopen").length;const tb=(k,l,c)=>(<button key={k} onClick={()=>setSrcTab(k)} style={{flex:1,padding:"8px 4px",fontSize:13,fontWeight:600,border:"none",borderBottom:`2px solid ${srcTab===k?C.stamp:"transparent"}`,background:"transparent",color:srcTab===k?C.stamp:C.inkMuted,cursor:"pointer"}}>{l} <span style={{fontSize:11,opacity:0.8}}>{c}</span></button>);return(<div style={{display:"flex",borderBottom:`1px solid ${C.line}`,marginBottom:10}}>{tb("live","直播訂單",liveN)}{tb("iopen","iOPEN Mall",ioN)}</div>);})()}
-          {(()=>{const L=items.filter(it=>itemSource(it)===srcTab);const need=L.reduce((a,x)=>a+(x.qty||0),0);const stk=L.reduce((a,x)=>a+(x.stockQty||0),0);const cover=L.reduce((a,x)=>a+Math.min(x.stockQty||0,x.qty||0),0);const ordered=L.reduce((a,x)=>a+(isOrderedMarked(x)?Math.min(effOrderedQty(x),needTotal(x)):0),0);const todo=L.reduce((a,x)=>a+toOrderQty(x),0);
+          {(()=>{const L=items.filter(it=>itemSource(it)===srcTab);const need=L.reduce((a,x)=>a+(x.qty||0),0);const Ln=L.filter(x=>(x.qty||0)>0||(x.stockQty||0)>0).length;const stk=L.reduce((a,x)=>a+(x.stockQty||0),0);const cover=L.reduce((a,x)=>a+Math.min(x.stockQty||0,x.qty||0),0);const ordered=L.reduce((a,x)=>a+(isOrderedMarked(x)?Math.min(effOrderedQty(x),needTotal(x)):0),0);const todo=L.reduce((a,x)=>a+toOrderQty(x),0);
             return(<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8,fontSize:12}}>
-              <span style={{background:C.stripe,borderRadius:8,padding:"3px 10px",color:C.ink}}>{L.length} 筆｜需求 <b>{need}</b> 件</span>
+              <span style={{background:C.stripe,borderRadius:8,padding:"3px 10px",color:C.ink}}>{Ln} 筆｜需求 <b>{need}</b> 件</span>
               <span style={{background:"#F0FFF4",border:"1px solid #059669",borderRadius:8,padding:"3px 10px",color:"#047857"}}>現貨共 <b>{stk}</b> 件（抵需求 <b>{cover}</b>{stk>cover?`，多出 ${stk-cover}`:""}）</span>
               <span style={{background:"#E8F0F7",borderRadius:8,padding:"3px 10px",color:C.info}}>已叫 <b>{ordered}</b> 件</span>
               <span style={{background:"#FFF3CD",borderRadius:8,padding:"3px 10px",color:"#B45309"}}>還需叫貨 <b>{todo}</b> 件</span>
@@ -2431,9 +2472,9 @@ function App(){
     {stockByGroup[groupKey]&&<div style={{fontSize:12,color:"#059669",fontWeight:600,marginTop:2}}>現貨：{stockSizeText(groupKey)}</div>}
     {(()=>{const t=crossStockText(it);return t?<div style={{fontSize:12,color:"#059669",fontWeight:600,marginTop:2}}>{otherLabel}分頁現貨：{t}</div>:null;})()}
   </div>;
-})()}<ItemCard it={it} onChange={()=>setChgItem(it)} onHome={()=>setHomeItem(it)} xinfo={srcTab==="live"?null:crossInfo(it)} sel={batchSel.has(it.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(it.id)?n.delete(it.id):n.add(it.id);return n;})} onUpdate={(field,value)=>updateField(it.id,field,value)}/>{ioBlockAt[idx]&&(<div style={{margin:"4px 0 12px 12px",border:"2px dashed #7C3AED",borderRadius:12,padding:"6px 8px 2px",background:"#FAF5FF"}}>
+})()}<ItemCard it={it} onChange={()=>setChgItem(it)} onHome={()=>setHomeItem(it)} onAddVariant={()=>setAddVarItem(it)} xinfo={srcTab==="live"?null:crossInfo(it)} sel={batchSel.has(it.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(it.id)?n.delete(it.id):n.add(it.id);return n;})} onUpdate={(field,value)=>updateField(it.id,field,value)}/>{ioBlockAt[idx]&&(<div style={{margin:"4px 0 12px 12px",border:"2px dashed #7C3AED",borderRadius:12,padding:"6px 8px 2px",background:"#FAF5FF"}}>
               <div style={{fontSize:12,fontWeight:700,color:"#7C3AED",marginBottom:6}}>🟣 iOPEN Mall 同商品（{ioBlockAt[idx].length} 項，需求共 {ioBlockAt[idx].reduce((a,o)=>a+(o.qty||0),0)} 件）</div>
-              {ioBlockAt[idx].map(o=>(<ItemCard key={o.id} it={o} onChange={()=>setChgItem(o)} onHome={()=>setHomeItem(o)} xinfo={null} sel={batchSel.has(o.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(o.id)?n.delete(o.id):n.add(o.id);return n;})} onUpdate={(field,value)=>updateField(o.id,field,value)}/>))}
+              {ioBlockAt[idx].map(o=>(<ItemCard key={o.id} it={o} onChange={()=>setChgItem(o)} onHome={()=>setHomeItem(o)} onAddVariant={()=>setAddVarItem(o)} xinfo={null} sel={batchSel.has(o.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(o.id)?n.delete(o.id):n.add(o.id);return n;})} onUpdate={(field,value)=>updateField(o.id,field,value)}/>))}
             </div>)}</React.Fragment>);}))
           }
         </div>
@@ -2441,7 +2482,8 @@ function App(){
 
       {showChanges&&<ChangesModal changes={(iopenData&&iopenData.__orders__&&iopenData.__orders__.changes)||[]} onToggle={toggleChange} onAllDone={allChangesDone} onClose={()=>setShowChanges(false)}/>}
       {homeItem&&<HomeModal item={items.find(x=>x.id===homeItem.id)||homeItem} items={items} onApply={applyHome} onClose={()=>setHomeItem(null)}/>}
-      {chgItem&&<ChangeModal item={items.find(x=>x.id===chgItem.id)||chgItem} items={items} parsed={(iopenData&&iopenData.__orders__&&iopenData.__orders__.parsed)||null} savedAlloc={savedAlloc} changes={(iopenData&&iopenData.__orders__&&iopenData.__orders__.changes)||[]} onApply={applyOrderChanges} onClose={()=>setChgItem(null)}/>}
+      {addVarItem&&<AddVariantModal item={addVarItem} items={items} onApply={applyAddVariants} onClose={()=>setAddVarItem(null)}/>}
+      {chgItem&&<ChangeModal item={items.find(x=>x.id===chgItem.id)||chgItem} items={items} parsed={(iopenData&&iopenData.__orders__&&iopenData.__orders__.parsed)||null} savedAlloc={savedAlloc} changes={(iopenData&&iopenData.__orders__&&iopenData.__orders__.changes)||[]} onApply={applyOrderChanges} onClose={()=>setChgItem(null)} onAddVariant={()=>setAddVarItem(items.find(x=>x.id===chgItem.id)||chgItem)}/>}
       {batchSel.size>0&&!allocMode&&!countMode&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:C.ink,zIndex:50,padding:"14px 16px",boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
           <div style={{maxWidth:640,margin:"0 auto"}}>
