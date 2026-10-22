@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-D</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-E</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -188,7 +188,7 @@ $("file").onchange=async e=>{
 function bigrams(s){s=String(s||"").replace(/[\s\d\-cm（）()·｜|]/g,"");const o=new Set();for(let i=0;i<s.length-1;i++)o.add(s.slice(i,i+2));if(s.length===1)o.add(s);return o;}
 function sim(a,b){const A=bigrams(a),B=bigrams(b);if(!A.size||!B.size)return 0;let n=0;A.forEach(x=>{if(B.has(x))n++;});return n/Math.min(A.size,B.size);}
 function srcOf(it){return it.source||(it.isCustomStock?"iopen":"live");}
-function prodLabel(g){const its=(SRC?SRC.all:[]).filter(it=>gProd(it)===g);const hasLive=its.some(it=>srcOf(it)==="live"),hasIo=its.some(it=>srcOf(it)==="iopen");return g+(hasLive&&hasIo?"［直播＋iOPEN］":hasIo?"［iOPEN］":"");}
+function prodLabel(g){const its=(SRC?SRC.all:[]).filter(it=>gProd(it)===g);const hasLive=its.some(it=>srcOf(it)==="live"),hasIo=its.some(it=>srcOf(it)==="iopen");const inner=[...new Set(its.filter(it=>it.product!==g).map(it=>it.product))];return g+(hasLive&&hasIo?"［直播＋iOPEN］":hasIo?"［iOPEN］":"")+(inner.length?"（含：":"")+inner.map(x=>x.length>14?x.slice(0,14)+"…":x).join("、")+(inner.length?"）":"");}
 function prodOptions(){const g=[];(SRC?SRC.all:[]).forEach(it=>{const k=gProd(it);if(!g.includes(k))g.push(k);});return g.sort((a,b)=>a.localeCompare(b,"zh-Hant"));}
 function colorOptions(prod){const out=[];(SRC?SRC.all:[]).filter(it=>gProd(it)===prod).forEach(it=>{const k=colorKey(it);if(!out.some(o=>o.k===k))out.push({k,label:colorLabel(it)});});return out.sort((a,b)=>a.label.localeCompare(b.label,"zh-Hant"));}
 function suggestProd(title){const t=conv(title);let best="",sc=0;prodOptions().forEach(p=>{const s=sim(t,p);if(s>sc){sc=s;best=p;}});return sc>=0.34?best:"";}
