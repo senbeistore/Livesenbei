@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-E</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-F</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -98,7 +98,7 @@ const colorKey=it=>(it.style||"")+SEP+(it.color||"");
 let SRC=null;      // {token,gistId,rev,items,raw}
 let LINES=[];      // 1688 明細
 let MAP=loadMap();
-function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{}};}catch(e){return{prod:{},color:{}};}}
+function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{},auto:m.auto||{}};}catch(e){return{prod:{},color:{},auto:{}};}}
 function saveMap(){try{localStorage.setItem(MAPKEY,JSON.stringify(MAP));}catch(e){}}
 
 // ---- 讀取雲端 ----
@@ -210,11 +210,14 @@ function renderMap(){
     if(cur&&cur!=="__skip__"){
       const co=colorOptions(cur);
       const colors=[...new Set(LINES.filter(l=>l.title===t).map(l=>l.color))];
+      const used={};colors.forEach(c=>{const v=MAP.color[t+"|"+c];if(v&&v!=="__skip__")(used[v]=used[v]||[]).push(c);});
+      const dups=Object.keys(used).filter(k=>used[k].length>1);
+      if(dups.length)h+='<div class="warn" style="margin-top:6px">⚠ 有多個 1688 花色對應到同一個花色：'+dups.map(k=>used[k].map(esc).join('、')+' → '+esc((co.find(o=>o.k===k)||{}).label||'')).join('；')+'。這會把件數加在一起，請確認。</div>';
       h+='<table style="margin-top:6px"><tr><th>1688 花色</th><th>對應花色</th></tr>';
       colors.forEach(c=>{
-        const key=t+"|"+c;if(MAP.color[key]===undefined){const s=suggestColor(cur,c);if(s)MAP.color[key]=s;}
+        const key=t+"|"+c;if(MAP.color[key]===undefined){const s=suggestColor(cur,c);if(s){MAP.color[key]=s;MAP.auto[key]=1;}}
         const cc=MAP.color[key]||"";
-        h+='<tr><td>'+esc(c)+'<div class="mute">'+esc(conv(c))+'</div></td><td><select data-color="'+esc(key)+'"><option value="">（請選擇）</option><option value="__skip__"'+(cc==="__skip__"?" selected":"")+'>忽略</option>'+co.map(o=>'<option value="'+esc(o.k)+'"'+(o.k===cc?" selected":"")+'>'+esc(o.label)+'</option>').join("")+'</select></td></tr>';
+        h+='<tr><td>'+esc(c)+'<div class="mute">'+esc(conv(c))+'</div></td><td><select data-color="'+esc(key)+'"'+(MAP.auto[key]?' style="border-color:var(--warn);background:#fff8e6"':'')+'><option value="">（請選擇）</option><option value="__skip__"'+(cc==="__skip__"?" selected":"")+'>忽略</option>'+co.map(o=>'<option value="'+esc(o.k)+'"'+(o.k===cc?" selected":"")+'>'+esc(o.label)+'</option>').join("")+'</select>'+(MAP.auto[key]?'<div class="warn" style="font-size:11px">自動建議，請確認</div>':'')+'</td></tr>';
       });
       h+='</table>';
     }
@@ -222,7 +225,7 @@ function renderMap(){
   });
   $("mapBody").innerHTML=h;
   $("mapBody").querySelectorAll("select[data-prod]").forEach(s=>s.onchange=()=>{MAP.prod[s.dataset.prod]=s.value;saveMap();refresh();});
-  $("mapBody").querySelectorAll("select[data-color]").forEach(s=>s.onchange=()=>{MAP.color[s.dataset.color]=s.value;saveMap();renderResult();});
+  $("mapBody").querySelectorAll("select[data-color]").forEach(s=>s.onchange=()=>{MAP.color[s.dataset.color]=s.value;delete MAP.auto[s.dataset.color];saveMap();refresh();});
   saveMap();
 }
 
@@ -244,7 +247,7 @@ function compute(){
     if(!its.length){miss.push({l,why:"備貨追蹤沒有這個尺寸（"+(l.size||"?")+"）"});return;}
     const key=gp+"|"+ck+"|"+sz;
     const t=target[key]||(target[key]={key,items:its,qty:0,orders:{}});
-    t.qty+=l.qty;const o=t.orders[l.orderNo]||(t.orders[l.orderNo]={qty:0,date:l.date});o.qty+=l.qty;
+    t.srcs=t.srcs||{};t.srcs[l.color]=(t.srcs[l.color]||0)+l.qty;t.qty+=l.qty;const o=t.orders[l.orderNo]||(t.orders[l.orderNo]={qty:0,date:l.date});o.qty+=l.qty;
   });
   const rows=[];
   Object.values(target).forEach(t=>{
@@ -257,7 +260,7 @@ function compute(){
     const need=its.reduce((a,x)=>a+needTotal(x),0);
     const expect=Math.max(0,need-others);
     const diff=t.qty-expect;
-    rows.push({key:t.key,it,items:its,fileQty:t.qty,expect,diff,appliedHere,legacy,recorded,orders:t.orders,need,others,qtySum:its.reduce((a,x)=>a+(x.qty||0),0),stockSum:its.reduce((a,x)=>a+(x.stockQty||0),0),defSum:its.reduce((a,x)=>a+(x.defectQty||0),0)});
+    rows.push({key:t.key,srcs:t.srcs||{},it,items:its,fileQty:t.qty,expect,diff,appliedHere,legacy,recorded,orders:t.orders,need,others,qtySum:its.reduce((a,x)=>a+(x.qty||0),0),stockSum:its.reduce((a,x)=>a+(x.stockQty||0),0),defSum:its.reduce((a,x)=>a+(x.defectQty||0),0)});
   });
   // 漏叫：已對應商品中，備貨追蹤還要叫、但這份清單沒有
   const prodSet=new Set(Object.values(MAP.prod).filter(v=>v&&v!=="__skip__"));
@@ -286,7 +289,7 @@ function renderResult(){
   let h='<tr><th></th><th>品項</th><th>1688 清單</th><th>備貨追蹤該叫</th><th>狀態</th></tr>';
   rows.forEach((r,i)=>{
     const can=r.appliedHere<r.fileQty;
-    h+='<tr><td>'+(can?'<input type="checkbox" class="ck" data-id="'+esc(r.key)+'" checked/>':"")+'</td><td>'+esc(colorLabel(r.it))+' · '+esc(r.it.size||"")+'<div class="mute">'+esc(gProd(r.it))+(r.items.length>1?' <span class="pill">直播＋iOPEN</span>':(srcOf(r.it)==='iopen'?' <span class="pill">iOPEN</span>':''))+'</div></td><td>'+r.fileQty+'<div class="mute">'+Object.keys(r.orders).map(n=>esc(n.slice(-6))+"×"+r.orders[n].qty).join(" ")+'</div></td><td>'+r.expect+'<div class="mute">需求 '+r.qtySum+(r.stockSum>0?' − 現貨 '+r.stockSum:'')+(r.defSum>0?' ＋瑕疵 '+r.defSum:'')+(r.others?' − 另已叫 '+r.others:'')+'</div></td><td>'+statusTag(r)+(r.diff<0?'<div style="margin-top:4px"><button class="mini" data-stock="'+esc(r.it.id)+'" data-n="'+(-r.diff)+'">差 '+(-r.diff)+' 件是現貨<br>→記入現貨</button></div>':"")+'</td></tr>';
+    h+='<tr><td>'+(can?'<input type="checkbox" class="ck" data-id="'+esc(r.key)+'" checked/>':"")+'</td><td>'+esc(colorLabel(r.it))+' · '+esc(r.it.size||"")+'<div class="mute">'+esc(gProd(r.it))+(r.items.length>1?' <span class="pill">直播＋iOPEN</span>':(srcOf(r.it)==='iopen'?' <span class="pill">iOPEN</span>':''))+'</div></td><td>'+r.fileQty+(Object.keys(r.srcs).length>1?'<div class="warn" style="font-size:12px">⚠ '+Object.keys(r.srcs).map(c=>esc(c)+'×'+r.srcs[c]).join('＋')+'</div>':'')+'<div class="mute">'+Object.keys(r.orders).map(n=>esc(n.slice(-6))+"×"+r.orders[n].qty).join(" ")+'</div></td><td>'+r.expect+'<div class="mute">需求 '+r.qtySum+(r.stockSum>0?' − 現貨 '+r.stockSum:'')+(r.defSum>0?' ＋瑕疵 '+r.defSum:'')+(r.others?' − 另已叫 '+r.others:'')+'</div></td><td>'+statusTag(r)+(r.diff<0?'<div style="margin-top:4px"><button class="mini" data-stock="'+esc(r.it.id)+'" data-n="'+(-r.diff)+'">差 '+(-r.diff)+' 件是現貨<br>→記入現貨</button></div>':"")+'</td></tr>';
   });
   res.forgot.sort((a,b)=>(gProd(a.it)+colorLabel(a.it)).localeCompare(gProd(b.it)+colorLabel(b.it),"zh-Hant")).forEach(f=>{
     h+='<tr><td></td><td>'+esc(colorLabel(f.it))+' · '+esc(f.it.size||"")+'<div class="mute">'+esc(gProd(f.it))+'</div></td><td>0</td><td>'+f.toOrder+'</td><td><span class="tag t-miss">漏叫 '+f.toOrder+'</span></td></tr>';
