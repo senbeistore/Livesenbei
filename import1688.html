@@ -32,11 +32,12 @@
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .grp{border-top:1px solid var(--line);padding:8px 0}
   .scroll{overflow-x:auto}
+  button.mini{font-size:11px;padding:3px 6px;line-height:1.3;border-color:var(--ok);color:var(--ok)}
 </style>
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-A</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-B</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -274,7 +275,7 @@ function renderResult(){
   let h='<tr><th></th><th>品項</th><th>1688 清單</th><th>備貨追蹤該叫</th><th>狀態</th></tr>';
   rows.forEach((r,i)=>{
     const can=r.appliedHere<r.fileQty;
-    h+='<tr><td>'+(can?'<input type="checkbox" class="ck" data-id="'+esc(r.it.id)+'" checked/>':"")+'</td><td>'+esc(colorLabel(r.it))+' · '+esc(r.it.size||"")+'<div class="mute">'+esc(gProd(r.it))+'</div></td><td>'+r.fileQty+'<div class="mute">'+Object.keys(r.orders).map(n=>esc(n.slice(-6))+"×"+r.orders[n].qty).join(" ")+'</div></td><td>'+r.expect+(r.others?'<div class="mute">另已叫 '+r.others+'</div>':"")+'</td><td>'+statusTag(r)+'</td></tr>';
+    h+='<tr><td>'+(can?'<input type="checkbox" class="ck" data-id="'+esc(r.it.id)+'" checked/>':"")+'</td><td>'+esc(colorLabel(r.it))+' · '+esc(r.it.size||"")+'<div class="mute">'+esc(gProd(r.it))+'</div></td><td>'+r.fileQty+'<div class="mute">'+Object.keys(r.orders).map(n=>esc(n.slice(-6))+"×"+r.orders[n].qty).join(" ")+'</div></td><td>'+r.expect+'<div class="mute">需求 '+(r.it.qty||0)+(r.it.stockQty>0?' − 現貨 '+r.it.stockQty:'')+((r.it.defectQty||0)>0?' ＋瑕疵 '+r.it.defectQty:'')+(r.others?' − 另已叫 '+r.others:'')+'</div></td><td>'+statusTag(r)+(r.diff<0?'<div style="margin-top:4px"><button class="mini" data-stock="'+esc(r.it.id)+'" data-n="'+(-r.diff)+'">差 '+(-r.diff)+' 件是現貨<br>→記入現貨</button></div>':"")+'</td></tr>';
   });
   res.forgot.sort((a,b)=>(gProd(a.it)+colorLabel(a.it)).localeCompare(gProd(b.it)+colorLabel(b.it),"zh-Hant")).forEach(f=>{
     h+='<tr><td></td><td>'+esc(colorLabel(f.it))+' · '+esc(f.it.size||"")+'<div class="mute">'+esc(gProd(f.it))+'</div></td><td>0</td><td>'+f.toOrder+'</td><td><span class="tag t-miss">漏叫 '+f.toOrder+'</span></td></tr>';
@@ -283,6 +284,7 @@ function renderResult(){
   const canAny=rows.some(r=>r.appliedHere<r.fileQty);
   $("applyBar").innerHTML='<button class="primary" id="btnApply"'+(canAny?"":" disabled")+'>把勾選的品項標記為「已叫貨」</button><span class="mute">叫貨日用 1688 的付款日（沒有則用建立日）。多叫、少叫的也可以標記，備貨追蹤會顯示差異。</span>';
   $("btnApply").onclick=applyMarks;
+  document.querySelectorAll("button.mini[data-stock]").forEach(b=>b.onclick=()=>{const n=parseInt(b.dataset.n,10)||0;if(n>0&&confirm("把這個品項的 "+n+" 件記為「現貨」？\n（備貨追蹤的該叫件數會跟著減少）"))addStock(b.dataset.stock,n);});
   if(res.miss.length){
     $("cMiss").style.display="";
     $("missBody").innerHTML='<table><tr><th>1688 品項</th><th>件數</th><th>原因</th></tr>'+res.miss.map(m=>'<tr><td>'+esc(m.l.title.slice(0,24))+'… '+esc(m.l.color)+' '+esc(m.l.size)+'</td><td>'+m.l.qty+'</td><td class="warn">'+esc(m.why)+'</td></tr>').join("")+'</table>';
@@ -291,6 +293,31 @@ function renderResult(){
 function refresh(){renderMap();renderResult();}
 
 // ---- 寫回備貨追蹤 ----
+async function writeItems(mut){   // mut(freshItems)->新 items；寫入前重新讀取，避免蓋掉其他裝置的修改
+  const fresh=await fetchGist();
+  const items=mut(fresh.items);
+  const rev=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  const body={rev,items,savedAlloc:fresh.raw.savedAlloc||null,iopenCustom:fresh.raw.iopenCustom||[],iopenData:fresh.raw.iopenData||{}};
+  const r=await fetch("https://api.github.com/gists/"+fresh.gistId,{method:"PATCH",headers:{Authorization:"Bearer "+fresh.token,"Content-Type":"application/json"},body:JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify(body,null,2)}}})});
+  noteRL(r);
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error("儲存失敗 (HTTP "+r.status+")"+(e.message?"："+String(e.message).split(". If you reach")[0]:""));}
+}
+async function addStock(id,n){
+  $("applyMsg").textContent="寫入中…";
+  try{
+    await writeItems(items=>items.map(it=>{
+      if(it.id!==id)return it;
+      const now=new Date().toISOString();
+      const total=(it.stockQty||0)+n;
+      const slog=[...(it.stockLog||[]),{ts:now,d:n,total}];
+      const y={...it,stockQty:total,stockLog:slog,firstStockTs:it.firstStockTs||now};
+      if(!it.orderedEdited)y.orderedQty=Math.max(0,(it.qty||0)-total);
+      return y;
+    }));
+    $("applyMsg").innerHTML='<span class="ok">✓ 已把 '+n+' 件記為現貨。</span>　備貨追蹤若還開著，請先重新整理再操作。';
+    await loadSrc();refresh();
+  }catch(e){$("applyMsg").innerHTML='<span class="err">'+esc(e.message||e)+'</span>';}
+}
 async function applyMarks(){
   const ids=[...document.querySelectorAll(".ck:checked")].map(x=>x.dataset.id);
   if(!ids.length){$("applyMsg").innerHTML='<span class="warn">沒有勾選任何品項</span>';return;}
