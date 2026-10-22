@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-P</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-Q</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -60,6 +60,7 @@
   <div class="card" id="cRes" style="display:none">
     <h2>④ 比對結果</h2>
     <div id="sum" class="row" style="margin-bottom:8px"></div>
+    <div id="unc" class="mute" style="margin-bottom:8px"></div>
     <div class="scroll"><table id="resTbl"></table></div>
     <div id="applyBar" class="row" style="margin-top:12px"></div>
     <div id="applyMsg" style="margin-top:8px;font-size:13px"></div>
@@ -307,6 +308,14 @@ function renderResult(){
   const tg=(f,c,n,x)=>'<span class="tag '+c+'" data-f="'+f+'" style="cursor:pointer;margin-right:4px;'+(FILT===f?'outline:2px solid #333;':'')+'">'+n+' '+x+'</span>';
   $("sum").innerHTML=tg('all','t-done','全部',res.rows.length+res.forgot.length)+tg('ok','t-ok','吻合',ok)+tg('less','t-less','少叫',less)+tg('more','t-more','多叫',more)+tg('miss','t-miss','漏叫',res.forgot.length)+(()=>{const n=res.rows.reduce((a,r)=>a+(r.fam||0),0)+famList.reduce((a,m)=>a+m.l.qty,0);return n?'<span class="tag t-done">親友 '+n+' 件</span>':'';})()+'<span class="tag t-done" data-f="unm" style="cursor:pointer">比對不到 '+res.miss.length+'</span>';
   $("sum").querySelectorAll("[data-f]").forEach(e=>e.onclick=()=>{if(e.dataset.f==="unm"){const m=$("cMiss");if(m.style.display!=="none")m.scrollIntoView({behavior:"smooth"});return;}FILT=FILT===e.dataset.f&&FILT!=="all"?"all":e.dataset.f;renderResult();});
+  {
+    const lessRows=res.rows.filter(r=>r.diff<0);
+    const nItems=res.forgot.length+lessRows.length;
+    const pcs=res.forgot.reduce((a,f)=>a+f.toOrder,0)+lessRows.reduce((a,r)=>a-r.diff,0);
+    const stk=res.forgot.reduce((a,f)=>a+(f.it.stockQty||0),0)+lessRows.reduce((a,r)=>a+r.stockSum,0);
+    const nProd=new Set([...res.forgot.map(f=>gProd(f.it)),...lessRows.map(r=>gProd(r.it))]).size;
+    $("unc").innerHTML=nItems?'<b>尚未叫貨：'+nProd+' 個商品、'+nItems+' 樣（共 '+pcs+' 件）</b>　其中少叫 '+lessRows.length+' 樣、漏叫 '+res.forgot.length+' 樣　（這些品項的現貨共 '+stk+' 件，已從件數中扣除）':'<b>沒有尚未叫貨的品項</b>';
+  }
   const sortKey=r=>gProd(r.it)+"|"+colorLabel(r.it)+"|"+String(sizeNum(r.it.size)).padStart(4,"0");
   const rows=res.rows.filter(r=>FILT==='all'||(FILT==='ok'&&r.diff===0)||(FILT==='less'&&r.diff<0)||(FILT==='more'&&r.diff>0)).sort((a,b)=>sortKey(a).localeCompare(sortKey(b),"zh-Hant"));
   let h='<tr><th></th><th>品項</th><th>1688 清單</th><th>備貨追蹤該叫</th><th>狀態</th></tr>';
