@@ -2002,11 +2002,13 @@ function App(){
         const n=Math.min(d.n,ln.qty);if(n<=0)return;
         const c=parsed.customers[o.customerKey]||{};const who=(c.account||o.customerKey)+(c.name&&c.name!==c.account?"（"+c.name+"）":"");
         const price=ln.price||0;
+        let tt=null;
+        if(d.act==="swap"){tt=created[d.to]||items.find(x=>x.id===d.to);if(!tt)return;if(flatKey(tt)===flatKey(item)){logs.push("（略過）"+who+"：改成的品項與原品項相同");return;}}
         ln.qty-=n;delta[item.id]=(delta[item.id]||0)-n;
         let text;
         if(d.act==="cancel"){o.amount=Math.max(0,(o.amount||0)-n*price);if(c.totalAmount!=null)c.totalAmount=Math.max(0,c.totalAmount-n*price);text=nowTxt+"　"+who+"　"+dispName(item)+" ×"+n+" → 取消";}
         else{
-          const t=created[d.to]||items.find(x=>x.id===d.to);if(!t)return;
+          const t=tt;
           const ex=o.items.find(x=>flatKey(x)===flatKey(t)&&x!==ln);
           if(ex)ex.qty+=n;else o.items.push({product:t.product,color:t.color,size:t.size,style:t.style,qty:n,price});
           delta[t.id]=(delta[t.id]||0)+n;
@@ -2214,7 +2216,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-F</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-G</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
