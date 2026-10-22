@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-G</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-H</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -86,6 +86,8 @@ let conv=(s)=>s; try{ if(window.OpenCC){const c=OpenCC.Converter({from:"cn",to:"
 
 // ---- 備貨追蹤邏輯（與 stock-tracker.html 相同）----
 const gProd=it=>it.homeProduct||it.product;
+const _np=p=>String(p||"").replace(/現貨|預購/g,"").replace(/[（(][^）)]*[）)]/g,"").replace(/\d+\s*[~\-–]\s*\d+\s*(cm|公分)?|\d+\s*(cm|公分)/gi,"").replace(/賣場|直播|兒童|上衣|款|[｜|\s\-_·]/g,"");
+function sameProd(x,gp){const a=gProd(x);if(a===gp)return true;const n=_np(a),m=_np(gp);return n.length>=3&&m.length>=3&&(n===m||n.includes(m)||m.includes(n));}
 const netNeed=it=>Math.max(0,(it.qty||0)-(it.stockQty||0));
 const needTotal=it=>netNeed(it)+(it.defectQty||0);
 const isMarked=it=>!!(it.firstOrderDate||it.allOrdered);
@@ -190,7 +192,7 @@ function sim(a,b){const A=bigrams(a),B=bigrams(b);if(!A.size||!B.size)return 0;l
 function srcOf(it){return it.source||(it.isCustomStock?"iopen":"live");}
 function prodLabel(g){const its=(SRC?SRC.all:[]).filter(it=>gProd(it)===g);const hasLive=its.some(it=>srcOf(it)==="live"),hasIo=its.some(it=>srcOf(it)==="iopen");const inner=[...new Set(its.filter(it=>it.product!==g).map(it=>it.product))];return g+(hasLive&&hasIo?"［直播＋iOPEN］":hasIo?"［iOPEN］":"")+(inner.length?"（含：":"")+inner.map(x=>x.length>14?x.slice(0,14)+"…":x).join("、")+(inner.length?"）":"");}
 function prodOptions(){const g=[];(SRC?SRC.all:[]).forEach(it=>{const k=gProd(it);if(!g.includes(k))g.push(k);});return g.sort((a,b)=>a.localeCompare(b,"zh-Hant"));}
-function colorOptions(prod){const out=[];(SRC?SRC.all:[]).filter(it=>gProd(it)===prod).forEach(it=>{const k=colorKey(it);if(!out.some(o=>o.k===k))out.push({k,label:colorLabel(it)});});return out.sort((a,b)=>a.label.localeCompare(b.label,"zh-Hant"));}
+function colorOptions(prod){const out=[];(SRC?SRC.all:[]).filter(it=>sameProd(it,prod)).forEach(it=>{const k=colorKey(it);if(!out.some(o=>o.k===k))out.push({k,label:colorLabel(it)});});return out.sort((a,b)=>a.label.localeCompare(b.label,"zh-Hant"));}
 function suggestProd(title){const t=conv(title);let best="",sc=0;prodOptions().forEach(p=>{const s=sim(t,p);if(s>sc){sc=s;best=p;}});return sc>=0.34?best:"";}
 function suggestColor(prod,c){const t=conv(c).replace(/^(长袖|長袖|短袖|短裤|短褲|长裤|長褲)[-－]/,"");let best="",sc=0;colorOptions(prod).forEach(o=>{const s=sim(t,o.label);if(s>sc){sc=s;best=o.k;}});return sc>=0.5?best:"";}
 function prodOf(title){const m=MAP.prod[title];return m===undefined?"":m;}   // ""=未設定, "__skip__"=忽略
@@ -243,7 +245,7 @@ function compute(){
     if(ck==="__skip__")return;
     if(!ck){miss.push({l,why:"花色尚未對應"});return;}
     const sz=sizeNum(l.size);
-    const its=SRC.all.filter(x=>gProd(x)===gp&&colorKey(x)===ck&&sizeNum(x.size)===sz).sort((a,b)=>(srcOf(a)==="live"?0:1)-(srcOf(b)==="live"?0:1));
+    const its=SRC.all.filter(x=>sameProd(x,gp)&&colorKey(x)===ck&&sizeNum(x.size)===sz).sort((a,b)=>(srcOf(a)==="live"?0:1)-(srcOf(b)==="live"?0:1));
     if(!its.length){miss.push({l,why:"備貨追蹤沒有這個尺寸（"+(l.size||"?")+"）"});return;}
     const key=gp+"|"+ck+"|"+sz;
     const t=target[key]||(target[key]={key,items:its,qty:0,orders:{}});
@@ -265,7 +267,7 @@ function compute(){
   // 漏叫：已對應商品中，備貨追蹤還要叫、但這份清單沒有
   const prodSet=new Set(Object.values(MAP.prod).filter(v=>v&&v!=="__skip__"));
   const inList=new Set(rows.flatMap(r=>r.items.map(x=>x.id)));
-  const forgot=SRC.all.filter(it=>prodSet.has(gProd(it))&&!inList.has(it.id)).map(it=>{
+  const forgot=SRC.all.filter(it=>[...prodSet].some(pp=>sameProd(it,pp))&&!inList.has(it.id)).map(it=>{
     const rec=isMarked(it)?effOrdered(it):0;return{it,toOrder:Math.max(0,needTotal(it)-rec)};
   }).filter(x=>x.toOrder>0);
   return{rows,miss,forgot};
