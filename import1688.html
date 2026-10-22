@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-K</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-L</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -94,7 +94,9 @@ const isMarked=it=>!!(it.firstOrderDate||it.allOrdered);
 const effOrdered=it=>{if(it.orderedEdited)return it.orderedQty!=null?it.orderedQty:netNeed(it);if(isMarked(it))return it.orderedQty!=null?it.orderedQty:netNeed(it);return netNeed(it);};
 const sizeNum=z=>{const m=String(z||"").match(/\d+/);return m?m[0]:String(z||"").trim();};
 const colorLabel=it=>[it.color,it.style].filter(Boolean).join(" ")||"（無花色）";
-const colorKey=it=>(it.style||"")+SEP+(it.color||"");
+const _nc=v=>String(v||"").replace(/^(款式|顏色|颜色|花色|規格|规格)\s*[:：]\s*/,"").replace(/\s+/g,"").trim();
+const nk=k=>{if(!k||k==="__skip__")return k||"";const a=String(k).split(SEP);return a.length<2?_nc(k):[_nc(a[0]),_nc(a[1])].filter(Boolean).sort().join(SEP);};
+const colorKey=it=>nk((it.style||"")+SEP+(it.color||""));
 
 // ---- 狀態 ----
 let SRC=null;      // {token,gistId,rev,items,raw}
@@ -196,7 +198,7 @@ function colorOptions(prod){const out=[];(SRC?SRC.all:[]).filter(it=>sameProd(it
 function suggestProd(title){const t=conv(title);let best="",sc=0;prodOptions().forEach(p=>{const s=sim(t,p);if(s>sc){sc=s;best=p;}});return sc>=0.34?best:"";}
 function suggestColor(prod,c){const t=conv(c).replace(/^(长袖|長袖|短袖|短裤|短褲|长裤|長褲)[-－]/,"");let best="",sc=0;colorOptions(prod).forEach(o=>{const s=sim(t,o.label);if(s>sc){sc=s;best=o.k;}});return sc>=0.5?best:"";}
 function prodOf(title){const m=MAP.prod[title];return m===undefined?"":m;}   // ""=未設定, "__skip__"=忽略
-function colorOf(title,c){const m=MAP.color[title+"|"+c];return m===undefined?"":m;}
+function colorOf(title,c){const m=MAP.color[title+"|"+c];return m===undefined?"":nk(m);}
 
 function renderMap(){
   if(!LINES.length||!SRC){$("cMap").style.display="none";return;}
@@ -212,13 +214,13 @@ function renderMap(){
     if(cur&&cur!=="__skip__"){
       const co=colorOptions(cur);
       const colors=[...new Set(LINES.filter(l=>l.title===t).map(l=>l.color))];
-      const used={};colors.forEach(c=>{const v=MAP.color[t+"|"+c];if(v&&v!=="__skip__")(used[v]=used[v]||[]).push(c);});
+      const used={};colors.forEach(c=>{const v=nk(MAP.color[t+"|"+c]);if(v&&v!=="__skip__")(used[v]=used[v]||[]).push(c);});
       const dups=Object.keys(used).filter(k=>used[k].length>1);
       if(dups.length)h+='<div class="warn" style="margin-top:6px">⚠ 有多個 1688 花色對應到同一個花色：'+dups.map(k=>used[k].map(esc).join('、')+' → '+esc((co.find(o=>o.k===k)||{}).label||'')).join('；')+'。這會把件數加在一起，請確認。</div>';
       h+='<table style="margin-top:6px"><tr><th>1688 花色</th><th>對應花色</th></tr>';
       colors.forEach(c=>{
         const key=t+"|"+c;if(MAP.color[key]===undefined){const s=suggestColor(cur,c);if(s){MAP.color[key]=s;MAP.auto[key]=1;}}
-        const cc=MAP.color[key]||"";
+        const cc=nk(MAP.color[key])||"";
         h+='<tr><td>'+esc(c)+'<div class="mute">'+esc(conv(c))+'</div></td><td><select data-color="'+esc(key)+'"'+(MAP.auto[key]?' style="border-color:var(--warn);background:#fff8e6"':'')+'><option value="">（請選擇）</option><option value="__skip__"'+(cc==="__skip__"?" selected":"")+'>忽略</option>'+co.map(o=>'<option value="'+esc(o.k)+'"'+(o.k===cc?" selected":"")+'>'+esc(o.label)+'</option>').join("")+'</select>'+(MAP.auto[key]?'<div class="warn" style="font-size:11px">自動建議，請確認</div>':'')+'</td></tr>';
       });
       h+='</table>';
