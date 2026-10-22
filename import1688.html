@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-B</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-C</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -63,6 +63,12 @@
     <div class="scroll"><table id="resTbl"></table></div>
     <div id="applyBar" class="row" style="margin-top:12px"></div>
     <div id="applyMsg" style="margin-top:8px;font-size:13px"></div>
+  </div>
+  <div class="card" id="cOld" style="display:none">
+    <h2>備貨追蹤已記錄的 1688 訂單</h2>
+    <div class="mute" style="margin-bottom:6px">之前用這個頁面標記過「已叫貨」的訂單。如果某張訂單在 1688 取消、改下新單，請把舊單的紀錄移除，再匯入新單，件數才不會重複計算。</div>
+    <div id="oldBody"></div>
+    <div id="oldMsg" style="margin-top:8px;font-size:13px"></div>
   </div>
   <div class="card" id="cMiss" style="display:none">
     <h2>比對不到的品項</h2>
@@ -160,7 +166,7 @@ function parseRows(aoa){
     const title=String(row[cTitle]||"").trim();if(!title)continue;
     const qty=parseFloat(row[cQty])||0;if(qty<=0)continue;
     const p=parseSpec(title);
-    out.push({orderNo:no||"（無單號）",status:st,date:(pay||cr||"").slice(0,10),title:p.base,color:p.color,size:p.size,qty,price:cPrice>=0?parseFloat(row[cPrice])||0:0,code:cCode>=0?String(row[cCode]||""):""});
+    out.push({orderNo:no||"（無單號）",status:st,cancelled:/关闭|關閉|取消|退款|已退/.test(st),date:(pay||cr||"").slice(0,10),title:p.base,color:p.color,size:p.size,qty,price:cPrice>=0?parseFloat(row[cPrice])||0:0,code:cCode>=0?String(row[cCode]||""):""});
   }
   return out;
 }
@@ -173,7 +179,7 @@ $("file").onchange=async e=>{
     const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
     LINES=parseRows(aoa);
     const orders=[...new Set(LINES.map(l=>l.orderNo))];
-    $("fileInfo").innerHTML='<span class="ok">✓ '+esc(f.name)+'</span>　'+orders.length+' 張訂單，'+LINES.length+' 筆明細，共 '+LINES.reduce((a,l)=>a+l.qty,0)+' 件';
+    $("fileInfo").innerHTML='<span class="ok">✓ '+esc(f.name)+'</span>　'+orders.length+' 張訂單，'+LINES.length+' 筆明細，共 '+LINES.filter(l=>!l.cancelled).reduce((a,l)=>a+l.qty,0)+' 件'+(LINES.some(l=>l.cancelled)?'　<span class="warn">（含 '+[...new Set(LINES.filter(l=>l.cancelled).map(l=>l.orderNo))].length+' 張已關閉／取消，不計入）</span>':"");
     refresh();
   }catch(err){$("fileInfo").innerHTML='<span class="err">'+esc(err.message||err)+'</span>';}
 };
@@ -220,10 +226,11 @@ function renderMap(){
 
 // ---- 比對 ----
 function compute(){
-  const orderNos=new Set(LINES.map(l=>l.orderNo));
+  const orderNos=new Set(LINES.filter(l=>!l.cancelled).map(l=>l.orderNo));
   const target={};   // item.id -> {item, qty, orders:{no:{qty,date}}}
   const miss=[];
   LINES.forEach(l=>{
+    if(l.cancelled)return;   // 1688 上已關閉／取消的訂單不計入
     const gp=prodOf(l.title);
     if(gp==="__skip__")return;
     if(!gp){miss.push({l,why:"商品尚未對應"});return;}
@@ -290,7 +297,39 @@ function renderResult(){
     $("missBody").innerHTML='<table><tr><th>1688 品項</th><th>件數</th><th>原因</th></tr>'+res.miss.map(m=>'<tr><td>'+esc(m.l.title.slice(0,24))+'… '+esc(m.l.color)+' '+esc(m.l.size)+'</td><td>'+m.l.qty+'</td><td class="warn">'+esc(m.why)+'</td></tr>').join("")+'</table>';
   }else $("cMiss").style.display="none";
 }
-function refresh(){renderMap();renderResult();}
+function recordedOrders(){
+  const m={};
+  (SRC?SRC.live:[]).forEach(it=>(it.orderBatches||[]).forEach(b=>{if(!b.ref)return;const o=m[b.ref]||(m[b.ref]={ref:b.ref,items:0,qty:0,date:b.date});o.items++;o.qty+=b.qty||0;}));
+  return Object.values(m).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+}
+function renderOld(){
+  const list=recordedOrders();
+  if(!SRC||!list.length){$("cOld").style.display="none";return;}
+  $("cOld").style.display="";
+  const live=new Set(LINES.filter(l=>!l.cancelled).map(l=>l.orderNo)),canc=new Set(LINES.filter(l=>l.cancelled).map(l=>l.orderNo));
+  $("oldBody").innerHTML='<table><tr><th>訂單</th><th>記錄</th><th>這份檔案</th><th></th></tr>'+list.map(o=>{
+    const note=canc.has(o.ref)?'<span class="tag t-less">在檔案中已關閉／取消</span>':live.has(o.ref)?'<span class="tag t-ok">在檔案中</span>':(LINES.length?'<span class="tag t-more">不在這份檔案</span>':'<span class="mute">—</span>');
+    return '<tr><td>…'+esc(o.ref.slice(-8))+'<div class="mute">'+esc(o.date||"")+'</div></td><td>'+o.items+' 品項／'+o.qty+' 件</td><td>'+note+'</td><td><button class="mini" style="border-color:var(--err);color:var(--err)" data-rm="'+esc(o.ref)+'">移除紀錄</button></td></tr>';
+  }).join("")+'</table>';
+  $("oldBody").querySelectorAll("button[data-rm]").forEach(b=>b.onclick=()=>{if(confirm("移除訂單 …"+b.dataset.rm.slice(-8)+" 的叫貨紀錄？\n（這些品項會退回「尚未叫貨」或剩下其他訂單的件數）"))removeOrder(b.dataset.rm);});
+}
+async function removeOrder(ref){
+  $("oldMsg").textContent="寫入中…";
+  try{
+    let n=0;
+    await writeItems(items=>items.map(it=>{
+      const bs=it.orderBatches||[];if(!bs.some(b=>b.ref===ref))return it;
+      n++;
+      const rest=bs.filter(b=>b.ref!==ref);
+      if(!rest.length)return{...it,orderBatches:[],orderedQty:Math.max(0,(it.qty||0)-(it.stockQty||0)),orderedEdited:false,firstOrderDate:"",secondOrderDate:"",allOrdered:false};
+      const total=rest.reduce((a,b)=>a+(b.qty||0),0);const dates=rest.map(b=>b.date).sort();
+      return{...it,orderBatches:rest,orderedQty:total,orderedEdited:true,firstOrderDate:dates[0],secondOrderDate:dates[1]||"",allOrdered:total>=((Math.max(0,(it.qty||0)-(it.stockQty||0)))+(it.defectQty||0))};
+    }));
+    $("oldMsg").innerHTML='<span class="ok">✓ 已移除訂單 …'+esc(ref.slice(-8))+' 的紀錄（'+n+' 個品項）。</span>　備貨追蹤若還開著，請先重新整理再操作。';
+    await loadSrc();refresh();
+  }catch(e){$("oldMsg").innerHTML='<span class="err">'+esc(e.message||e)+'</span>';}
+}
+function refresh(){renderMap();renderResult();renderOld();}
 
 // ---- 寫回備貨追蹤 ----
 async function writeItems(mut){   // mut(freshItems)->新 items；寫入前重新讀取，避免蓋掉其他裝置的修改
