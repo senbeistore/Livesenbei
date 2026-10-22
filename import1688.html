@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-C</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-D</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -129,8 +129,8 @@ async function loadSrc(){
   try{
     SRC=await fetchGist();
     const live=SRC.items.filter(it=>(it.source||(it.isCustomStock?"iopen":"live"))==="live");
-    SRC.live=live;
-    $("srcStatus").innerHTML='<span class="ok">✓ 已讀取</span>　工作區「'+esc(SRC.name||"")+'」，直播品項 '+live.length+' 筆。　<button id="btnReload">重新讀取</button>';
+    SRC.live=live;SRC.all=SRC.items;
+    $("srcStatus").innerHTML='<span class="ok">✓ 已讀取</span>　工作區「'+esc(SRC.name||"")+'」，直播品項 '+live.length+' 筆，iOPEN 品項 '+(SRC.items.length-live.length)+' 筆（兩邊都會比對）。　<button id="btnReload">重新讀取</button>';
     $("btnReload").onclick=async()=>{await loadSrc();refresh();};
   }catch(e){$("srcStatus").innerHTML='<span class="err">'+esc(e.message)+'</span>　<button id="btnReload">重試</button>';$("btnReload").onclick=loadSrc;}
 }
@@ -187,8 +187,10 @@ $("file").onchange=async e=>{
 // ---- 對應 ----
 function bigrams(s){s=String(s||"").replace(/[\s\d\-cm（）()·｜|]/g,"");const o=new Set();for(let i=0;i<s.length-1;i++)o.add(s.slice(i,i+2));if(s.length===1)o.add(s);return o;}
 function sim(a,b){const A=bigrams(a),B=bigrams(b);if(!A.size||!B.size)return 0;let n=0;A.forEach(x=>{if(B.has(x))n++;});return n/Math.min(A.size,B.size);}
-function prodOptions(){const g=[];(SRC?SRC.live:[]).forEach(it=>{const k=gProd(it);if(!g.includes(k))g.push(k);});return g.sort((a,b)=>a.localeCompare(b,"zh-Hant"));}
-function colorOptions(prod){const out=[];(SRC?SRC.live:[]).filter(it=>gProd(it)===prod).forEach(it=>{const k=colorKey(it);if(!out.some(o=>o.k===k))out.push({k,label:colorLabel(it)});});return out.sort((a,b)=>a.label.localeCompare(b.label,"zh-Hant"));}
+function srcOf(it){return it.source||(it.isCustomStock?"iopen":"live");}
+function prodLabel(g){const its=(SRC?SRC.all:[]).filter(it=>gProd(it)===g);const hasLive=its.some(it=>srcOf(it)==="live"),hasIo=its.some(it=>srcOf(it)==="iopen");return g+(hasLive&&hasIo?"［直播＋iOPEN］":hasIo?"［iOPEN］":"");}
+function prodOptions(){const g=[];(SRC?SRC.all:[]).forEach(it=>{const k=gProd(it);if(!g.includes(k))g.push(k);});return g.sort((a,b)=>a.localeCompare(b,"zh-Hant"));}
+function colorOptions(prod){const out=[];(SRC?SRC.all:[]).filter(it=>gProd(it)===prod).forEach(it=>{const k=colorKey(it);if(!out.some(o=>o.k===k))out.push({k,label:colorLabel(it)});});return out.sort((a,b)=>a.label.localeCompare(b.label,"zh-Hant"));}
 function suggestProd(title){const t=conv(title);let best="",sc=0;prodOptions().forEach(p=>{const s=sim(t,p);if(s>sc){sc=s;best=p;}});return sc>=0.34?best:"";}
 function suggestColor(prod,c){const t=conv(c).replace(/^(长袖|長袖|短袖|短裤|短褲|长裤|長褲)[-－]/,"");let best="",sc=0;colorOptions(prod).forEach(o=>{const s=sim(t,o.label);if(s>sc){sc=s;best=o.k;}});return sc>=0.5?best:"";}
 function prodOf(title){const m=MAP.prod[title];return m===undefined?"":m;}   // ""=未設定, "__skip__"=忽略
@@ -204,7 +206,7 @@ function renderMap(){
     if(MAP.prod[t]===undefined){const s=suggestProd(t);if(s)MAP.prod[t]=s;}
     const cur=MAP.prod[t]||"";
     h+='<div class="grp"><div style="font-weight:700">'+esc(t)+'</div><div class="mute">'+esc(conv(t))+'</div>';
-    h+='<div class="row" style="margin-top:4px"><span class="mute">對應商品</span><select data-prod="'+esc(t)+'"><option value="">（請選擇）</option><option value="__skip__"'+(cur==="__skip__"?" selected":"")+'>忽略這個商品</option>'+po.map(p=>'<option value="'+esc(p)+'"'+(p===cur?" selected":"")+'>'+esc(p)+'</option>').join("")+'</select></div>';
+    h+='<div class="row" style="margin-top:4px"><span class="mute">對應商品</span><select data-prod="'+esc(t)+'"><option value="">（請選擇）</option><option value="__skip__"'+(cur==="__skip__"?" selected":"")+'>忽略這個商品</option>'+po.map(p=>'<option value="'+esc(p)+'"'+(p===cur?" selected":"")+'>'+esc(prodLabel(p))+'</option>').join("")+'</select></div>';
     if(cur&&cur!=="__skip__"){
       const co=colorOptions(cur);
       const colors=[...new Set(LINES.filter(l=>l.title===t).map(l=>l.color))];
@@ -238,27 +240,29 @@ function compute(){
     if(ck==="__skip__")return;
     if(!ck){miss.push({l,why:"花色尚未對應"});return;}
     const sz=sizeNum(l.size);
-    const it=SRC.live.find(x=>gProd(x)===gp&&colorKey(x)===ck&&sizeNum(x.size)===sz);
-    if(!it){miss.push({l,why:"備貨追蹤沒有這個尺寸（"+(l.size||"?")+"）"});return;}
-    const t=target[it.id]||(target[it.id]={item:it,qty:0,orders:{}});
+    const its=SRC.all.filter(x=>gProd(x)===gp&&colorKey(x)===ck&&sizeNum(x.size)===sz).sort((a,b)=>(srcOf(a)==="live"?0:1)-(srcOf(b)==="live"?0:1));
+    if(!its.length){miss.push({l,why:"備貨追蹤沒有這個尺寸（"+(l.size||"?")+"）"});return;}
+    const key=gp+"|"+ck+"|"+sz;
+    const t=target[key]||(target[key]={key,items:its,qty:0,orders:{}});
     t.qty+=l.qty;const o=t.orders[l.orderNo]||(t.orders[l.orderNo]={qty:0,date:l.date});o.qty+=l.qty;
   });
   const rows=[];
   Object.values(target).forEach(t=>{
-    const it=t.item;
-    const batches=it.orderBatches||[];
-    const appliedHere=batches.filter(b=>b.ref&&orderNos.has(b.ref)).reduce((a,b)=>a+(b.qty||0),0);
-    const recorded=isMarked(it)?effOrdered(it):0;
-    const legacy=!batches.length&&recorded>0;   // 之前只按過「已叫貨」、沒有單號：視為就是這份清單的叫貨
+    const its=t.items,it=its[0];
+    const allB=its.flatMap(x=>x.orderBatches||[]);
+    const appliedHere=allB.filter(b=>b.ref&&orderNos.has(b.ref)).reduce((a,b)=>a+(b.qty||0),0);
+    const recorded=its.reduce((a,x)=>a+(isMarked(x)?effOrdered(x):0),0);
+    const legacy=!allB.length&&recorded>0;   // 之前只按過「已叫貨」、沒有單號：視為就是這份清單的叫貨
     const others=legacy?0:Math.max(0,recorded-appliedHere);
-    const expect=Math.max(0,needTotal(it)-others);
+    const need=its.reduce((a,x)=>a+needTotal(x),0);
+    const expect=Math.max(0,need-others);
     const diff=t.qty-expect;
-    rows.push({it,fileQty:t.qty,expect,diff,appliedHere,legacy,recorded,orders:t.orders,need:needTotal(it),others});
+    rows.push({key:t.key,it,items:its,fileQty:t.qty,expect,diff,appliedHere,legacy,recorded,orders:t.orders,need,others,qtySum:its.reduce((a,x)=>a+(x.qty||0),0),stockSum:its.reduce((a,x)=>a+(x.stockQty||0),0),defSum:its.reduce((a,x)=>a+(x.defectQty||0),0)});
   });
   // 漏叫：已對應商品中，備貨追蹤還要叫、但這份清單沒有
   const prodSet=new Set(Object.values(MAP.prod).filter(v=>v&&v!=="__skip__"));
-  const inList=new Set(Object.keys(target));
-  const forgot=SRC.live.filter(it=>prodSet.has(gProd(it))&&!inList.has(it.id)).map(it=>{
+  const inList=new Set(rows.flatMap(r=>r.items.map(x=>x.id)));
+  const forgot=SRC.all.filter(it=>prodSet.has(gProd(it))&&!inList.has(it.id)).map(it=>{
     const rec=isMarked(it)?effOrdered(it):0;return{it,toOrder:Math.max(0,needTotal(it)-rec)};
   }).filter(x=>x.toOrder>0);
   return{rows,miss,forgot};
@@ -282,7 +286,7 @@ function renderResult(){
   let h='<tr><th></th><th>品項</th><th>1688 清單</th><th>備貨追蹤該叫</th><th>狀態</th></tr>';
   rows.forEach((r,i)=>{
     const can=r.appliedHere<r.fileQty;
-    h+='<tr><td>'+(can?'<input type="checkbox" class="ck" data-id="'+esc(r.it.id)+'" checked/>':"")+'</td><td>'+esc(colorLabel(r.it))+' · '+esc(r.it.size||"")+'<div class="mute">'+esc(gProd(r.it))+'</div></td><td>'+r.fileQty+'<div class="mute">'+Object.keys(r.orders).map(n=>esc(n.slice(-6))+"×"+r.orders[n].qty).join(" ")+'</div></td><td>'+r.expect+'<div class="mute">需求 '+(r.it.qty||0)+(r.it.stockQty>0?' − 現貨 '+r.it.stockQty:'')+((r.it.defectQty||0)>0?' ＋瑕疵 '+r.it.defectQty:'')+(r.others?' − 另已叫 '+r.others:'')+'</div></td><td>'+statusTag(r)+(r.diff<0?'<div style="margin-top:4px"><button class="mini" data-stock="'+esc(r.it.id)+'" data-n="'+(-r.diff)+'">差 '+(-r.diff)+' 件是現貨<br>→記入現貨</button></div>':"")+'</td></tr>';
+    h+='<tr><td>'+(can?'<input type="checkbox" class="ck" data-id="'+esc(r.key)+'" checked/>':"")+'</td><td>'+esc(colorLabel(r.it))+' · '+esc(r.it.size||"")+'<div class="mute">'+esc(gProd(r.it))+(r.items.length>1?' <span class="pill">直播＋iOPEN</span>':(srcOf(r.it)==='iopen'?' <span class="pill">iOPEN</span>':''))+'</div></td><td>'+r.fileQty+'<div class="mute">'+Object.keys(r.orders).map(n=>esc(n.slice(-6))+"×"+r.orders[n].qty).join(" ")+'</div></td><td>'+r.expect+'<div class="mute">需求 '+r.qtySum+(r.stockSum>0?' − 現貨 '+r.stockSum:'')+(r.defSum>0?' ＋瑕疵 '+r.defSum:'')+(r.others?' − 另已叫 '+r.others:'')+'</div></td><td>'+statusTag(r)+(r.diff<0?'<div style="margin-top:4px"><button class="mini" data-stock="'+esc(r.it.id)+'" data-n="'+(-r.diff)+'">差 '+(-r.diff)+' 件是現貨<br>→記入現貨</button></div>':"")+'</td></tr>';
   });
   res.forgot.sort((a,b)=>(gProd(a.it)+colorLabel(a.it)).localeCompare(gProd(b.it)+colorLabel(b.it),"zh-Hant")).forEach(f=>{
     h+='<tr><td></td><td>'+esc(colorLabel(f.it))+' · '+esc(f.it.size||"")+'<div class="mute">'+esc(gProd(f.it))+'</div></td><td>0</td><td>'+f.toOrder+'</td><td><span class="tag t-miss">漏叫 '+f.toOrder+'</span></td></tr>';
@@ -299,7 +303,7 @@ function renderResult(){
 }
 function recordedOrders(){
   const m={};
-  (SRC?SRC.live:[]).forEach(it=>(it.orderBatches||[]).forEach(b=>{if(!b.ref)return;const o=m[b.ref]||(m[b.ref]={ref:b.ref,items:0,qty:0,date:b.date});o.items++;o.qty+=b.qty||0;}));
+  (SRC?SRC.all:[]).forEach(it=>(it.orderBatches||[]).forEach(b=>{if(!b.ref)return;const o=m[b.ref]||(m[b.ref]={ref:b.ref,items:0,qty:0,date:b.date});o.items++;o.qty+=b.qty||0;}));
   return Object.values(m).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
 }
 function renderOld(){
@@ -365,16 +369,21 @@ async function applyMarks(){
     const fresh=await fetchGist();   // 寫入前重新讀取，避免蓋掉其他裝置的修改
     const orderNos=new Set(LINES.map(l=>l.orderNo));
     let n=0;
-    const byId={};LAST.rows.forEach(r=>{byId[r.it.id]=r;});
-    fresh.raw.items=fresh.items.map(it=>{
-      if(!ids.includes(it.id)||!byId[it.id])return it;
-      const r=byId[it.id];
-      let batches=[...(it.orderBatches||[])];
-      // 原本只標記「已叫貨」沒有單號的，改以 1688 訂單為準（不重複計算）
+    const rowsSel=LAST.rows.filter(r=>ids.includes(r.key));
+    const patch={};   // item.id -> 要新增的 batches
+    rowsSel.forEach(r=>{
+      const its=r.items.map(x=>fresh.items.find(y=>y.id===x.id)||x);
+      const room=its.map(x=>Math.max(0,needTotal(x)-(isMarked(x)?effOrdered(x):0)));
       Object.keys(r.orders).forEach(no=>{
-        if(batches.some(b=>b.ref===no))return;       // 這張訂單已記錄過，不重複
-        batches.push({date:r.orders[no].date||new Date().toISOString().slice(0,10),qty:r.orders[no].qty,ref:no});
+        if(its.some(x=>(x.orderBatches||[]).some(b=>b.ref===no)))return;   // 這張訂單已記錄過，不重複
+        let left=r.orders[no].qty;const date=r.orders[no].date||new Date().toISOString().slice(0,10);
+        its.forEach((x,k)=>{if(left<=0)return;const q=Math.min(left,room[k]);if(q>0){(patch[x.id]=patch[x.id]||[]).push({date,qty:q,ref:no});room[k]-=q;left-=q;}});
+        if(left>0)(patch[its[0].id]=patch[its[0].id]||[]).push({date,qty:left,ref:no});   // 超出需求的部分記在第一個品項
       });
+    });
+    fresh.raw.items=fresh.items.map(it=>{
+      if(!patch[it.id])return it;
+      let batches=[...(it.orderBatches||[]),...patch[it.id]];
       const total=batches.reduce((a,b)=>a+(b.qty||0),0);
       const dates=batches.map(b=>b.date).sort();
       n++;
