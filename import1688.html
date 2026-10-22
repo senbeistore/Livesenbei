@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-Q</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-R</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -315,6 +315,13 @@ function renderResult(){
     const stk=res.forgot.reduce((a,f)=>a+(f.it.stockQty||0),0)+lessRows.reduce((a,r)=>a+r.stockSum,0);
     const nProd=new Set([...res.forgot.map(f=>gProd(f.it)),...lessRows.map(r=>gProd(r.it))]).size;
     $("unc").innerHTML=nItems?'<b>尚未叫貨：'+nProd+' 個商品、'+nItems+' 樣（共 '+pcs+' 件）</b>　其中少叫 '+lessRows.length+' 樣、漏叫 '+res.forgot.length+' 樣　（這些品項的現貨共 '+stk+' 件，已從件數中扣除）':'<b>沒有尚未叫貨的品項</b>';
+    const prodSet2=new Set(Object.values(MAP.prod).filter(v=>v&&v!=="__skip__"));
+    const mine=SRC.all.filter(it=>[...prodSet2].some(pp=>sameProd(it,pp))&&!((it.qty||0)===0&&!(it.stockQty>0)));
+    const tQty=mine.reduce((a,it)=>a+(it.qty||0),0),tStk=mine.reduce((a,it)=>a+Math.min(it.qty||0,it.stockQty||0),0),tNeed=mine.reduce((a,it)=>a+needTotal(it),0);
+    const fileTot=LINES.filter(l=>!l.cancelled).reduce((a,l)=>a+l.qty,0);
+    const mappedTot=res.rows.reduce((a,r)=>a+r.fileQty,0);
+    const famTot=res.rows.reduce((a,r)=>a+(r.fam||0),0)+famList.reduce((a,m)=>a+m.l.qty,0);
+    $("unc").innerHTML+='<div style="margin-top:4px">📋 備貨追蹤（已對應的商品）：需求共 <b>'+tQty+'</b> 件，現貨 <b>'+tStk+'</b> 件，應叫 <b>'+tNeed+'</b> 件（需求＋瑕疵−現貨）<br>🛒 1688 清單：共 <b>'+fileTot+'</b> 件，其中對上備貨追蹤 '+mappedTot+' 件'+(famTot?'、給親友 '+famTot+' 件':'')+'</div>';
   }
   const sortKey=r=>gProd(r.it)+"|"+colorLabel(r.it)+"|"+String(sizeNum(r.it.size)).padStart(4,"0");
   const rows=res.rows.filter(r=>FILT==='all'||(FILT==='ok'&&r.diff===0)||(FILT==='less'&&r.diff<0)||(FILT==='more'&&r.diff>0)).sort((a,b)=>sortKey(a).localeCompare(sortKey(b),"zh-Hant"));
