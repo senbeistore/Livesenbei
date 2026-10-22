@@ -1834,7 +1834,7 @@ function AddVariantModal({item,items,onApply,onClose}){
 // ── 對應原商品：把品項（或整個顏色、整款）歸到指定商品底下，不影響訂單比對 ──
 function HomeModal({item,items,onApply,onClose}){
   const src=itemSource(item);const pool=items.filter(x=>itemSource(x)===src);
-  const groups=[];pool.forEach(x=>{const g=gProd(x);if(!groups.includes(g))groups.push(g);});groups.sort((a,b)=>a.localeCompare(b,"zh-Hant"));
+  const groups=[];items.forEach(x=>{const g=gProd(x);if(!groups.includes(g))groups.push(g);});groups.sort((a,b)=>a.localeCompare(b,"zh-Hant"));
   const[to,setTo]=useState(gProd(item));const[scope,setScope]=useState("color");
   const btn={fontSize:12,borderRadius:6,padding:"6px 12px",cursor:"pointer",border:`1px solid ${C.line}`,background:C.surface,color:C.ink};
   const inScope=(x)=>scope==="one"?x.id===item.id:scope==="color"?(x.product===item.product&&(x.color||"")===(item.color||"")&&(x.style||"")===(item.style||"")):(x.product===item.product);
@@ -1845,7 +1845,7 @@ function HomeModal({item,items,onApply,onClose}){
       <div style={{fontSize:13,color:C.ink,marginTop:8,fontWeight:700}}>{dispName(item)}</div>
       <div style={{fontSize:11,color:C.inkMuted,marginTop:4}}>目前歸在：{gProd(item)}{item.homeProduct?"（已手動對應）":""}。歸屬只影響分組顯示與「改成別款」的選單，不會改動客人訂單內容。</div>
       <div style={{marginTop:12,fontSize:12,color:C.inkMuted}}>要歸到哪個商品</div>
-      <select value={to} onChange={e=>setTo(e.target.value)} style={{...btn,width:"100%",marginTop:4,padding:"8px"}}>{groups.map(g=><option key={g} value={g}>{g}</option>)}</select>
+      <select value={to} onChange={e=>setTo(e.target.value)} style={{...btn,width:"100%",marginTop:4,padding:"8px"}}>{groups.map(g=><option key={g} value={g}>{g}{items.some(x=>gProd(x)===g&&itemSource(x)===src)?"":(src==="live"?"（iOPEN）":"（直播）")}</option>)}</select>
       <div style={{marginTop:12,fontSize:12,color:C.inkMuted}}>套用範圍</div>
       {[["one","只這個品項（"+dispName(item)+"）"],["color","這個顏色的所有尺寸"],["all","「"+item.product+"」整款所有品項"]].map(([v,l])=>(<label key={v} style={{display:"flex",gap:6,alignItems:"center",fontSize:13,color:C.ink,marginTop:6}}><input type="radio" checked={scope===v} onChange={()=>setScope(v)}/>{l}</label>))}
       <div style={{display:"flex",gap:8,marginTop:14}}>
@@ -2198,7 +2198,7 @@ function App(){
   Object.values(stockByGroup).forEach(g=>g.sizes.sort((a,b)=>a.ord-b.ord));
   // 另一分頁（直播／iOPEN）的現貨：商品名正規化後相同或互相包含、且顏色/款式相同才視為同款
   const _normP=(p)=>String(p||"").replace(/現貨|預購/g,"").replace(/[（(][^）)]*[）)]/g,"").replace(/\d+\s*[~\-–]\s*\d+\s*(cm|公分)?|\d+\s*(cm|公分)/gi,"").replace(/賣場|直播|兒童|上衣|款|[｜|\s\-_·]/g,"");
-  const _sfx=(it)=>it.size?[it.style,it.color].filter(Boolean).join("·"):getBaseStyle(it.style||it.color||"");
+  const _sfx=(it)=>{const v=it.size?[it.style,it.color].filter(Boolean).join("·"):getBaseStyle(it.style||it.color||"");return String(v).replace(/(^|·)(款式|顏色|颜色|花色)\s*[:：]\s*/g,"$1");};
   const otherSrc=srcTab==="live"?"iopen":"live";
   const otherStock=[];
   items.filter(it=>itemSource(it)===otherSrc&&(it.stockQty||0)>0).forEach(it=>{
@@ -2217,7 +2217,7 @@ function App(){
   const crossInfo=(it)=>{
     const np=_normP(it.product);if(np.length<3)return null;
     const col=it.size?(it.style?[it.style,it.color].filter(Boolean).join("·"):(it.color||"")):"";
-    const hit=items.filter(o=>itemSource(o)===otherSrc&&(o.stockQty||0)>0&&o.id!==it.id).filter(o=>{const on=_normP(o.product);if(on.length<3)return false;if(!(on===np||on.includes(np)||np.includes(on)))return false;return _sfx(o)===_sfx(it);});
+    const hit=items.filter(o=>itemSource(o)===otherSrc&&(o.stockQty||0)>0&&o.id!==it.id).filter(o=>{const on=_normP(o.product);const viaHome=(o.homeProduct||it.homeProduct)&&gProd(o)===gProd(it);if(!viaHome){if(on.length<3)return false;if(!(on===np||on.includes(np)||np.includes(on)))return false;}return _sfx(o)===_sfx(it);});
     if(!hit.length)return null;
     const same=hit.filter(o=>(o.size||"")===(it.size||""));
     const others=hit.filter(o=>(o.size||"")!==(it.size||"")).sort((a,b)=>getSortSize(a)-getSortSize(b));
@@ -2237,7 +2237,7 @@ function App(){
     displayed.forEach((it,i)=>{
       const gk=getGroupKey(it);if(seenG[gk])return;seenG[gk]=true;
       const np=_normP(it.product),sf=_sfx(it);if(np.length<3)return;
-      const ms=ioAll.filter(o=>{const on=_normP(o.product);return on.length>=3&&(on===np||on.includes(np)||np.includes(on))&&_sfx(o)===sf;}).sort((a,b)=>getSortSize(a)-getSortSize(b));
+      const ms=ioAll.filter(o=>{const on=_normP(o.product);const viaHome=(o.homeProduct||it.homeProduct)&&gProd(o)===gProd(it);return (viaHome||(on.length>=3&&(on===np||on.includes(np)||np.includes(on))))&&_sfx(o)===sf;}).sort((a,b)=>getSortSize(a)-getSortSize(b));
       if(!ms.length)return;
       let j=i;while(displayed[j+1]&&getGroupKey(displayed[j+1])===gk)j++;
       ioBlockAt[j]=ms;ioQtyByGroup[gk]=ms.reduce((a,o)=>a+(o.qty||0),0);
@@ -2253,7 +2253,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-L</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-M</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
