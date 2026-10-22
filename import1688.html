@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-U</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-V</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -497,6 +497,8 @@ async function applyMarks(){
 }
 
 loadSrc().then(refresh);
+// 從備貨追蹤切回來時自動重新讀取最新資料（至少間隔 15 秒）
+(function(){let last=Date.now();document.addEventListener("visibilitychange",()=>{if(document.visibilityState!=="visible"||Date.now()-last<15000)return;last=Date.now();loadSrc().then(refresh).catch(()=>{});});})();
 </script>
 </body>
 </html>
