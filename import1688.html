@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-S</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-T</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -288,7 +288,9 @@ function compute(){
   const forgot=SRC.all.filter(it=>[...prodSet].some(pp=>sameProd(it,pp))&&!inList.has(it.id)).map(it=>{
     const rec=isMarked(it)?effOrdered(it):0;return{it,toOrder:Math.max(0,needTotal(it)-rec)};
   }).filter(x=>x.toOrder>0);
-  return{rows,miss,forgot};
+  // 標記未叫：備貨追蹤已標記「已叫貨」（沒有 1688 單號、也還沒到貨），但這份 1688 清單裡沒有
+  const unver=SRC.all.filter(it=>[...prodSet].some(pp=>sameProd(it,pp))&&!inList.has(it.id)&&isMarked(it)&&!(it.arrivedQty>0)&&!it.allArrived&&!(it.orderBatches||[]).some(b=>b.ref)&&effOrdered(it)>0).map(it=>({it,qty:effOrdered(it)}));
+  return{rows,miss,forgot,unver};
 }
 function statusTag(r){
   if(r.appliedHere>=r.fileQty&&r.diff===0)return'<span class="tag t-done">已記錄</span>';
@@ -306,7 +308,7 @@ function renderResult(){
   $("cRes").style.display="";
   const ok=res.rows.filter(r=>r.diff===0).length,less=res.rows.filter(r=>r.diff<0).length,more=res.rows.filter(r=>r.diff>0).length;
   const tg=(f,c,n,x)=>'<span class="tag '+c+'" data-f="'+f+'" style="cursor:pointer;margin-right:4px;'+(FILT===f?'outline:2px solid #333;':'')+'">'+n+' '+x+'</span>';
-  $("sum").innerHTML=tg('all','t-done','全部',res.rows.length+res.forgot.length)+tg('ok','t-ok','吻合',ok)+tg('less','t-less','少叫',less)+tg('more','t-more','多叫',more)+tg('miss','t-miss','漏叫',res.forgot.length)+(()=>{const n=res.rows.reduce((a,r)=>a+(r.fam||0),0)+famList.reduce((a,m)=>a+m.l.qty,0);return n?'<span class="tag t-done">親友 '+n+' 件</span>':'';})()+'<span class="tag t-done" data-f="unm" style="cursor:pointer">比對不到 '+res.miss.length+'</span>';
+  $("sum").innerHTML=tg('all','t-done','全部',res.rows.length+res.forgot.length)+tg('ok','t-ok','吻合',ok)+tg('less','t-less','少叫',less)+tg('more','t-more','多叫',more)+tg('miss','t-miss','漏叫',res.forgot.length)+(res.unver.length?tg('unver','t-less','標記未叫',res.unver.length):'')+(()=>{const n=res.rows.reduce((a,r)=>a+(r.fam||0),0)+famList.reduce((a,m)=>a+m.l.qty,0);return n?'<span class="tag t-done">親友 '+n+' 件</span>':'';})()+'<span class="tag t-done" data-f="unm" style="cursor:pointer">比對不到 '+res.miss.length+'</span>';
   $("sum").querySelectorAll("[data-f]").forEach(e=>e.onclick=()=>{if(e.dataset.f==="unm"){const m=$("cMiss");if(m.style.display!=="none")m.scrollIntoView({behavior:"smooth"});return;}FILT=FILT===e.dataset.f&&FILT!=="all"?"all":e.dataset.f;renderResult();});
   {
     const lessRows=res.rows.filter(r=>r.diff<0);
@@ -314,7 +316,8 @@ function renderResult(){
     const pcs=res.forgot.reduce((a,f)=>a+f.toOrder,0)+lessRows.reduce((a,r)=>a-r.diff,0);
     const stk=res.forgot.reduce((a,f)=>a+(f.it.stockQty||0),0)+lessRows.reduce((a,r)=>a+r.stockSum,0);
     const nProd=new Set([...res.forgot.map(f=>gProd(f.it)),...lessRows.map(r=>gProd(r.it))]).size;
-    $("unc").innerHTML=nItems?'<b>尚未叫貨：'+nProd+' 個商品、'+nItems+' 樣（共 '+pcs+' 件）</b>　其中少叫 '+lessRows.length+' 樣、漏叫 '+res.forgot.length+' 樣　（這些品項的現貨共 '+stk+' 件，已從件數中扣除）':'<b>沒有尚未叫貨的品項</b>';
+    const unv=res.unver.length?'<div class="warn" style="margin-top:4px"><b>⚠ '+res.unver.length+' 樣在備貨追蹤標記了「已叫貨」，但這份 1688 清單沒有（共 '+res.unver.reduce((a,u)=>a+u.qty,0)+' 件）</b>，可能還沒真的叫。點上方「標記未叫」查看。</div>':'';
+    $("unc").innerHTML=unv+(nItems?'<b>尚未叫貨：'+nProd+' 個商品、'+nItems+' 樣（共 '+pcs+' 件）</b>　其中少叫 '+lessRows.length+' 樣、漏叫 '+res.forgot.length+' 樣　（這些品項的現貨共 '+stk+' 件，已從件數中扣除）':'<b>沒有尚未叫貨的品項</b>');
     const prodSet2=new Set(Object.values(MAP.prod).filter(v=>v&&v!=="__skip__"));
     const mine=SRC.all.filter(it=>[...prodSet2].some(pp=>sameProd(it,pp))&&!((it.qty||0)===0&&!(it.stockQty>0)));
     const tQty=mine.reduce((a,it)=>a+(it.qty||0),0),tStk=mine.reduce((a,it)=>a+Math.min(it.qty||0,it.stockQty||0),0),tNeed=mine.reduce((a,it)=>a+needTotal(it),0);
@@ -333,11 +336,26 @@ function renderResult(){
   (FILT==='all'||FILT==='miss'?res.forgot:[]).slice().sort((a,b)=>(gProd(a.it)+colorLabel(a.it)).localeCompare(gProd(b.it)+colorLabel(b.it),"zh-Hant")).forEach(f=>{
     h+='<tr><td></td><td>'+esc(colorLabel(f.it))+' · '+esc(f.it.size||"")+'<div class="mute">'+esc(gProd(f.it))+'</div></td><td>0</td><td>'+f.toOrder+'</td><td><span class="tag t-miss">漏叫 '+f.toOrder+'</span></td></tr>';
   });
-  if(rows.length===0&&!(FILT==='all'||FILT==='miss'))h+='<tr><td colspan="5" class="mute">沒有符合的品項</td></tr>';
+  (FILT==='all'||FILT==='unver'?res.unver:[]).slice().sort((a,b)=>(gProd(a.it)+colorLabel(a.it)).localeCompare(gProd(b.it)+colorLabel(b.it),"zh-Hant")).forEach(u=>{
+    h+='<tr><td><input type="checkbox" class="uk" data-uid="'+esc(u.it.id)+'"/></td><td>'+esc(colorLabel(u.it))+' · '+esc(u.it.size||"")+'<div class="mute">'+esc(gProd(u.it))+'</div></td><td>0</td><td>'+u.qty+'</td><td><span class="tag t-less">標記已叫貨，但 1688 沒有</span></td></tr>';
+  });
+  if(res.unver.length&&(FILT==='all'||FILT==='unver'))h+='<tr><td colspan="5"><button class="mini" id="btnUnmark">取消勾選品項的「已叫貨」標記</button> <span class="mute">若是更早的 1688 訂單叫的，請先匯入那張訂單的檔案，不要取消。</span></td></tr>';
+  if(rows.length===0&&!(FILT==='all'||FILT==='miss'||(FILT==='unver'&&res.unver.length)))h+='<tr><td colspan="5" class="mute">沒有符合的品項</td></tr>';
   $("resTbl").innerHTML=h;
   const canAny=rows.some(r=>r.appliedHere<r.fileQty);
   $("applyBar").innerHTML='<button class="primary" id="btnApply"'+(canAny?"":" disabled")+'>把勾選的品項標記為「已叫貨」</button><span class="mute">叫貨日用 1688 的付款日（沒有則用建立日）。多叫、少叫的也可以標記，備貨追蹤會顯示差異。</span>';
   $("btnApply").onclick=applyMarks;
+  if($("btnUnmark"))$("btnUnmark").onclick=async()=>{
+    const ids=[...document.querySelectorAll("input.uk:checked")].map(x=>x.dataset.uid);
+    if(!ids.length){alert("請先勾選要取消標記的品項");return;}
+    if(!confirm("取消這 "+ids.length+" 個品項的「已叫貨」標記？（會退回「尚未叫貨」）"))return;
+    $("applyMsg").textContent="寫入中…";
+    try{
+      await writeItems(items=>items.map(it=>ids.includes(it.id)?{...it,orderBatches:[],orderedQty:Math.max(0,(it.qty||0)-(it.stockQty||0)),orderedEdited:false,firstOrderDate:"",secondOrderDate:"",allOrdered:false}:it));
+      $("applyMsg").innerHTML='<span class="ok">✓ 已取消 '+ids.length+' 個品項的標記。</span>　備貨追蹤若還開著，請先重新整理再操作。';
+      await loadSrc();refresh();
+    }catch(e){$("applyMsg").innerHTML='<span class="err">'+esc(e.message||e)+'</span>';}
+  };
   document.querySelectorAll("button.mini[data-fam]").forEach(b=>b.onclick=()=>{
     const cur=parseInt(b.dataset.cur,10)||0,d=parseInt(b.dataset.d,10)||0;
     let n;
