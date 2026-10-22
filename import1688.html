@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<title>1688 叫貨比對</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/full.js"></script>
+<style>
+  :root{--bg:#F5F3EE;--card:#fff;--ink:#1f1d1a;--mute:#7a746b;--line:#e3ded4;--accent:#8B1A1A;--ok:#2f7d4f;--warn:#b26a00;--err:#b42318;--info:#1d6fa3}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei",sans-serif}
+  header{position:sticky;top:0;z-index:5;background:var(--accent);color:#fff;padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  header h1{margin:0;font-size:17px}
+  header a{color:#fff;font-size:12px;opacity:.9}
+  .badge{background:#3b2aa8;border-radius:10px;font-size:11px;padding:1px 8px}
+  main{max-width:900px;margin:0 auto;padding:12px 12px 80px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+  h2{margin:0 0 8px;font-size:15px}
+  select,input[type=text],input[type=file]{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);max-width:100%}
+  button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);padding:7px 12px}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+  button:disabled{opacity:.5;cursor:default}
+  .mute{color:var(--mute);font-size:12px}
+  .err{color:var(--err)}.ok{color:var(--ok)}.warn{color:var(--warn)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:6px 6px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
+  th{font-size:12px;color:var(--mute);font-weight:600}
+  .tag{display:inline-block;border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700}
+  .t-ok{background:#d1fae5;color:#047857}.t-less{background:#fee2e2;color:#b91c1c}.t-more{background:#fff3cd;color:#92400e}.t-miss{background:#e8f0f7;color:var(--info)}.t-done{background:#e5e7eb;color:#374151}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .grp{border-top:1px solid var(--line);padding:8px 0}
+  .scroll{overflow-x:auto}
+</style>
+</head>
+<body>
+<header>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-A</span>
+  <a href="stock-tracker.html">← 備貨追蹤</a>
+  <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
+</header>
+<main>
+  <div class="card" id="cSrc">
+    <h2>① 備貨追蹤資料</h2>
+    <div id="srcStatus" class="mute">讀取中…</div>
+  </div>
+  <div class="card">
+    <h2>② 匯入 1688 訂單 Excel</h2>
+    <div class="mute" style="margin-bottom:8px">從 1688「已買到的貨品」匯出的訂單明細（.xlsx）。可一次匯入多張訂單。</div>
+    <input type="file" id="file" accept=".xlsx,.xls,.csv"/>
+    <div id="fileInfo" class="mute" style="margin-top:6px"></div>
+  </div>
+  <div class="card" id="cMap" style="display:none">
+    <h2>③ 對應設定</h2>
+    <div class="mute" style="margin-bottom:6px">1688 的商品名、花色用簡體與廠商命名，請指定對應到備貨追蹤的商品與花色。設定會記在這個瀏覽器，下次不用再選。</div>
+    <div id="mapBody"></div>
+  </div>
+  <div class="card" id="cRes" style="display:none">
+    <h2>④ 比對結果</h2>
+    <div id="sum" class="row" style="margin-bottom:8px"></div>
+    <div class="scroll"><table id="resTbl"></table></div>
+    <div id="applyBar" class="row" style="margin-top:12px"></div>
+    <div id="applyMsg" style="margin-top:8px;font-size:13px"></div>
+  </div>
+  <div class="card" id="cMiss" style="display:none">
+    <h2>比對不到的品項</h2>
+    <div class="mute" style="margin-bottom:6px">1688 清單上有，但備貨追蹤找不到對應品項（花色或尺寸不存在、或選了「忽略」）。花色不存在時，請先到備貨追蹤的「＋新增花色／尺寸」建立。</div>
+    <div id="missBody"></div>
+  </div>
+</main>
+<script>
+const GIST_FILE="stock-tracker-data.json";
+const MAPKEY="imp1688_map_v1";
+const SEP="\u0001";
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let conv=(s)=>s; try{ if(window.OpenCC){const c=OpenCC.Converter({from:"cn",to:"tw"});conv=(s)=>{try{return c(s);}catch(e){return s;}};} }catch(e){}
+
+// ---- 備貨追蹤邏輯（與 stock-tracker.html 相同）----
+const gProd=it=>it.homeProduct||it.product;
+const netNeed=it=>Math.max(0,(it.qty||0)-(it.stockQty||0));
+const needTotal=it=>netNeed(it)+(it.defectQty||0);
+const isMarked=it=>!!(it.firstOrderDate||it.allOrdered);
+const effOrdered=it=>{if(it.orderedEdited)return it.orderedQty!=null?it.orderedQty:netNeed(it);if(isMarked(it))return it.orderedQty!=null?it.orderedQty:netNeed(it);return netNeed(it);};
+const sizeNum=z=>{const m=String(z||"").match(/\d+/);return m?m[0]:String(z||"").trim();};
+const colorLabel=it=>[it.color,it.style].filter(Boolean).join(" ")||"（無花色）";
+const colorKey=it=>(it.style||"")+SEP+(it.color||"");
+
+// ---- 狀態 ----
+let SRC=null;      // {token,gistId,rev,items,raw}
+let LINES=[];      // 1688 明細
+let MAP=loadMap();
+function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{}};}catch(e){return{prod:{},color:{}};}}
+function saveMap(){try{localStorage.setItem(MAPKEY,JSON.stringify(MAP));}catch(e){}}
+
+// ---- 讀取雲端 ----
+function credentials(){
+  try{
+    const token=localStorage.getItem("st_token")||"";
+    const ws=JSON.parse(localStorage.getItem("st_workspaces")||"[]");
+    const idx=parseInt(localStorage.getItem("st_active")||"0",10)||0;
+    const w=ws[idx]||ws[0];
+    return{token,gistId:w&&w.gistId,name:w&&w.name};
+  }catch(e){return{token:"",gistId:""};}
+}
+function noteRL(r){const rem=r.headers.get("x-ratelimit-remaining"),lim=r.headers.get("x-ratelimit-limit");if(rem!=null)$("rl").textContent="GitHub 額度 "+rem+"/"+lim;}
+async function fetchGist(){
+  const c=credentials();
+  if(!c.token||!c.gistId)throw new Error("找不到備貨追蹤的設定。請先在同一個瀏覽器開啟過備貨追蹤（stock-tracker.html）。");
+  const r=await fetch("https://api.github.com/gists/"+c.gistId,{headers:{Authorization:"Bearer "+c.token,Accept:"application/vnd.github.v3+json"}});
+  noteRL(r);
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error("無法讀取雲端資料 (HTTP "+r.status+")"+(e.message?"："+String(e.message).split(". If you reach")[0]:""));}
+  const d=await r.json();const f=d.files&&d.files[GIST_FILE];if(!f)throw new Error("雲端沒有備貨追蹤的資料檔");
+  let content=f.content;
+  if(f.truncated&&f.raw_url){const rr=await fetch(f.raw_url);content=await rr.text();}
+  const p=JSON.parse(content||"{}");
+  return{token:c.token,gistId:c.gistId,name:c.name,rev:p.rev||"",items:p.items||[],raw:p};
+}
+async function loadSrc(){
+  $("srcStatus").innerHTML="讀取中…";
+  try{
+    SRC=await fetchGist();
+    const live=SRC.items.filter(it=>(it.source||(it.isCustomStock?"iopen":"live"))==="live");
+    SRC.live=live;
+    $("srcStatus").innerHTML='<span class="ok">✓ 已讀取</span>　工作區「'+esc(SRC.name||"")+'」，直播品項 '+live.length+' 筆。　<button id="btnReload">重新讀取</button>';
+    $("btnReload").onclick=async()=>{await loadSrc();refresh();};
+  }catch(e){$("srcStatus").innerHTML='<span class="err">'+esc(e.message)+'</span>　<button id="btnReload">重試</button>';$("btnReload").onclick=loadSrc;}
+}
+
+// ---- 解析 1688 Excel ----
+function parseSpec(title){
+  // 例：新款…套裝a类 颜色: 长袖-棕色小熊 适合身高: 90码（建议身高80-90cm）
+  let base=title,spec="";
+  const m=title.match(/\s+(?=[^\s:：]{1,8}[:：])/);
+  if(m){const i=title.indexOf(m[0]);base=title.slice(0,i).trim();spec=title.slice(i).trim();}
+  const kv={};
+  const re=/([^\s:：]{1,8})[:：]\s*([\s\S]+?)(?=\s+[^\s:：]{1,8}[:：]|$)/g;let x;
+  while((x=re.exec(spec)))kv[x[1]]=x[2].trim();
+  let color="",size="";
+  Object.keys(kv).forEach(k=>{
+    if(/颜色|顏色|花色|款式|规格|規格/.test(k)&&!color)color=kv[k];
+    else if(/身高|尺码|尺寸|尺碼|码数|大小/.test(k)&&!size){const n=kv[k].match(/(\d{2,3})\s*(码|碼|cm)?/);size=n?n[1]:kv[k];}
+  });
+  if(!size){const n=spec.match(/(\d{2,3})\s*[码碼]/);if(n)size=n[1];}
+  color=color.replace(/（[^）]*）|\([^)]*\)/g,"").trim();
+  return{base,color,size,spec};
+}
+function parseRows(aoa){
+  if(!aoa.length)return[];
+  const hdr=aoa[0].map(h=>String(h==null?"":h).trim());
+  const ix=n=>hdr.findIndex(h=>h===n||h.replace(/\(.*\)|（.*）/g,"")===n);
+  const cNo=ix("订单编号"),cTitle=ix("货品标题"),cQty=ix("数量"),cPrice=ix("单价"),cSt=ix("订单状态"),cCr=ix("订单创建时间"),cPay=ix("订单付款时间"),cCode=ix("货号");
+  if(cTitle<0||cQty<0)throw new Error("找不到「货品标题」「数量」欄位，這不像 1688 訂單匯出檔");
+  const out=[];let no="",st="",cr="",pay="";
+  for(let r=1;r<aoa.length;r++){
+    const row=aoa[r];if(!row)continue;
+    if(row[cNo]){no=String(row[cNo]).trim();st=String(row[cSt]||"").trim();cr=String(row[cCr]||"").trim();pay=String(row[cPay]||"").trim();}
+    const title=String(row[cTitle]||"").trim();if(!title)continue;
+    const qty=parseFloat(row[cQty])||0;if(qty<=0)continue;
+    const p=parseSpec(title);
+    out.push({orderNo:no||"（無單號）",status:st,date:(pay||cr||"").slice(0,10),title:p.base,color:p.color,size:p.size,qty,price:cPrice>=0?parseFloat(row[cPrice])||0:0,code:cCode>=0?String(row[cCode]||""):""});
+  }
+  return out;
+}
+$("file").onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const buf=await f.arrayBuffer();
+    const wb=XLSX.read(buf,{type:"array"});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+    LINES=parseRows(aoa);
+    const orders=[...new Set(LINES.map(l=>l.orderNo))];
+    $("fileInfo").innerHTML='<span class="ok">✓ '+esc(f.name)+'</span>　'+orders.length+' 張訂單，'+LINES.length+' 筆明細，共 '+LINES.reduce((a,l)=>a+l.qty,0)+' 件';
+    refresh();
+  }catch(err){$("fileInfo").innerHTML='<span class="err">'+esc(err.message||err)+'</span>';}
+};
+
+// ---- 對應 ----
+function bigrams(s){s=String(s||"").replace(/[\s\d\-cm（）()·｜|]/g,"");const o=new Set();for(let i=0;i<s.length-1;i++)o.add(s.slice(i,i+2));if(s.length===1)o.add(s);return o;}
+function sim(a,b){const A=bigrams(a),B=bigrams(b);if(!A.size||!B.size)return 0;let n=0;A.forEach(x=>{if(B.has(x))n++;});return n/Math.min(A.size,B.size);}
+function prodOptions(){const g=[];(SRC?SRC.live:[]).forEach(it=>{const k=gProd(it);if(!g.includes(k))g.push(k);});return g.sort((a,b)=>a.localeCompare(b,"zh-Hant"));}
+function colorOptions(prod){const out=[];(SRC?SRC.live:[]).filter(it=>gProd(it)===prod).forEach(it=>{const k=colorKey(it);if(!out.some(o=>o.k===k))out.push({k,label:colorLabel(it)});});return out.sort((a,b)=>a.label.localeCompare(b.label,"zh-Hant"));}
+function suggestProd(title){const t=conv(title);let best="",sc=0;prodOptions().forEach(p=>{const s=sim(t,p);if(s>sc){sc=s;best=p;}});return sc>=0.34?best:"";}
+function suggestColor(prod,c){const t=conv(c).replace(/^(长袖|長袖|短袖|短裤|短褲|长裤|長褲)[-－]/,"");let best="",sc=0;colorOptions(prod).forEach(o=>{const s=sim(t,o.label);if(s>sc){sc=s;best=o.k;}});return sc>=0.5?best:"";}
+function prodOf(title){const m=MAP.prod[title];return m===undefined?"":m;}   // ""=未設定, "__skip__"=忽略
+function colorOf(title,c){const m=MAP.color[title+"|"+c];return m===undefined?"":m;}
+
+function renderMap(){
+  if(!LINES.length||!SRC){$("cMap").style.display="none";return;}
+  $("cMap").style.display="";
+  const titles=[...new Set(LINES.map(l=>l.title))];
+  const po=prodOptions();
+  let h="";
+  titles.forEach(t=>{
+    if(MAP.prod[t]===undefined){const s=suggestProd(t);if(s)MAP.prod[t]=s;}
+    const cur=MAP.prod[t]||"";
+    h+='<div class="grp"><div style="font-weight:700">'+esc(t)+'</div><div class="mute">'+esc(conv(t))+'</div>';
+    h+='<div class="row" style="margin-top:4px"><span class="mute">對應商品</span><select data-prod="'+esc(t)+'"><option value="">（請選擇）</option><option value="__skip__"'+(cur==="__skip__"?" selected":"")+'>忽略這個商品</option>'+po.map(p=>'<option value="'+esc(p)+'"'+(p===cur?" selected":"")+'>'+esc(p)+'</option>').join("")+'</select></div>';
+    if(cur&&cur!=="__skip__"){
+      const co=colorOptions(cur);
+      const colors=[...new Set(LINES.filter(l=>l.title===t).map(l=>l.color))];
+      h+='<table style="margin-top:6px"><tr><th>1688 花色</th><th>對應花色</th></tr>';
+      colors.forEach(c=>{
+        const key=t+"|"+c;if(MAP.color[key]===undefined){const s=suggestColor(cur,c);if(s)MAP.color[key]=s;}
+        const cc=MAP.color[key]||"";
+        h+='<tr><td>'+esc(c)+'<div class="mute">'+esc(conv(c))+'</div></td><td><select data-color="'+esc(key)+'"><option value="">（請選擇）</option><option value="__skip__"'+(cc==="__skip__"?" selected":"")+'>忽略</option>'+co.map(o=>'<option value="'+esc(o.k)+'"'+(o.k===cc?" selected":"")+'>'+esc(o.label)+'</option>').join("")+'</select></td></tr>';
+      });
+      h+='</table>';
+    }
+    h+='</div>';
+  });
+  $("mapBody").innerHTML=h;
+  $("mapBody").querySelectorAll("select[data-prod]").forEach(s=>s.onchange=()=>{MAP.prod[s.dataset.prod]=s.value;saveMap();refresh();});
+  $("mapBody").querySelectorAll("select[data-color]").forEach(s=>s.onchange=()=>{MAP.color[s.dataset.color]=s.value;saveMap();renderResult();});
+  saveMap();
+}
+
+// ---- 比對 ----
+function compute(){
+  const orderNos=new Set(LINES.map(l=>l.orderNo));
+  const target={};   // item.id -> {item, qty, orders:{no:{qty,date}}}
+  const miss=[];
+  LINES.forEach(l=>{
+    const gp=prodOf(l.title);
+    if(gp==="__skip__")return;
+    if(!gp){miss.push({l,why:"商品尚未對應"});return;}
+    const ck=colorOf(l.title,l.color);
+    if(ck==="__skip__")return;
+    if(!ck){miss.push({l,why:"花色尚未對應"});return;}
+    const sz=sizeNum(l.size);
+    const it=SRC.live.find(x=>gProd(x)===gp&&colorKey(x)===ck&&sizeNum(x.size)===sz);
+    if(!it){miss.push({l,why:"備貨追蹤沒有這個尺寸（"+(l.size||"?")+"）"});return;}
+    const t=target[it.id]||(target[it.id]={item:it,qty:0,orders:{}});
+    t.qty+=l.qty;const o=t.orders[l.orderNo]||(t.orders[l.orderNo]={qty:0,date:l.date});o.qty+=l.qty;
+  });
+  const rows=[];
+  Object.values(target).forEach(t=>{
+    const it=t.item;
+    const batches=it.orderBatches||[];
+    const appliedHere=batches.filter(b=>b.ref&&orderNos.has(b.ref)).reduce((a,b)=>a+(b.qty||0),0);
+    const recorded=isMarked(it)?effOrdered(it):0;
+    const legacy=!batches.length&&recorded>0;   // 之前只按過「已叫貨」、沒有單號：視為就是這份清單的叫貨
+    const others=legacy?0:Math.max(0,recorded-appliedHere);
+    const expect=Math.max(0,needTotal(it)-others);
+    const diff=t.qty-expect;
+    rows.push({it,fileQty:t.qty,expect,diff,appliedHere,legacy,recorded,orders:t.orders,need:needTotal(it),others});
+  });
+  // 漏叫：已對應商品中，備貨追蹤還要叫、但這份清單沒有
+  const prodSet=new Set(Object.values(MAP.prod).filter(v=>v&&v!=="__skip__"));
+  const inList=new Set(Object.keys(target));
+  const forgot=SRC.live.filter(it=>prodSet.has(gProd(it))&&!inList.has(it.id)).map(it=>{
+    const rec=isMarked(it)?effOrdered(it):0;return{it,toOrder:Math.max(0,needTotal(it)-rec)};
+  }).filter(x=>x.toOrder>0);
+  return{rows,miss,forgot};
+}
+function statusTag(r){
+  if(r.appliedHere>=r.fileQty&&r.diff===0)return'<span class="tag t-done">已記錄</span>';
+  if(r.legacy&&r.diff===0)return'<span class="tag t-ok">吻合（原已標記叫貨）</span>';
+  if(r.diff===0)return'<span class="tag t-ok">吻合</span>';
+  if(r.diff<0)return'<span class="tag t-less">少叫 '+(-r.diff)+'</span>';
+  return'<span class="tag t-more">多叫 '+r.diff+'</span>';
+}
+let LAST=null;
+function renderResult(){
+  if(!LINES.length||!SRC){$("cRes").style.display="none";$("cMiss").style.display="none";return;}
+  const res=LAST=compute();
+  $("cRes").style.display="";
+  const ok=res.rows.filter(r=>r.diff===0).length,less=res.rows.filter(r=>r.diff<0).length,more=res.rows.filter(r=>r.diff>0).length;
+  $("sum").innerHTML='<span class="tag t-ok">吻合 '+ok+'</span><span class="tag t-less">少叫 '+less+'</span><span class="tag t-more">多叫 '+more+'</span><span class="tag t-miss">漏叫 '+res.forgot.length+'</span><span class="tag t-done">比對不到 '+res.miss.length+'</span>';
+  const sortKey=r=>gProd(r.it)+"|"+colorLabel(r.it)+"|"+String(sizeNum(r.it.size)).padStart(4,"0");
+  const rows=res.rows.slice().sort((a,b)=>sortKey(a).localeCompare(sortKey(b),"zh-Hant"));
+  let h='<tr><th></th><th>品項</th><th>1688 清單</th><th>備貨追蹤該叫</th><th>狀態</th></tr>';
+  rows.forEach((r,i)=>{
+    const can=r.appliedHere<r.fileQty;
+    h+='<tr><td>'+(can?'<input type="checkbox" class="ck" data-id="'+esc(r.it.id)+'" checked/>':"")+'</td><td>'+esc(colorLabel(r.it))+' · '+esc(r.it.size||"")+'<div class="mute">'+esc(gProd(r.it))+'</div></td><td>'+r.fileQty+'<div class="mute">'+Object.keys(r.orders).map(n=>esc(n.slice(-6))+"×"+r.orders[n].qty).join(" ")+'</div></td><td>'+r.expect+(r.others?'<div class="mute">另已叫 '+r.others+'</div>':"")+'</td><td>'+statusTag(r)+'</td></tr>';
+  });
+  res.forgot.sort((a,b)=>(gProd(a.it)+colorLabel(a.it)).localeCompare(gProd(b.it)+colorLabel(b.it),"zh-Hant")).forEach(f=>{
+    h+='<tr><td></td><td>'+esc(colorLabel(f.it))+' · '+esc(f.it.size||"")+'<div class="mute">'+esc(gProd(f.it))+'</div></td><td>0</td><td>'+f.toOrder+'</td><td><span class="tag t-miss">漏叫 '+f.toOrder+'</span></td></tr>';
+  });
+  $("resTbl").innerHTML=h;
+  const canAny=rows.some(r=>r.appliedHere<r.fileQty);
+  $("applyBar").innerHTML='<button class="primary" id="btnApply"'+(canAny?"":" disabled")+'>把勾選的品項標記為「已叫貨」</button><span class="mute">叫貨日用 1688 的付款日（沒有則用建立日）。多叫、少叫的也可以標記，備貨追蹤會顯示差異。</span>';
+  $("btnApply").onclick=applyMarks;
+  if(res.miss.length){
+    $("cMiss").style.display="";
+    $("missBody").innerHTML='<table><tr><th>1688 品項</th><th>件數</th><th>原因</th></tr>'+res.miss.map(m=>'<tr><td>'+esc(m.l.title.slice(0,24))+'… '+esc(m.l.color)+' '+esc(m.l.size)+'</td><td>'+m.l.qty+'</td><td class="warn">'+esc(m.why)+'</td></tr>').join("")+'</table>';
+  }else $("cMiss").style.display="none";
+}
+function refresh(){renderMap();renderResult();}
+
+// ---- 寫回備貨追蹤 ----
+async function applyMarks(){
+  const ids=[...document.querySelectorAll(".ck:checked")].map(x=>x.dataset.id);
+  if(!ids.length){$("applyMsg").innerHTML='<span class="warn">沒有勾選任何品項</span>';return;}
+  $("btnApply").disabled=true;$("applyMsg").textContent="寫入中…";
+  try{
+    const fresh=await fetchGist();   // 寫入前重新讀取，避免蓋掉其他裝置的修改
+    const orderNos=new Set(LINES.map(l=>l.orderNo));
+    let n=0;
+    const byId={};LAST.rows.forEach(r=>{byId[r.it.id]=r;});
+    fresh.raw.items=fresh.items.map(it=>{
+      if(!ids.includes(it.id)||!byId[it.id])return it;
+      const r=byId[it.id];
+      let batches=[...(it.orderBatches||[])];
+      // 原本只標記「已叫貨」沒有單號的，改以 1688 訂單為準（不重複計算）
+      Object.keys(r.orders).forEach(no=>{
+        if(batches.some(b=>b.ref===no))return;       // 這張訂單已記錄過，不重複
+        batches.push({date:r.orders[no].date||new Date().toISOString().slice(0,10),qty:r.orders[no].qty,ref:no});
+      });
+      const total=batches.reduce((a,b)=>a+(b.qty||0),0);
+      const dates=batches.map(b=>b.date).sort();
+      n++;
+      return{...it,orderBatches:batches,orderedQty:total,orderedEdited:true,firstOrderDate:dates[0],secondOrderDate:dates[1]||"",allOrdered:total>=needTotal(it)};
+    });
+    if(!n){$("applyMsg").innerHTML='<span class="warn">沒有需要更新的品項</span>';return;}
+    const rev=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    const body={rev,items:fresh.raw.items,savedAlloc:fresh.raw.savedAlloc||null,iopenCustom:fresh.raw.iopenCustom||[],iopenData:fresh.raw.iopenData||{}};
+    const r=await fetch("https://api.github.com/gists/"+fresh.gistId,{method:"PATCH",headers:{Authorization:"Bearer "+fresh.token,"Content-Type":"application/json"},body:JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify(body,null,2)}}})});
+    noteRL(r);
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error("儲存失敗 (HTTP "+r.status+")"+(e.message?"："+String(e.message).split(". If you reach")[0]:""));}
+    $("applyMsg").innerHTML='<span class="ok">✓ 已標記 '+n+' 個品項為已叫貨。</span>　備貨追蹤若還開著，請先重新整理再操作。';
+    await loadSrc();refresh();
+  }catch(e){$("applyMsg").innerHTML='<span class="err">'+esc(e.message||e)+'</span>';$("btnApply")&&($("btnApply").disabled=false);}
+}
+
+loadSrc().then(refresh);
+</script>
+</body>
+</html>
