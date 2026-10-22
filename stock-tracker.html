@@ -77,7 +77,7 @@ function displayProd(s){
   if(NOTE.test(tail)&&head)return head;
   return v;
 }
-function dispName(it){return [displayProd(it.product),it.color,it.size,it.style].filter(Boolean).join(" ");}
+function dispName(it){return [displayProd(gProd(it)),it.color,it.size,it.style].filter(Boolean).join(" ");}
 function flatKey(it){
   const ns=s=>String(s||"")
     .replace(/(?:女裝|男裝|兒童|童裝|女童|男童)?(?:顏色|尺寸|尺碼|身高|體重|規格|款式|全尺碼)[:：]/g,"")
@@ -128,13 +128,14 @@ function getBaseStyle(style){
   for(const c of COLOR_SUFFIXES){if(style.endsWith(c))return style.slice(0,-c.length);}
   return style;
 }
+function gProd(it){return it.homeProduct||it.product;}
 function getGroupKey(it){
-  if(!it.size)return it.product+"|||"+getBaseStyle(it.style||it.color||"");
-  return it.product+"|||"+[it.style,it.color].filter(Boolean).join("·");
+  if(!it.size)return gProd(it)+"|||"+getBaseStyle(it.style||it.color||"");
+  return gProd(it)+"|||"+[it.style,it.color].filter(Boolean).join("·");
 }
 function getGroupLabel(it){
-  if(!it.size)return getBaseStyle(it.style||it.color||"")||it.product;
-  return [it.style,it.color].filter(Boolean).join(" ")||it.product;
+  if(!it.size)return getBaseStyle(it.style||it.color||"")||gProd(it);
+  return [it.style,it.color].filter(Boolean).join(" ")||gProd(it);
 }
 function getSortSize(it){return sizeOrder(it.size||it.color);}
 function sortPri(it){if(it.soldOut)return 6;if((it.qty||0)>0&&netNeed(it)===0&&(it.arrivedQty||0)===0&&!it.firstOrderDate&&!it.allOrdered)return 5;if(it.allArrived)return 4;if(isOrderedMarked(it)&&toOrderQty(it)>0&&(it.arrivedQty||0)===0)return 1;if(it.allOrdered)return 3;if(it.firstOrderDate)return 2;return 1;}
@@ -556,7 +557,7 @@ function Setup({onDone}){
 }
 
 // ── 商品卡 ──
-function ItemCard({it,sel,onToggleSel,onUpdate,xinfo,onChange}){
+function ItemCard({it,sel,onToggleSel,onUpdate,xinfo,onChange,onHome}){
   const [d1,setD1]=useState(it.firstOrderDate||"");
   const [d2,setD2]=useState(it.secondOrderDate||"");
   // 同步外部 it 的變更（例如批次設定日期）
@@ -660,7 +661,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate,xinfo,onChange}){
             </span>
             <span style={{background:chip.bg,color:chip.col,borderRadius:10,padding:"3px 10px",fontSize:12,fontWeight:700}}>{chip.txt}</span>
           </div>
-          {(it.color||it.size||it.style)&&<div style={{color:C.inkMuted,fontSize:12,marginTop:2}}>{it.product}</div>}
+          {(it.color||it.size||it.style)&&<div style={{color:C.inkMuted,fontSize:12,marginTop:2}}>{gProd(it)}</div>}
           {xinfo&&(<div style={{marginTop:6,padding:"6px 10px",borderRadius:8,border:`1px solid ${xinfo.same>0?"#B45309":"#059669"}`,background:xinfo.same>0?"#FFF3CD":"#F0FFF4",fontSize:12,color:xinfo.same>0?"#92400E":"#047857",fontWeight:600,lineHeight:1.5}}>
             {xinfo.same>0?<div>⚠️ 提醒：{xinfo.label}場此規格現貨 {xinfo.same} 件，請勿重複叫貨</div>:<div>提醒：{xinfo.label}場同款有現貨（此尺寸 0），請勿重複叫貨</div>}
             {xinfo.others&&<div style={{fontWeight:500}}>{xinfo.label}場其他尺寸現貨：{xinfo.others}</div>}
@@ -711,6 +712,7 @@ function ItemCard({it,sel,onToggleSel,onUpdate,xinfo,onChange}){
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
           {onChange&&<button onClick={onChange} style={{fontSize:12,color:"#B91C1C",border:"1px solid #B91C1C",background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}>🚫 斷貨／改色／取消客人訂單</button>}
+          {onHome&&<button onClick={onHome} style={{fontSize:12,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}>📌 對應原商品{it.homeProduct?"（已對應）":""}</button>}
           {it.soldOut&&<button onClick={()=>onUpdate("soldOut",false)} style={{fontSize:12,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer"}}>取消斷貨標記</button>}
         </div>
         {marked&&<button onClick={unmarkOrdered} style={{fontSize:12,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:6,padding:"4px 10px",cursor:"pointer",marginBottom:8}}>取消「已叫貨」</button>}
@@ -1715,7 +1717,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
 
 // ── 主應用 ──
 function CountView({items,onApply,onClose}){
-  const prods=useMemo(()=>{const m={};items.forEach(it=>{const has=isOrderedMarked(it)||(it.arrivedQty||0)>0;if(!has)return;if(effOrderedQty(it)<=0&&(it.arrivedQty||0)<=0)return;(m[it.product]=m[it.product]||[]).push(it);});return Object.keys(m).sort((a,b)=>a.localeCompare(b)).map(k=>({prod:k,rows:m[k].slice().sort((a,b)=>{const c=getGroupKey(a).localeCompare(getGroupKey(b));return c!==0?c:getSortSize(a)-getSortSize(b);})}));},[items]);
+  const prods=useMemo(()=>{const m={};items.forEach(it=>{const has=isOrderedMarked(it)||(it.arrivedQty||0)>0;if(!has)return;if(effOrderedQty(it)<=0&&(it.arrivedQty||0)<=0)return;(m[gProd(it)]=m[gProd(it)]||[]).push(it);});return Object.keys(m).sort((a,b)=>a.localeCompare(b)).map(k=>({prod:k,rows:m[k].slice().sort((a,b)=>{const c=getGroupKey(a).localeCompare(getGroupKey(b));return c!==0?c:getSortSize(a)-getSortSize(b);})}));},[items]);
   const [sel,setSel]=useState("");
   const [draft,setDraft]=useState({});
   const [closed,setClosed]=useState(true);
@@ -1771,6 +1773,30 @@ function CountView({items,onApply,onClose}){
   </div>);
 }
 
+// ── 對應原商品：把品項（或整個顏色、整款）歸到指定商品底下，不影響訂單比對 ──
+function HomeModal({item,items,onApply,onClose}){
+  const src=itemSource(item);const pool=items.filter(x=>itemSource(x)===src);
+  const groups=[];pool.forEach(x=>{const g=gProd(x);if(!groups.includes(g))groups.push(g);});groups.sort((a,b)=>a.localeCompare(b,"zh-Hant"));
+  const[to,setTo]=useState(gProd(item));const[scope,setScope]=useState("color");
+  const btn={fontSize:12,borderRadius:6,padding:"6px 12px",cursor:"pointer",border:`1px solid ${C.line}`,background:C.surface,color:C.ink};
+  const inScope=(x)=>scope==="one"?x.id===item.id:scope==="color"?(x.product===item.product&&(x.color||"")===(item.color||"")&&(x.style||"")===(item.style||"")):(x.product===item.product);
+  const n=pool.filter(inScope).length;
+  return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:60,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"20px 10px"}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:14,maxWidth:520,width:"100%",padding:16}}>
+      <div style={{display:"flex",justifyContent:"space-between"}}><b style={{fontSize:16,color:C.ink}}>📌 對應原商品</b><button style={btn} onClick={onClose}>關閉</button></div>
+      <div style={{fontSize:13,color:C.ink,marginTop:8,fontWeight:700}}>{dispName(item)}</div>
+      <div style={{fontSize:11,color:C.inkMuted,marginTop:4}}>目前歸在：{gProd(item)}{item.homeProduct?"（已手動對應）":""}。歸屬只影響分組顯示與「改成別款」的選單，不會改動客人訂單內容。</div>
+      <div style={{marginTop:12,fontSize:12,color:C.inkMuted}}>要歸到哪個商品</div>
+      <select value={to} onChange={e=>setTo(e.target.value)} style={{...btn,width:"100%",marginTop:4,padding:"8px"}}>{groups.map(g=><option key={g} value={g}>{g}</option>)}</select>
+      <div style={{marginTop:12,fontSize:12,color:C.inkMuted}}>套用範圍</div>
+      {[["one","只這個品項（"+dispName(item)+"）"],["color","這個顏色的所有尺寸"],["all","「"+item.product+"」整款所有品項"]].map(([v,l])=>(<label key={v} style={{display:"flex",gap:6,alignItems:"center",fontSize:13,color:C.ink,marginTop:6}}><input type="radio" checked={scope===v} onChange={()=>setScope(v)}/>{l}</label>))}
+      <div style={{display:"flex",gap:8,marginTop:14}}>
+        <button style={{...btn,background:C.stamp,color:"#fff",border:"none",fontWeight:700,padding:"8px 16px"}} onClick={()=>{onApply(pool.filter(inScope).map(x=>x.id),to);onClose();}}>套用（{n} 個品項）</button>
+        {item.homeProduct&&<button style={btn} onClick={()=>{onApply(pool.filter(inScope).map(x=>x.id),"");onClose();}}>還原成原本的商品</button>}
+      </div>
+    </div></div>);
+}
+
 // ── 斷貨／改色／取消：逐位客人處理，並同步修改本工具內的訂單資料 ──
 function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose}){
   const fk=flatKey(item);
@@ -1784,28 +1810,36 @@ function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose}){
       rows.push({oi,li,qty:ln.qty,price:ln.price||0,account:c.account||o.customerKey,name:c.name||"",shipped});
     });});
   }
-  // 目標清單：同商品「所有顏色 × 所有尺寸」都列出；備貨清單裡還沒有的組合選了之後會自動新增品項
-  const sameP=items.filter(x=>x.product===item.product&&itemSource(x)===itemSource(item));
-  const colorKeys=[],sizeKeys=[];
-  sameP.forEach(x=>{const ck=(x.style||"")+"\u0001"+(x.color||"");if(!colorKeys.includes(ck))colorKeys.push(ck);const z=x.size||"";if(!sizeKeys.includes(z))sizeKeys.push(z);});
-  sizeKeys.sort((a,b)=>sizeOrder(a)-sizeOrder(b));
-  const targets=[];
-  colorKeys.forEach(ck=>{const[st,co]=ck.split("\u0001");sizeKeys.forEach(z=>{
-    const ex=sameP.find(x=>(x.style||"")===st&&(x.color||"")===co&&(x.size||"")===z);
-    if(ex){if(ex.id===item.id||ex.soldOut)return;targets.push({id:ex.id,color:co,size:z,style:st,stock:ex.stockQty||0,isNew:false});}
-    else targets.push({id:"new|"+st+"|"+co+"|"+z,color:co,size:z,style:st,stock:0,isNew:true});
-  });});
-  targets.sort((a,b)=>a.color.localeCompare(b.color,"zh-Hant")||sizeOrder(a.size)-sizeOrder(b.size));
+  // 目標清單：可選任一商品（預設同商品）的「所有顏色 × 所有尺寸」；備貨清單裡還沒有的組合選了之後會自動新增品項
+  const poolAll=items.filter(x=>itemSource(x)===itemSource(item));
+  const groups=[];poolAll.forEach(x=>{const g=gProd(x);if(!groups.includes(g))groups.push(g);});
+  groups.sort((a,b)=>(a===gProd(item)?-1:b===gProd(item)?1:a.localeCompare(b,"zh-Hant")));
+  const SEP="\u0001";
+  const baseProd=(gp)=>{const m={};poolAll.filter(x=>gProd(x)===gp).forEach(x=>{m[x.product]=(m[x.product]||0)+1;});return Object.keys(m).sort((a,b)=>m[b]-m[a])[0]||gp;};
+  const targetsFor=(gp)=>{
+    const sameP=poolAll.filter(x=>gProd(x)===gp);
+    const colorKeys=[],sizeKeys=[];
+    sameP.forEach(x=>{const ck=(x.style||"")+SEP+(x.color||"");if(!colorKeys.includes(ck))colorKeys.push(ck);const z=x.size||"";if(!sizeKeys.includes(z))sizeKeys.push(z);});
+    sizeKeys.sort((a,b)=>sizeOrder(a)-sizeOrder(b));
+    const out=[];const bp=baseProd(gp);
+    colorKeys.forEach(ck=>{const[st,co]=ck.split(SEP);sizeKeys.forEach(z=>{
+      const ex=sameP.find(x=>(x.style||"")===st&&(x.color||"")===co&&(x.size||"")===z);
+      if(ex){if(ex.id===item.id||ex.soldOut)return;out.push({id:ex.id,color:co,size:z,style:st,stock:ex.stockQty||0,isNew:false});}
+      else out.push({id:"new"+SEP+bp+SEP+gp+SEP+st+SEP+co+SEP+z,color:co,size:z,style:st,stock:0,isNew:true});
+    });});
+    out.sort((a,b)=>a.color.localeCompare(b.color,"zh-Hant")||sizeOrder(a.size)-sizeOrder(b.size));
+    return out;
+  };
   const[dec,setDec]=useState({});
   const[soldOut,setSoldOut]=useState(true);
   const[done,setDone]=useState(null);
-  const get=(r)=>dec[r.oi+"_"+r.li]||{act:"keep",n:r.qty,to:""};
+  const get=(r)=>dec[r.oi+"_"+r.li]||{act:"keep",n:r.qty,to:"",tp:gProd(item)};
   const set=(r,patch)=>setDec(p=>({...p,[r.oi+"_"+r.li]:{...get(r),...patch}}));
-  const all=(act,to)=>{const m={};rows.filter(r=>!r.shipped).forEach(r=>{m[r.oi+"_"+r.li]={act,n:r.qty,to:to||""};});setDec(m);};
+  const all=(act,to)=>{const m={};rows.filter(r=>!r.shipped).forEach(r=>{m[r.oi+"_"+r.li]={act,n:r.qty,to:to||"",tp:gProd(item)};});setDec(m);};
   const btn={fontSize:12,borderRadius:6,padding:"4px 10px",cursor:"pointer",border:`1px solid ${C.line}`,background:C.surface,color:C.ink};
   const todo=rows.filter(r=>!r.shipped&&get(r).act!=="keep"&&(get(r).act==="cancel"||(get(r).to&&(get(r).to!=="__custom__"||String(get(r).cc||"").trim()))));
   const apply=()=>{
-    const ds=todo.map(r=>({oi:r.oi,li:r.li,act:get(r).act,n:Math.max(1,Math.min(r.qty,parseInt(get(r).n,10)||r.qty)),to:get(r).to==="__custom__"?"new|"+(item.style||"")+"|"+String(get(r).cc).trim()+"|"+(String(get(r).cz||"").trim()||item.size||""):get(r).to}));
+    const ds=todo.map(r=>({oi:r.oi,li:r.li,act:get(r).act,n:Math.max(1,Math.min(r.qty,parseInt(get(r).n,10)||r.qty)),to:get(r).to==="__custom__"?"new"+SEP+baseProd(get(r).tp||gProd(item))+SEP+(get(r).tp||gProd(item))+SEP+((get(r).tp||gProd(item))===gProd(item)?(item.style||""):"")+SEP+String(get(r).cc).trim()+SEP+(String(get(r).cz||"").trim()||item.size||""):get(r).to}));
     setDone(onApply(item,ds,soldOut));
   };
   return(
@@ -1831,7 +1865,8 @@ function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose}){
               <div style={{fontSize:13,color:C.ink,fontWeight:600}}>{r.account}{r.name&&r.name!==r.account?`（${r.name}）`:""}　<span style={{fontWeight:400,color:C.inkMuted}}>×{r.qty}{r.price?`　$${r.price}`:""}</span>{r.shipped&&<span style={{color:"#B91C1C",fontSize:11,marginLeft:8}}>已出貨，不可修改</span>}</div>
               {!r.shipped&&(<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
                 <select value={d.act} onChange={e=>set(r,{act:e.target.value})} style={{...btn,padding:"6px 6px"}}><option value="keep">不動</option><option value="cancel">取消這件</option><option value="swap">改成別款</option></select>
-                {d.act==="swap"&&<select value={d.to} onChange={e=>set(r,{to:e.target.value})} style={{...btn,padding:"6px 6px",maxWidth:240}}><option value="">選擇顏色／尺寸</option><option value="__custom__">＋自訂顏色／尺寸（系統沒有的）</option>{targets.map(t=><option key={t.id} value={t.id}>{[t.color,t.size,t.style].filter(Boolean).join(" · ")}{t.isNew?"（新增）":"（現貨"+t.stock+"）"}</option>)}</select>}
+                {d.act==="swap"&&groups.length>1&&<select value={d.tp||gProd(item)} onChange={e=>set(r,{tp:e.target.value,to:""})} style={{...btn,padding:"6px 6px",maxWidth:240}}>{groups.map(g=><option key={g} value={g}>{g===gProd(item)?"同商品：":"其他商品："}{g.length>16?g.slice(0,16)+"…":g}</option>)}</select>}
+                {d.act==="swap"&&<select value={d.to} onChange={e=>set(r,{to:e.target.value})} style={{...btn,padding:"6px 6px",maxWidth:240}}><option value="">選擇顏色／尺寸</option><option value="__custom__">＋自訂顏色／尺寸（系統沒有的）</option>{targetsFor(d.tp||gProd(item)).map(t=><option key={t.id} value={t.id}>{[t.color,t.size,t.style].filter(Boolean).join(" · ")}{t.isNew?"（新增）":"（現貨"+t.stock+"）"}</option>)}</select>}
                 {d.act==="swap"&&d.to==="__custom__"&&<span style={{display:"flex",gap:4,alignItems:"center"}}><input placeholder="顏色" value={d.cc||""} onChange={e=>set(r,{cc:e.target.value})} style={{width:80,border:`1px solid ${C.line}`,borderRadius:6,padding:"5px"}}/><input placeholder={item.size||"尺寸"} value={d.cz||""} onChange={e=>set(r,{cz:e.target.value})} style={{width:60,border:`1px solid ${C.line}`,borderRadius:6,padding:"5px"}}/></span>}
                 {d.act!=="keep"&&r.qty>1&&<span style={{fontSize:12,color:C.inkMuted}}>件數<input type="number" min="1" max={r.qty} value={d.n} onChange={e=>set(r,{n:e.target.value})} style={{width:44,marginLeft:4,border:`1px solid ${C.line}`,borderRadius:6,padding:"4px",textAlign:"center"}}/></span>}
               </div>)}
@@ -1918,7 +1953,8 @@ function App(){
 
   const [countMode,setCountMode]=useState(false);
   function applyCount(ups){setItems(prev=>{const next=prev.map(it=>{const u=ups.find(x=>x.id===it.id);return u?{...it,...u.patch}:it;});scheduleSave(next);return next;});}
-  const[chgItem,setChgItem]=useState(null);
+  const[chgItem,setChgItem]=useState(null);const[homeItem,setHomeItem]=useState(null);
+  function applyHome(ids,to){setItems(prev=>{const next=prev.map(x=>ids.includes(x.id)?{...x,homeProduct:(to&&to!==x.product)?to:undefined}:x);scheduleSave(next);return next;});}
   function applyOrderChanges(item,decisions,soldOut){
     const store=iopenDataRef.current||{};
     const op=store.__orders__&&store.__orders__.parsed;
@@ -1926,7 +1962,7 @@ function App(){
     const nowTxt=new Date().toLocaleString("zh-TW",{hour12:false,timeZone:"Asia/Taipei"});
     let newStore=store,newAlloc=savedAllocRef.current;
     const created={};
-    decisions.forEach(d=>{if(d.act==="swap"&&String(d.to).indexOf("new|")===0&&!created[d.to]){const[,st,co,z]=d.to.split("|");created[d.to]={...item,id:"n"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),style:st,color:co,size:z,qty:0,orderedQty:0,orderedEdited:false,arrivedQty:0,stockQty:0,shippedQty:0,defectQty:0,allArrived:false,allOrdered:false,firstOrderDate:"",secondOrderDate:"",orderBatches:[],stockLog:[],arrivalLog:[],firstStockTs:"",arrivedTs:"",firstArrivedTs:"",counted:false,soldOut:false,shortStatus:undefined};}});
+    decisions.forEach(d=>{if(d.act==="swap"&&String(d.to).indexOf("new\u0001")===0&&!created[d.to]){const[,tp0,gp0,st,co,z]=d.to.split("\u0001");created[d.to]={...item,id:"n"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),product:tp0,homeProduct:gp0!==tp0?gp0:undefined,style:st,color:co,size:z,qty:0,orderedQty:0,orderedEdited:false,arrivedQty:0,stockQty:0,shippedQty:0,defectQty:0,allArrived:false,allOrdered:false,firstOrderDate:"",secondOrderDate:"",orderBatches:[],stockLog:[],arrivalLog:[],firstStockTs:"",arrivedTs:"",firstArrivedTs:"",counted:false,soldOut:false,shortStatus:undefined};}});
     const allItems=items.concat(Object.values(created));
     if(op&&decisions.length){
       const parsed=JSON.parse(JSON.stringify(op));const cur=JSON.parse(JSON.stringify(savedAllocRef.current||{}));
@@ -1942,7 +1978,7 @@ function App(){
         else{
           const t=created[d.to]||items.find(x=>x.id===d.to);if(!t)return;
           const ex=o.items.find(x=>flatKey(x)===flatKey(t)&&x!==ln);
-          if(ex)ex.qty+=n;else o.items.push({product:ln.product,color:t.color,size:t.size,style:t.style,qty:n,price});
+          if(ex)ex.qty+=n;else o.items.push({product:t.product,color:t.color,size:t.size,style:t.style,qty:n,price});
           delta[t.id]=(delta[t.id]||0)+n;
           text=nowTxt+"　"+who+"　"+dispName(item)+" ×"+n+" → 改成 "+dispName(t);
         }
@@ -2087,7 +2123,7 @@ function App(){
   const stockByGroup={};
   items.filter(it=>itemSource(it)===srcTab&&(it.stockQty||0)>0).forEach(it=>{
     const gk=getGroupKey(it);
-    if(!stockByGroup[gk])stockByGroup[gk]={label:(getGroupLabel(it)!==it.product?getGroupLabel(it)+" ":"")+it.product,sizes:[],total:0};
+    if(!stockByGroup[gk])stockByGroup[gk]={label:(getGroupLabel(it)!==gProd(it)?getGroupLabel(it)+" ":"")+gProd(it),sizes:[],total:0};
     stockByGroup[gk].sizes.push({size:it.size||it.color||"單一",qty:it.stockQty,ord:getSortSize(it)});stockByGroup[gk].total+=it.stockQty;
   });
   Object.values(stockByGroup).forEach(g=>g.sizes.sort((a,b)=>a.ord-b.ord));
@@ -2148,7 +2184,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-C</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-E</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2358,18 +2394,19 @@ function App(){
   return <div style={{background:C.stripe,borderRadius:10,padding:"6px 12px",marginBottom:4,marginTop:showStatus?0:8}}>
     <span style={{fontSize:14,fontWeight:700,color:C.ink}}>{getGroupLabel(it)}</span>
     <span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>共{groupTotal}件</span>{ioQtyByGroup[groupKey]>0&&<span style={{fontSize:12,color:"#7C3AED",marginLeft:6,fontWeight:600}}>＋iOPEN {ioQtyByGroup[groupKey]}件＝{groupTotal+ioQtyByGroup[groupKey]}</span>}
-    {getGroupLabel(it)!==it.product&&<span style={{fontSize:10,color:C.inkMuted,marginLeft:6}}>{it.product}</span>}
+    {getGroupLabel(it)!==gProd(it)&&<span style={{fontSize:10,color:C.inkMuted,marginLeft:6}}>{gProd(it)}</span>}
     {stockByGroup[groupKey]&&<div style={{fontSize:12,color:"#059669",fontWeight:600,marginTop:2}}>現貨：{stockSizeText(groupKey)}</div>}
     {(()=>{const t=crossStockText(it);return t?<div style={{fontSize:12,color:"#059669",fontWeight:600,marginTop:2}}>{otherLabel}分頁現貨：{t}</div>:null;})()}
   </div>;
-})()}<ItemCard it={it} onChange={()=>setChgItem(it)} xinfo={srcTab==="live"?null:crossInfo(it)} sel={batchSel.has(it.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(it.id)?n.delete(it.id):n.add(it.id);return n;})} onUpdate={(field,value)=>updateField(it.id,field,value)}/>{ioBlockAt[idx]&&(<div style={{margin:"4px 0 12px 12px",border:"2px dashed #7C3AED",borderRadius:12,padding:"6px 8px 2px",background:"#FAF5FF"}}>
+})()}<ItemCard it={it} onChange={()=>setChgItem(it)} onHome={()=>setHomeItem(it)} xinfo={srcTab==="live"?null:crossInfo(it)} sel={batchSel.has(it.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(it.id)?n.delete(it.id):n.add(it.id);return n;})} onUpdate={(field,value)=>updateField(it.id,field,value)}/>{ioBlockAt[idx]&&(<div style={{margin:"4px 0 12px 12px",border:"2px dashed #7C3AED",borderRadius:12,padding:"6px 8px 2px",background:"#FAF5FF"}}>
               <div style={{fontSize:12,fontWeight:700,color:"#7C3AED",marginBottom:6}}>🟣 iOPEN Mall 同商品（{ioBlockAt[idx].length} 項，需求共 {ioBlockAt[idx].reduce((a,o)=>a+(o.qty||0),0)} 件）</div>
-              {ioBlockAt[idx].map(o=>(<ItemCard key={o.id} it={o} onChange={()=>setChgItem(o)} xinfo={null} sel={batchSel.has(o.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(o.id)?n.delete(o.id):n.add(o.id);return n;})} onUpdate={(field,value)=>updateField(o.id,field,value)}/>))}
+              {ioBlockAt[idx].map(o=>(<ItemCard key={o.id} it={o} onChange={()=>setChgItem(o)} onHome={()=>setHomeItem(o)} xinfo={null} sel={batchSel.has(o.id)} onToggleSel={()=>setBatchSel(prev=>{const n=new Set(prev);n.has(o.id)?n.delete(o.id):n.add(o.id);return n;})} onUpdate={(field,value)=>updateField(o.id,field,value)}/>))}
             </div>)}</React.Fragment>);}))
           }
         </div>
       )}
 
+      {homeItem&&<HomeModal item={items.find(x=>x.id===homeItem.id)||homeItem} items={items} onApply={applyHome} onClose={()=>setHomeItem(null)}/>}
       {chgItem&&<ChangeModal item={items.find(x=>x.id===chgItem.id)||chgItem} items={items} parsed={(iopenData&&iopenData.__orders__&&iopenData.__orders__.parsed)||null} savedAlloc={savedAlloc} changes={(iopenData&&iopenData.__orders__&&iopenData.__orders__.changes)||[]} onApply={applyOrderChanges} onClose={()=>setChgItem(null)}/>}
       {batchSel.size>0&&!allocMode&&!countMode&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:C.ink,zIndex:50,padding:"14px 16px",boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
@@ -2397,7 +2434,7 @@ function App(){
       {(()=>{
         if(countMode||allocMode)return null;
         const sOpen=items.filter(isShortOpen);
-        const sg={};sOpen.forEach(it=>{(sg[displayProd(it.product)]=sg[displayProd(it.product)]||[]).push(it);});
+        const sg={};sOpen.forEach(it=>{(sg[displayProd(gProd(it))]=sg[displayProd(gProd(it))]||[]).push(it);});
         const sKeys=Object.keys(sg).sort((a,b)=>a.localeCompare(b));
         if(!sKeys.length)return null;
         const rep2=sKeys.map(k=>k+"\n"+sg[k].map(r=>"  "+[r.color,r.size,r.style].filter(Boolean).join(" ")+"：應收"+effOrderedQty(r)+"、實收"+(r.arrivedQty||0)+"、缺"+shortQty(r)+"件").join("\n")).join("\n");
@@ -2412,7 +2449,7 @@ function App(){
         const enough=items.filter(it=>netNeed(it)===0&&(it.qty||0)>0).length;
         const over=items.filter(it=>overOrderQty(it)>0);
         const groups={};
-        pend.forEach(it=>{const k=displayProd(it.product);(groups[k]=groups[k]||[]).push(it);});
+        pend.forEach(it=>{const k=displayProd(gProd(it));(groups[k]=groups[k]||[]).push(it);});
         const lines=Object.keys(groups).sort((a,b)=>a.localeCompare(b)).map(k=>({prod:k,rows:groups[k].slice().sort((a,b)=>sizeOrder(a.size||a.color)-sizeOrder(b.size||b.color)),total:groups[k].reduce((s2,i)=>s2+toOrderQty(i),0)}));
         const grand=lines.reduce((s2,l)=>s2+l.total,0);
         const copyText=lines.map(l=>l.prod+"\n"+l.rows.map(r=>"  "+[r.color,r.size,r.style].filter(Boolean).join(" ")+" × "+toOrderQty(r)).join("\n")).join("\n");
