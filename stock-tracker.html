@@ -1773,6 +1773,33 @@ function CountView({items,onApply,onClose}){
   </div>);
 }
 
+// ── 客人異動總表：集中列出所有取消／改色，勾選已通知或已在平台修改 ──
+function ChangesModal({changes,onToggle,onAllDone,onClose}){
+  const[onlyOpen,setOnlyOpen]=useState(true);
+  const list=(changes||[]).map((c,i)=>({...c,i})).reverse().filter(c=>!onlyOpen||!c.done);
+  const btn={fontSize:12,borderRadius:6,padding:"6px 12px",cursor:"pointer",border:`1px solid ${C.line}`,background:C.surface,color:C.ink};
+  const copyText=()=>{const t=(changes||[]).filter(c=>!c.done).map(c=>c.text).join("\n");try{navigator.clipboard.writeText(t);}catch(e){}};
+  const open=(changes||[]).filter(c=>!c.done).length;
+  return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:60,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"20px 10px"}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:14,maxWidth:600,width:"100%",padding:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><b style={{fontSize:16,color:C.ink}}>🔁 客人異動總表</b><button style={btn} onClick={onClose}>關閉</button></div>
+      <div style={{fontSize:11,color:C.inkMuted,marginTop:6,lineHeight:1.6}}>所有取消、改色的客人。到 iOPEN Mall／直播平台修改或通知客人後，勾選「已處理」。本工具內的訂單已自動更新。</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
+        <button style={{...btn,background:onlyOpen?C.stamp:C.surface,color:onlyOpen?"#fff":C.ink}} onClick={()=>setOnlyOpen(true)}>未處理（{open}）</button>
+        <button style={{...btn,background:!onlyOpen?C.stamp:C.surface,color:!onlyOpen?"#fff":C.ink}} onClick={()=>setOnlyOpen(false)}>全部（{(changes||[]).length}）</button>
+        <button style={btn} onClick={copyText}>複製未處理</button>
+        {open>0&&<button style={btn} onClick={()=>{if(window.confirm("把全部標記為已處理？"))onAllDone();}}>全部標記已處理</button>}
+      </div>
+      <div style={{marginTop:10}}>
+        {list.length===0&&<div style={{fontSize:13,color:C.inkMuted,padding:"14px 0"}}>{onlyOpen?"沒有未處理的異動":"沒有異動紀錄"}</div>}
+        {list.map(c=>(<label key={c.i} style={{display:"flex",gap:8,alignItems:"flex-start",borderTop:`1px solid ${C.line}`,padding:"8px 0",opacity:c.done?.55:1,cursor:"pointer"}}>
+          <input type="checkbox" checked={!!c.done} onChange={()=>onToggle(c.i)} style={{width:20,height:20,marginTop:2,flexShrink:0}}/>
+          <span style={{fontSize:13,color:C.ink,lineHeight:1.5,textDecoration:c.done?"line-through":"none"}}>{c.who?<><b>{c.who}</b>　{c.from}　×{c.qty}　→　<b style={{color:c.act==="cancel"?"#B91C1C":C.info}}>{c.act==="cancel"?"取消":"改成 "+c.to}</b><span style={{display:"block",fontSize:11,color:C.inkMuted}}>{fmtTs(c.ts)}</span></>:c.text}</span>
+        </label>))}
+      </div>
+    </div></div>);
+}
+
 // ── 對應原商品：把品項（或整個顏色、整款）歸到指定商品底下，不影響訂單比對 ──
 function HomeModal({item,items,onApply,onClose}){
   const src=itemSource(item);const pool=items.filter(x=>itemSource(x)===src);
@@ -1953,7 +1980,10 @@ function App(){
 
   const [countMode,setCountMode]=useState(false);
   function applyCount(ups){setItems(prev=>{const next=prev.map(it=>{const u=ups.find(x=>x.id===it.id);return u?{...it,...u.patch}:it;});scheduleSave(next);return next;});}
-  const[chgItem,setChgItem]=useState(null);const[homeItem,setHomeItem]=useState(null);
+  const[chgItem,setChgItem]=useState(null);const[homeItem,setHomeItem]=useState(null);const[showChanges,setShowChanges]=useState(false);
+  function saveChanges(mut){const store=iopenDataRef.current||{};if(!store.__orders__)return;const ch=(store.__orders__.changes||[]).map(mut);const ns={...store,__orders__:{...store.__orders__,changes:ch}};iopenDataRef.current=ns;setIopenData(ns);setItems(prev=>{scheduleSave(prev,savedAllocRef.current);return prev;});}
+  const toggleChange=(i)=>saveChanges((c,j)=>j===i?{...c,done:!c.done}:c);
+  const allChangesDone=()=>saveChanges(c=>({...c,done:true}));
   function applyHome(ids,to){setItems(prev=>{const next=prev.map(x=>ids.includes(x.id)?{...x,homeProduct:(to&&to!==x.product)?to:undefined}:x);scheduleSave(next);return next;});}
   function applyOrderChanges(item,decisions,soldOut){
     const store=iopenDataRef.current||{};
@@ -1982,7 +2012,7 @@ function App(){
           delta[t.id]=(delta[t.id]||0)+n;
           text=nowTxt+"　"+who+"　"+dispName(item)+" ×"+n+" → 改成 "+dispName(t);
         }
-        logs.push(text);changesNew.push({ts:new Date().toISOString(),fk:flatKey(item),text});
+        logs.push(text);changesNew.push({ts:new Date().toISOString(),fk:flatKey(item),text,who,act:d.act,qty:n,from:dispName(item),to:d.act==="cancel"?"":dispName(d.act==="swap"?(created[d.to]||items.find(x=>x.id===d.to)||item):item),done:false});
       });
       // 清掉件數為 0 的行；整張訂單都空了就移除
       parsed.orders.forEach(o=>{o.items=o.items.filter(x=>x.qty>0);});
@@ -2184,7 +2214,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-E</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-F</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2363,6 +2393,7 @@ function App(){
             <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜尋商品名稱" style={{width:"100%",border:`1px solid ${search?C.info:C.line}`,borderRadius:10,padding:"9px 36px 9px 34px",fontSize:14,background:C.surface,color:C.ink,boxSizing:"border-box"}}/>
             {search&&<button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:C.inkMuted,fontSize:18,background:"none",border:"none",cursor:"pointer"}}>×</button>}
           </div>
+          {(()=>{const ch=(iopenData&&iopenData.__orders__&&iopenData.__orders__.changes)||[];if(!ch.length)return null;const op=ch.filter(c=>!c.done).length;return(<div onClick={()=>setShowChanges(true)} style={{background:op?"#FFF3CD":C.stripe,border:`1px solid ${op?"#B45309":C.line}`,borderRadius:10,padding:"8px 12px",marginBottom:10,cursor:"pointer",display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:op?"#92400E":C.inkMuted}}>🔁 客人異動 {ch.length} 筆{op?`（未處理 ${op}）`:"（皆已處理）"}</span><span style={{marginLeft:"auto",fontSize:12,color:C.inkMuted}}>查看 ▾</span></div>);})()}
           {(Object.keys(stockByGroup).length>0||otherStock.length>0)&&(
             <div style={{background:"#F0FFF4",border:"1px solid #059669",borderRadius:10,padding:"8px 12px",marginBottom:10}}>
               <div onClick={()=>setShowStockSum(!showStockSum)} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
@@ -2406,6 +2437,7 @@ function App(){
         </div>
       )}
 
+      {showChanges&&<ChangesModal changes={(iopenData&&iopenData.__orders__&&iopenData.__orders__.changes)||[]} onToggle={toggleChange} onAllDone={allChangesDone} onClose={()=>setShowChanges(false)}/>}
       {homeItem&&<HomeModal item={items.find(x=>x.id===homeItem.id)||homeItem} items={items} onApply={applyHome} onClose={()=>setHomeItem(null)}/>}
       {chgItem&&<ChangeModal item={items.find(x=>x.id===chgItem.id)||chgItem} items={items} parsed={(iopenData&&iopenData.__orders__&&iopenData.__orders__.parsed)||null} savedAlloc={savedAlloc} changes={(iopenData&&iopenData.__orders__&&iopenData.__orders__.changes)||[]} onApply={applyOrderChanges} onClose={()=>setChgItem(null)}/>}
       {batchSel.size>0&&!allocMode&&!countMode&&(
