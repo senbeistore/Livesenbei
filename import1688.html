@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-H</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-I</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -100,7 +100,7 @@ const colorKey=it=>(it.style||"")+SEP+(it.color||"");
 let SRC=null;      // {token,gistId,rev,items,raw}
 let LINES=[];      // 1688 明細
 let MAP=loadMap();
-function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{},auto:m.auto||{}};}catch(e){return{prod:{},color:{},auto:{}};}}
+function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{},auto:m.auto||{},ret:m.ret||{}};}catch(e){return{prod:{},color:{},auto:{},ret:{}};}}
 function saveMap(){try{localStorage.setItem(MAPKEY,JSON.stringify(MAP));}catch(e){}}
 
 // ---- 讀取雲端 ----
@@ -281,9 +281,10 @@ function statusTag(r){
 }
 let LAST=null;
 var FILT='all';
+const retKey=l=>[l.orderNo,l.title,l.color,l.size].join('|');
 function renderResult(){
   if(!LINES.length||!SRC){$("cRes").style.display="none";$("cMiss").style.display="none";return;}
-  const res=LAST=compute();
+  const res=LAST=compute();MAP.ret=MAP.ret||{};const retList=res.miss.filter(m=>MAP.ret[retKey(m.l)]);res.miss=res.miss.filter(m=>!MAP.ret[retKey(m.l)]);res.retList=retList;
   $("cRes").style.display="";
   const ok=res.rows.filter(r=>r.diff===0).length,less=res.rows.filter(r=>r.diff<0).length,more=res.rows.filter(r=>r.diff>0).length;
   const tg=(f,c,n,x)=>'<span class="tag '+c+'" data-f="'+f+'" style="cursor:pointer;margin-right:4px;'+(FILT===f?'outline:2px solid #333;':'')+'">'+n+' '+x+'</span>';
@@ -305,9 +306,14 @@ function renderResult(){
   $("applyBar").innerHTML='<button class="primary" id="btnApply"'+(canAny?"":" disabled")+'>把勾選的品項標記為「已叫貨」</button><span class="mute">叫貨日用 1688 的付款日（沒有則用建立日）。多叫、少叫的也可以標記，備貨追蹤會顯示差異。</span>';
   $("btnApply").onclick=applyMarks;
   document.querySelectorAll("button.mini[data-stock]").forEach(b=>b.onclick=()=>{const n=parseInt(b.dataset.n,10)||0;if(n>0&&confirm("把這個品項的 "+n+" 件記為「現貨」？\n（備貨追蹤的該叫件數會跟著減少）"))addStock(b.dataset.stock,n);});
-  if(res.miss.length){
+  if(res.miss.length||retList.length){
     $("cMiss").style.display="";
-    $("missBody").innerHTML='<table><tr><th>1688 品項</th><th>件數</th><th>原因</th></tr>'+res.miss.map(m=>'<tr><td>'+esc(m.l.title.slice(0,24))+'… '+esc(m.l.color)+' '+esc(m.l.size)+'</td><td>'+m.l.qty+'</td><td class="warn">'+esc(m.why)+'</td></tr>').join("")+'</table>';
+    const lab=m=>esc(m.l.title.slice(0,24))+'… '+esc(m.l.color)+' '+esc(m.l.size)+'<div class="mute">…'+esc(String(m.l.orderNo).slice(-6))+'</div>';
+    let mh=res.miss.length?'<table><tr><th>1688 品項</th><th>件數</th><th>原因</th><th></th></tr>'+res.miss.map(m=>'<tr><td>'+lab(m)+'</td><td>'+m.l.qty+'</td><td class="warn">'+esc(m.why)+'</td><td><button class="mini" data-ret="'+esc(retKey(m.l))+'">已申請退回</button></td></tr>').join("")+'</table>':'<div class="mute">沒有待處理的品項。</div>';
+    if(retList.length)mh+='<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:700">已申請退回（'+retList.length+' 項，'+retList.reduce((a,m)=>a+m.l.qty,0)+' 件）</summary><table><tr><th>1688 品項</th><th>件數</th><th></th></tr>'+retList.map(m=>'<tr><td>'+lab(m)+'</td><td>'+m.l.qty+'</td><td><button class="mini" data-unret="'+esc(retKey(m.l))+'">取消</button></td></tr>').join("")+'</table></details>';
+    $("missBody").innerHTML=mh;
+    $("missBody").querySelectorAll("button[data-ret]").forEach(b=>b.onclick=()=>{MAP.ret[b.dataset.ret]=1;saveMap();renderResult();});
+    $("missBody").querySelectorAll("button[data-unret]").forEach(b=>b.onclick=()=>{delete MAP.ret[b.dataset.unret];saveMap();renderResult();});
   }else $("cMiss").style.display="none";
 }
 function recordedOrders(){
