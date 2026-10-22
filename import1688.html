@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-I</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-J</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -246,7 +246,11 @@ function compute(){
     if(!ck){miss.push({l,why:"花色尚未對應"});return;}
     const sz=sizeNum(l.size);
     const its=SRC.all.filter(x=>sameProd(x,gp)&&colorKey(x)===ck&&sizeNum(x.size)===sz).sort((a,b)=>(srcOf(a)==="live"?0:1)-(srcOf(b)==="live"?0:1));
-    if(!its.length){miss.push({l,why:"備貨追蹤沒有這個尺寸（"+(l.size||"?")+"）"});return;}
+    if(!its.length){
+      const same=SRC.all.filter(x=>sameProd(x,gp)&&colorKey(x)===ck);
+      const have=[...new Set(same.map(x=>sizeNum(x.size)))].sort((p,q)=>p-q);
+      const alt=[...new Set(SRC.all.filter(x=>sameProd(x,gp)&&sizeNum(x.size)===sz&&colorKey(x)!==ck).map(colorLabel))];
+      miss.push({l,why:"備貨追蹤沒有這個尺寸（"+(l.size||"?")+"）。已對應花色「"+((colorOptions(gp).find(o=>o.k===ck)||{}).label||"?")+"」只有尺寸："+(have.join("、")||"無")+(alt.length?"；"+l.size+" 有人訂的花色："+alt.join("、"):"")+"。若花色對錯，請到「對應設定」更正。"});return;}
     const key=gp+"|"+ck+"|"+sz;
     const t=target[key]||(target[key]={key,items:its,qty:0,orders:{}});
     t.srcs=t.srcs||{};t.srcs[l.color]=(t.srcs[l.color]||0)+l.qty;t.qty+=l.qty;const o=t.orders[l.orderNo]||(t.orders[l.orderNo]={qty:0,date:l.date});o.qty+=l.qty;
