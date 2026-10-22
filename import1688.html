@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-L</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-M</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -49,7 +49,7 @@
   <div class="card">
     <h2>② 匯入 1688 訂單 Excel</h2>
     <div class="mute" style="margin-bottom:8px">從 1688「已買到的貨品」匯出的訂單明細（.xlsx）。可一次匯入多張訂單。</div>
-    <input type="file" id="file" accept=".xlsx,.xls,.csv"/>
+    <input type="file" id="file" accept=".xlsx,.xls,.csv" multiple/>
     <div id="fileInfo" class="mute" style="margin-top:6px"></div>
   </div>
   <div class="card" id="cMap" style="display:none">
@@ -175,15 +175,25 @@ function parseRows(aoa){
   return out;
 }
 $("file").onchange=async e=>{
-  const f=e.target.files[0];if(!f)return;
+  const fs=[...e.target.files];if(!fs.length)return;
   try{
-    const buf=await f.arrayBuffer();
-    const wb=XLSX.read(buf,{type:"array"});
-    const ws=wb.Sheets[wb.SheetNames[0]];
-    const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
-    LINES=parseRows(aoa);
+    const all=[],seen=new Set(),notes=[];let dup=0;
+    for(const f of fs){
+      const buf=await f.arrayBuffer();
+      const wb=XLSX.read(buf,{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+      const ls=parseRows(aoa);
+      const nos=[...new Set(ls.map(l=>l.orderNo))];
+      const fresh=nos.filter(n=>!seen.has(n));
+      dup+=nos.length-fresh.length;
+      ls.forEach(l=>{if(fresh.includes(l.orderNo))all.push(l);});
+      fresh.forEach(n=>seen.add(n));
+      notes.push(f.name+"（"+nos.length+" 張）");
+    }
+    LINES=all;
     const orders=[...new Set(LINES.map(l=>l.orderNo))];
-    $("fileInfo").innerHTML='<span class="ok">✓ '+esc(f.name)+'</span>　'+orders.length+' 張訂單，'+LINES.length+' 筆明細，共 '+LINES.filter(l=>!l.cancelled).reduce((a,l)=>a+l.qty,0)+' 件'+(LINES.some(l=>l.cancelled)?'　<span class="warn">（含 '+[...new Set(LINES.filter(l=>l.cancelled).map(l=>l.orderNo))].length+' 張已關閉／取消，不計入）</span>':"");
+    $("fileInfo").innerHTML='<span class="ok">✓ '+fs.length+' 個檔案</span>　'+orders.length+' 張訂單，'+LINES.length+' 筆明細，共 '+LINES.filter(l=>!l.cancelled).reduce((a,l)=>a+l.qty,0)+' 件'+(dup?'　<span class="warn">（'+dup+' 張訂單重複出現，只算一次）</span>':'')+(LINES.some(l=>l.cancelled)?'　<span class="warn">其中有已關閉／取消的訂單，不計入比對</span>':'')+'<div class="mute">'+notes.map(esc).join("、")+'</div>';
     refresh();
   }catch(err){$("fileInfo").innerHTML='<span class="err">'+esc(err.message||err)+'</span>';}
 };
