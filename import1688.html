@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-T</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-U</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -288,8 +288,8 @@ function compute(){
   const forgot=SRC.all.filter(it=>[...prodSet].some(pp=>sameProd(it,pp))&&!inList.has(it.id)).map(it=>{
     const rec=isMarked(it)?effOrdered(it):0;return{it,toOrder:Math.max(0,needTotal(it)-rec)};
   }).filter(x=>x.toOrder>0);
-  // 標記未叫：備貨追蹤已標記「已叫貨」（沒有 1688 單號、也還沒到貨），但這份 1688 清單裡沒有
-  const unver=SRC.all.filter(it=>[...prodSet].some(pp=>sameProd(it,pp))&&!inList.has(it.id)&&isMarked(it)&&!(it.arrivedQty>0)&&!it.allArrived&&!(it.orderBatches||[]).some(b=>b.ref)&&effOrdered(it)>0).map(it=>({it,qty:effOrdered(it)}));
+  // 標記未叫（不限已對應的商品）：備貨追蹤已標記「已叫貨」（沒有 1688 單號、也還沒到貨），但這份 1688 清單裡沒有
+  const unver=SRC.all.filter(it=>!inList.has(it.id)&&isMarked(it)&&!(it.arrivedQty>0)&&!it.allArrived&&!(it.orderBatches||[]).some(b=>b.ref)&&effOrdered(it)>0).map(it=>({it,qty:effOrdered(it)}));
   return{rows,miss,forgot,unver};
 }
 function statusTag(r){
