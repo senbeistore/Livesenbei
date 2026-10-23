@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-X</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-Y</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -63,6 +63,8 @@
     <div id="unc" class="mute" style="margin-bottom:8px"></div>
     <div id="rfdBox" style="margin-bottom:8px"></div>
     <div id="wxBox" style="margin-bottom:8px"></div>
+    <div id="famBox" style="margin-bottom:8px"></div>
+    <div id="sprBox" style="margin-bottom:8px"></div>
     <div class="scroll"><table id="resTbl"></table></div>
     <div id="applyBar" class="row" style="margin-top:12px"></div>
     <div id="applyMsg" style="margin-top:8px;font-size:13px"></div>
@@ -335,6 +337,21 @@ function renderResult(){
     const rr=res.rows.filter(r=>r.rf>0);
     const tot=rr.reduce((a,r)=>a+r.rf,0);
     $("rfdBox").innerHTML=rr.length?'<details><summary style="cursor:pointer;font-weight:700">已記錄退款（'+rr.length+' 項，'+tot+' 件）：這些件數已從 1688 清單扣除</summary><table><tr><th>品項</th><th>退款件數</th></tr>'+rr.map(r=>'<tr><td>'+esc(colorLabel(r.it))+' · '+esc(r.it.size||"")+'<div class="mute">'+esc(gProd(r.it))+'</div></td><td>'+r.rf+' <span class="mute">（按該列的「退款」可修改或取消）</span></td></tr>').join("")+'</table></details>':'';
+  }
+  {
+    const build=(id,title,rowsArr,key,missArr,missKey,delAttr)=>{
+      const tot=rowsArr.reduce((a,r)=>a+r[key],0)+missArr.reduce((a,m)=>a+m.l.qty,0);
+      const cnt=rowsArr.length+missArr.length;
+      const box=$(id);
+      if(!cnt){box.innerHTML='';return;}
+      box.innerHTML='<details><summary style="cursor:pointer;font-weight:700">'+title+'（'+cnt+' 項，'+tot+' 件）</summary><table><tr><th>品項</th><th>件數</th><th></th></tr>'+
+        rowsArr.map(r=>'<tr><td>'+esc(colorLabel(r.it))+' · '+esc(r.it.size||"")+'<div class="mute">'+esc(gProd(r.it))+'</div></td><td>'+r[key]+'</td><td><button class="mini" data-'+delAttr+'="'+esc(r.key)+'">取消</button></td></tr>').join("")+
+        missArr.map(m=>'<tr><td>'+esc(m.l.title.slice(0,24))+'… '+esc(m.l.color)+' '+esc(m.l.size)+'<div class="mute">1688 比對不到</div></td><td>'+m.l.qty+'</td><td><button class="mini" data-'+delAttr+'m="'+esc(retKey(m.l))+'">取消</button></td></tr>').join("")+'</table></details>';
+      box.querySelectorAll('button[data-'+delAttr+']').forEach(b=>b.onclick=()=>{delete MAP[key==="fam"?"fam":"spr"][b.dataset[delAttr]];saveMap();renderResult();});
+      box.querySelectorAll('button[data-'+delAttr+'m]').forEach(b=>b.onclick=()=>{delete MAP[key==="fam"?"fam2":"spr2"][b.dataset[delAttr+"m"]];saveMap();renderResult();});
+    };
+    build("famBox","給親友名單",res.rows.filter(r=>r.fam>0),"fam",famList,"fam2","dfam");
+    build("sprBox","備用庫存名單",res.rows.filter(r=>r.spr>0),"spr",sprList,"spr2","dspr");
   }
   const sortKey=r=>gProd(r.it)+"|"+colorLabel(r.it)+"|"+String(sizeNum(r.it.size)).padStart(4,"0");
   const rows=res.rows.filter(r=>FILT==='all'||(FILT==='ok'&&r.diff===0)||(FILT==='less'&&r.diff<0)||(FILT==='more'&&r.diff>0)).sort((a,b)=>sortKey(a).localeCompare(sortKey(b),"zh-Hant"));
