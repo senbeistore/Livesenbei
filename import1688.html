@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-W</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-X</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -62,6 +62,7 @@
     <div id="sum" class="row" style="margin-bottom:8px"></div>
     <div id="unc" class="mute" style="margin-bottom:8px"></div>
     <div id="rfdBox" style="margin-bottom:8px"></div>
+    <div id="wxBox" style="margin-bottom:8px"></div>
     <div class="scroll"><table id="resTbl"></table></div>
     <div id="applyBar" class="row" style="margin-top:12px"></div>
     <div id="applyMsg" style="margin-top:8px;font-size:13px"></div>
@@ -104,7 +105,7 @@ const colorKey=it=>nk((it.style||"")+SEP+(it.color||""));
 let SRC=null;      // {token,gistId,rev,items,raw}
 let LINES=[];      // 1688 明細
 let MAP=loadMap();
-function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{},auto:m.auto||{},ret:m.ret||{},fam:m.fam||{},fam2:m.fam2||{},cx:m.cx||{},rfd:m.rfd||{}};}catch(e){return{prod:{},color:{},auto:{},ret:{},fam:{},fam2:{},cx:{},rfd:{}};}}
+function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{},auto:m.auto||{},ret:m.ret||{},fam:m.fam||{},fam2:m.fam2||{},cx:m.cx||{},rfd:m.rfd||{},spr:m.spr||{},spr2:m.spr2||{},wx:m.wx||{}};}catch(e){return{prod:{},color:{},auto:{},ret:{},fam:{},fam2:{},cx:{},rfd:{},spr:{},spr2:{},wx:{}};}}
 function saveMap(){try{localStorage.setItem(MAPKEY,JSON.stringify(MAP));}catch(e){}}
 
 // ---- 讀取雲端 ----
@@ -281,9 +282,9 @@ function compute(){
     const legacy=!allB.length&&recorded>0;   // 之前只按過「已叫貨」、沒有單號：視為就是這份清單的叫貨
     const others=legacy?0:Math.max(0,recorded-appliedHere);
     const need=its.reduce((a,x)=>a+needTotal(x),0);
-    MAP.fam=MAP.fam||{};const fam=MAP.fam[t.key]||0;const expect=Math.max(0,need-others)+fam;
+    MAP.fam=MAP.fam||{};const fam=MAP.fam[t.key]||0;MAP.spr=MAP.spr||{};const spr=MAP.spr[t.key]||0;const expect=Math.max(0,need-others)+fam+spr;
     const diff=t.qty-expect;
-    rows.push({fam,rf:t.rf||0,rfdOrders:Object.keys(t.orders),key:t.key,srcs:t.srcs||{},it,items:its,fileQty:t.qty,expect,diff,appliedHere,legacy,recorded,orders:t.orders,need,others,qtySum:its.reduce((a,x)=>a+(x.qty||0),0),stockSum:its.reduce((a,x)=>a+(x.stockQty||0),0),defSum:its.reduce((a,x)=>a+(x.defectQty||0),0)});
+    rows.push({fam,spr,rf:t.rf||0,rfdOrders:Object.keys(t.orders),key:t.key,srcs:t.srcs||{},it,items:its,fileQty:t.qty,expect,diff,appliedHere,legacy,recorded,orders:t.orders,need,others,qtySum:its.reduce((a,x)=>a+(x.qty||0),0),stockSum:its.reduce((a,x)=>a+(x.stockQty||0),0),defSum:its.reduce((a,x)=>a+(x.defectQty||0),0)});
   });
   // 漏叫：已對應商品中，備貨追蹤還要叫、但這份清單沒有
   const prodSet=new Set(Object.values(MAP.prod).filter(v=>v&&v!=="__skip__"));
@@ -293,7 +294,8 @@ function compute(){
   }).filter(x=>x.toOrder>0);
   // 標記未叫（不限已對應的商品）：備貨追蹤已標記「已叫貨」（沒有 1688 單號、也還沒到貨），但這份 1688 清單裡沒有
   const unver=SRC.all.filter(it=>!inList.has(it.id)&&isMarked(it)&&!(it.arrivedQty>0)&&!it.allArrived&&!(it.orderBatches||[]).some(b=>b.ref)&&effOrdered(it)>0).map(it=>({it,qty:effOrdered(it)}));
-  return{rows,miss,forgot,unver};
+  MAP.wx=MAP.wx||{};const wxList=unver.filter(u=>MAP.wx[u.it.id]);const unver2=unver.filter(u=>!MAP.wx[u.it.id]);
+  return{rows,miss,forgot,unver:unver2,wxList};
 }
 function statusTag(r){
   if(r.appliedHere>=r.fileQty&&r.diff===0)return'<span class="tag t-done">已記錄</span>';
@@ -307,11 +309,11 @@ var FILT='all';
 const retKey=l=>[l.orderNo,l.title,l.color,l.size].join('|');
 function renderResult(){
   if(!LINES.length||!SRC){$("cRes").style.display="none";$("cMiss").style.display="none";return;}
-  const res=LAST=compute();MAP.ret=MAP.ret||{};MAP.fam2=MAP.fam2||{};const retList=res.miss.filter(m=>MAP.ret[retKey(m.l)]);const famList=res.miss.filter(m=>MAP.fam2[retKey(m.l)]&&!MAP.ret[retKey(m.l)]);res.miss=res.miss.filter(m=>!MAP.ret[retKey(m.l)]&&!MAP.fam2[retKey(m.l)]);res.retList=retList;
+  const res=LAST=compute();MAP.ret=MAP.ret||{};MAP.fam2=MAP.fam2||{};const retList=res.miss.filter(m=>MAP.ret[retKey(m.l)]);MAP.spr2=MAP.spr2||{};const famList=res.miss.filter(m=>MAP.fam2[retKey(m.l)]&&!MAP.ret[retKey(m.l)]);const sprList=res.miss.filter(m=>MAP.spr2[retKey(m.l)]&&!MAP.ret[retKey(m.l)]&&!MAP.fam2[retKey(m.l)]);res.miss=res.miss.filter(m=>!MAP.ret[retKey(m.l)]&&!MAP.fam2[retKey(m.l)]&&!MAP.spr2[retKey(m.l)]);res.retList=retList;
   $("cRes").style.display="";
   const ok=res.rows.filter(r=>r.diff===0).length,less=res.rows.filter(r=>r.diff<0).length,more=res.rows.filter(r=>r.diff>0).length;
   const tg=(f,c,n,x)=>'<span class="tag '+c+'" data-f="'+f+'" style="cursor:pointer;margin-right:4px;'+(FILT===f?'outline:2px solid #333;':'')+'">'+n+' '+x+'</span>';
-  $("sum").innerHTML=tg('all','t-done','全部',res.rows.length+res.forgot.length)+tg('ok','t-ok','吻合',ok)+tg('less','t-less','少叫',less)+tg('more','t-more','多叫',more)+tg('miss','t-miss','漏叫',res.forgot.length)+(res.unver.length?tg('unver','t-less','標記未叫',res.unver.length):'')+(()=>{const n=res.rows.reduce((a,r)=>a+(r.fam||0),0)+famList.reduce((a,m)=>a+m.l.qty,0);return n?'<span class="tag t-done">親友 '+n+' 件</span>':'';})()+'<span class="tag t-done" data-f="unm" style="cursor:pointer">比對不到 '+res.miss.length+'</span>';
+  $("sum").innerHTML=tg('all','t-done','全部',res.rows.length+res.forgot.length)+tg('ok','t-ok','吻合',ok)+tg('less','t-less','少叫',less)+tg('more','t-more','多叫',more)+tg('miss','t-miss','漏叫',res.forgot.length)+(res.unver.length?tg('unver','t-less','標記未叫',res.unver.length):'')+(()=>{const n=res.rows.reduce((a,r)=>a+(r.fam||0),0)+famList.reduce((a,m)=>a+m.l.qty,0);const k=res.rows.reduce((a,r)=>a+(r.spr||0),0)+sprList.reduce((a,m)=>a+m.l.qty,0);const w=res.wxList.reduce((a,u)=>a+u.qty,0);return (n?'<span class="tag t-done">親友 '+n+' 件</span>':'')+(k?'<span class="tag t-done">備用庫存 '+k+' 件</span>':'')+(w?'<span class="tag t-done">微信叫貨 '+w+' 件</span>':'');})()+'<span class="tag t-done" data-f="unm" style="cursor:pointer">比對不到 '+res.miss.length+'</span>';
   $("sum").querySelectorAll("[data-f]").forEach(e=>e.onclick=()=>{if(e.dataset.f==="unm"){const m=$("cMiss");if(m.style.display!=="none")m.scrollIntoView({behavior:"smooth"});return;}FILT=FILT===e.dataset.f&&FILT!=="all"?"all":e.dataset.f;renderResult();});
   {
     const lessRows=res.rows.filter(r=>r.diff<0);
@@ -339,7 +341,7 @@ function renderResult(){
   let h='<tr><th></th><th>品項</th><th>1688 清單</th><th>備貨追蹤該叫</th><th>狀態</th></tr>';
   rows.forEach((r,i)=>{
     const can=r.appliedHere<r.fileQty;
-    h+='<tr><td>'+(can?'<input type="checkbox" class="ck" data-id="'+esc(r.key)+'" checked/>':"")+'</td><td>'+esc(colorLabel(r.it))+([...new Set(r.items.map(colorLabel))].length>1?'（'+[...new Set(r.items.map(colorLabel))].filter(x=>x!==colorLabel(r.it)).map(esc).join('、')+'）':'')+' · '+esc(r.it.size||"")+'<div class="mute">'+esc(gProd(r.it))+(r.items.length>1?' <span class="pill">直播＋iOPEN</span>':(srcOf(r.it)==='iopen'?' <span class="pill">iOPEN</span>':''))+'</div></td><td>'+r.fileQty+(Object.keys(r.srcs).length>1?'<div class="warn" style="font-size:12px">⚠ '+Object.keys(r.srcs).map(c=>esc(c)+'×'+r.srcs[c]).join('＋')+'</div>':'')+'<div class="mute">'+Object.keys(r.orders).map(n=>esc(n.slice(-6))+"×"+r.orders[n].qty).join(" ")+'</div></td><td>'+r.expect+'<div class="mute">需求 '+r.qtySum+(r.stockSum>0?' − 現貨 '+r.stockSum:'')+(r.defSum>0?' ＋瑕疵 '+r.defSum:'')+(r.others?' − 另已叫 '+r.others:'')+(r.fam?' ＋親友 '+r.fam:'')+'</div></td><td>'+statusTag(r)+((r.fileQty>0||r.rf>0)?'<div style="margin-top:4px"><button class="mini" data-rfd="'+esc(r.key)+'">'+(r.rf>0?'退款 −'+r.rf+'（改）':'有退款')+'</button></div>':'')+((r.diff>0||r.fam>0)?'<div style="margin-top:4px"><button class="mini" data-fam="'+esc(r.key)+'" data-d="'+Math.max(0,r.diff)+'" data-cur="'+r.fam+'">'+(r.fam>0?'親友 '+r.fam+' 件（改）':'多的 '+r.diff+' 件給親友')+'</button></div>':'')+(r.diff<0?'<div style="margin-top:4px"><button class="mini" data-stock="'+esc(r.it.id)+'" data-n="'+(-r.diff)+'">差 '+(-r.diff)+' 件是現貨<br>→記入現貨</button></div>':"")+'</td></tr>';
+    h+='<tr><td>'+(can?'<input type="checkbox" class="ck" data-id="'+esc(r.key)+'" checked/>':"")+'</td><td>'+esc(colorLabel(r.it))+([...new Set(r.items.map(colorLabel))].length>1?'（'+[...new Set(r.items.map(colorLabel))].filter(x=>x!==colorLabel(r.it)).map(esc).join('、')+'）':'')+' · '+esc(r.it.size||"")+'<div class="mute">'+esc(gProd(r.it))+(r.items.length>1?' <span class="pill">直播＋iOPEN</span>':(srcOf(r.it)==='iopen'?' <span class="pill">iOPEN</span>':''))+'</div></td><td>'+r.fileQty+(Object.keys(r.srcs).length>1?'<div class="warn" style="font-size:12px">⚠ '+Object.keys(r.srcs).map(c=>esc(c)+'×'+r.srcs[c]).join('＋')+'</div>':'')+'<div class="mute">'+Object.keys(r.orders).map(n=>esc(n.slice(-6))+"×"+r.orders[n].qty).join(" ")+'</div></td><td>'+r.expect+'<div class="mute">需求 '+r.qtySum+(r.stockSum>0?' − 現貨 '+r.stockSum:'')+(r.defSum>0?' ＋瑕疵 '+r.defSum:'')+(r.others?' − 另已叫 '+r.others:'')+(r.fam?' ＋親友 '+r.fam:'')+(r.spr?' ＋備用 '+r.spr:'')+'</div></td><td>'+statusTag(r)+((r.fileQty>0||r.rf>0)?'<div style="margin-top:4px"><button class="mini" data-rfd="'+esc(r.key)+'">'+(r.rf>0?'退款 −'+r.rf+'（改）':'有退款')+'</button></div>':'')+((r.diff>0||r.fam>0)?'<div style="margin-top:4px"><button class="mini" data-fam="'+esc(r.key)+'" data-d="'+Math.max(0,r.diff)+'" data-cur="'+r.fam+'">'+(r.fam>0?'親友 '+r.fam+' 件（改）':'多的 '+r.diff+' 件給親友')+'</button></div>':'')+((r.diff>0||r.spr>0)?'<div style="margin-top:4px"><button class="mini" data-spr="'+esc(r.key)+'" data-d="'+Math.max(0,r.diff)+'" data-cur="'+r.spr+'">'+(r.spr>0?'備用庫存 '+r.spr+' 件（改）':'多的 '+r.diff+' 件轉備用庫存')+'</button></div>':'')+(r.diff<0?'<div style="margin-top:4px"><button class="mini" data-stock="'+esc(r.it.id)+'" data-n="'+(-r.diff)+'">差 '+(-r.diff)+' 件是現貨<br>→記入現貨</button></div>':"")+'</td></tr>';
   });
   (FILT==='all'||FILT==='miss'?res.forgot:[]).slice().sort((a,b)=>(gProd(a.it)+colorLabel(a.it)).localeCompare(gProd(b.it)+colorLabel(b.it),"zh-Hant")).forEach(f=>{
     h+='<tr><td></td><td>'+esc(colorLabel(f.it))+' · '+esc(f.it.size||"")+'<div class="mute">'+esc(gProd(f.it))+'</div></td><td>0</td><td>'+f.toOrder+'</td><td><span class="tag t-miss">漏叫 '+f.toOrder+'</span></td></tr>';
@@ -347,12 +349,22 @@ function renderResult(){
   (FILT==='all'||FILT==='unver'?res.unver:[]).slice().sort((a,b)=>(gProd(a.it)+colorLabel(a.it)).localeCompare(gProd(b.it)+colorLabel(b.it),"zh-Hant")).forEach(u=>{
     h+='<tr><td><input type="checkbox" class="uk" data-uid="'+esc(u.it.id)+'"/></td><td>'+esc(colorLabel(u.it))+' · '+esc(u.it.size||"")+'<div class="mute">'+esc(gProd(u.it))+'</div></td><td>0</td><td>'+u.qty+'</td><td><span class="tag t-less">標記已叫貨，但 1688 沒有</span></td></tr>';
   });
-  if(res.unver.length&&(FILT==='all'||FILT==='unver'))h+='<tr><td colspan="5"><button class="mini" id="btnUnmark">取消勾選品項的「已叫貨」標記</button> <span class="mute">若是更早的 1688 訂單叫的，請先匯入那張訂單的檔案，不要取消。</span></td></tr>';
+  if(res.unver.length&&(FILT==='all'||FILT==='unver'))h+='<tr><td colspan="5"><button class="mini" id="btnWx">勾選的品項：微信叫貨</button> <button class="mini" id="btnUnmark">取消勾選品項的「已叫貨」標記</button> <span class="mute">若是更早的 1688 訂單叫的，請先匯入那張訂單的檔案，不要取消。</span></td></tr>';
   if(rows.length===0&&!(FILT==='all'||FILT==='miss'||(FILT==='unver'&&res.unver.length)))h+='<tr><td colspan="5" class="mute">沒有符合的品項</td></tr>';
   $("resTbl").innerHTML=h;
   const canAny=rows.some(r=>r.appliedHere<r.fileQty);
   $("applyBar").innerHTML='<button class="primary" id="btnApply"'+(canAny?"":" disabled")+'>把勾選的品項標記為「已叫貨」</button><span class="mute">叫貨日用 1688 的付款日（沒有則用建立日）。多叫、少叫的也可以標記，備貨追蹤會顯示差異。</span>';
   $("btnApply").onclick=applyMarks;
+  if($("btnWx"))$("btnWx").onclick=()=>{
+    const ids=[...document.querySelectorAll("input.uk:checked")].map(x=>x.dataset.uid);
+    if(!ids.length){alert("請先勾選用微信叫貨的品項");return;}
+    MAP.wx=MAP.wx||{};ids.forEach(i=>MAP.wx[i]=1);saveMap();renderResult();
+  };
+  {
+    const w=res.wxList;
+    $("wxBox").innerHTML=w.length?'<details><summary style="cursor:pointer;font-weight:700">微信叫貨（'+w.length+' 項，'+w.reduce((a,u)=>a+u.qty,0)+' 件）：不在 1688 清單是正常的</summary><table><tr><th>品項</th><th>件數</th><th></th></tr>'+w.map(u=>'<tr><td>'+esc(colorLabel(u.it))+' · '+esc(u.it.size||"")+'<div class="mute">'+esc(gProd(u.it))+'</div></td><td>'+u.qty+'</td><td><button class="mini" data-unwx="'+esc(u.it.id)+'">取消</button></td></tr>').join("")+'</table></details>':'';
+    $("wxBox").querySelectorAll("button[data-unwx]").forEach(b=>b.onclick=()=>{delete MAP.wx[b.dataset.unwx];saveMap();renderResult();});
+  }
   if($("btnUnmark"))$("btnUnmark").onclick=async()=>{
     const ids=[...document.querySelectorAll("input.uk:checked")].map(x=>x.dataset.uid);
     if(!ids.length){alert("請先勾選要取消標記的品項");return;}
@@ -375,6 +387,13 @@ function renderResult(){
     const n=Math.max(0,parseInt(v,10)||0);
     if(n>0)MAP.rfd[r.key+"|"+no]=n;else delete MAP.rfd[r.key+"|"+no];saveMap();renderResult();
   });
+  document.querySelectorAll("button.mini[data-spr]").forEach(b=>b.onclick=()=>{
+    const cur=parseInt(b.dataset.cur,10)||0,d=parseInt(b.dataset.d,10)||0;
+    let n;
+    if(cur===0&&d>0)n=d;
+    else{const v=prompt("轉成備用庫存的件數（填 0 取消）",String(cur||d||1));if(v===null)return;n=Math.max(0,parseInt(v,10)||0);}
+    MAP.spr=MAP.spr||{};if(n>0)MAP.spr[b.dataset.spr]=n;else delete MAP.spr[b.dataset.spr];saveMap();renderResult();
+  });
   document.querySelectorAll("button.mini[data-fam]").forEach(b=>b.onclick=()=>{
     const cur=parseInt(b.dataset.cur,10)||0,d=parseInt(b.dataset.d,10)||0;
     let n;
@@ -383,15 +402,18 @@ function renderResult(){
     MAP.fam=MAP.fam||{};if(n>0)MAP.fam[b.dataset.fam]=n;else delete MAP.fam[b.dataset.fam];saveMap();renderResult();
   });
   document.querySelectorAll("button.mini[data-stock]").forEach(b=>b.onclick=()=>{const n=parseInt(b.dataset.n,10)||0;if(n>0&&confirm("把這個品項的 "+n+" 件記為「現貨」？\n（備貨追蹤的該叫件數會跟著減少）"))addStock(b.dataset.stock,n);});
-  if(res.miss.length||retList.length||famList.length){
+  if(res.miss.length||retList.length||famList.length||sprList.length){
     $("cMiss").style.display="";
     const lab=m=>esc(m.l.title.slice(0,24))+'… '+esc(m.l.color)+' '+esc(m.l.size)+'<div class="mute">…'+esc(String(m.l.orderNo).slice(-6))+'</div>';
-    let mh=res.miss.length?'<table><tr><th>1688 品項</th><th>件數</th><th>原因</th><th></th></tr>'+res.miss.map(m=>'<tr><td>'+lab(m)+'</td><td>'+m.l.qty+'</td><td class="warn">'+esc(m.why)+'</td><td><button class="mini" data-fam2="'+esc(retKey(m.l))+'">給親友</button> <button class="mini" data-ret="'+esc(retKey(m.l))+'">已申請退回</button></td></tr>').join("")+'</table>':'<div class="mute">沒有待處理的品項。</div>';
+    let mh=res.miss.length?'<table><tr><th>1688 品項</th><th>件數</th><th>原因</th><th></th></tr>'+res.miss.map(m=>'<tr><td>'+lab(m)+'</td><td>'+m.l.qty+'</td><td class="warn">'+esc(m.why)+'</td><td><button class="mini" data-fam2="'+esc(retKey(m.l))+'">給親友</button> <button class="mini" data-spr2="'+esc(retKey(m.l))+'">備用庫存</button> <button class="mini" data-ret="'+esc(retKey(m.l))+'">已申請退回</button></td></tr>').join("")+'</table>':'<div class="mute">沒有待處理的品項。</div>';
     if(famList.length)mh+='<details open style="margin-top:10px"><summary style="cursor:pointer;font-weight:700">給親友（'+famList.length+' 項，'+famList.reduce((a,m)=>a+m.l.qty,0)+' 件）</summary><table><tr><th>1688 品項</th><th>件數</th><th></th></tr>'+famList.map(m=>'<tr><td>'+lab(m)+'</td><td>'+m.l.qty+'</td><td><button class="mini" data-unfam2="'+esc(retKey(m.l))+'">取消</button></td></tr>').join("")+'</table></details>';
+    if(sprList.length)mh+='<details open style="margin-top:10px"><summary style="cursor:pointer;font-weight:700">備用庫存（'+sprList.length+' 項，'+sprList.reduce((a,m)=>a+m.l.qty,0)+' 件）</summary><table><tr><th>1688 品項</th><th>件數</th><th></th></tr>'+sprList.map(m=>'<tr><td>'+lab(m)+'</td><td>'+m.l.qty+'</td><td><button class="mini" data-unspr2="'+esc(retKey(m.l))+'">取消</button></td></tr>').join("")+'</table></details>';
     if(retList.length)mh+='<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:700">已申請退回（'+retList.length+' 項，'+retList.reduce((a,m)=>a+m.l.qty,0)+' 件）</summary><table><tr><th>1688 品項</th><th>件數</th><th></th></tr>'+retList.map(m=>'<tr><td>'+lab(m)+'</td><td>'+m.l.qty+'</td><td><button class="mini" data-unret="'+esc(retKey(m.l))+'">取消</button></td></tr>').join("")+'</table></details>';
     $("missBody").innerHTML=mh;
     $("missBody").querySelectorAll("button[data-ret]").forEach(b=>b.onclick=()=>{MAP.ret[b.dataset.ret]=1;saveMap();renderResult();});
     $("missBody").querySelectorAll("button[data-fam2]").forEach(b=>b.onclick=()=>{MAP.fam2[b.dataset.fam2]=1;saveMap();renderResult();});
+    $("missBody").querySelectorAll("button[data-spr2]").forEach(b=>b.onclick=()=>{MAP.spr2[b.dataset.spr2]=1;saveMap();renderResult();});
+    $("missBody").querySelectorAll("button[data-unspr2]").forEach(b=>b.onclick=()=>{delete MAP.spr2[b.dataset.unspr2];saveMap();renderResult();});
     $("missBody").querySelectorAll("button[data-unfam2]").forEach(b=>b.onclick=()=>{delete MAP.fam2[b.dataset.unfam2];saveMap();renderResult();});
     $("missBody").querySelectorAll("button[data-unret]").forEach(b=>b.onclick=()=>{delete MAP.ret[b.dataset.unret];saveMap();renderResult();});
   }else $("cMiss").style.display="none";
