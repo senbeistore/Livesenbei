@@ -1967,7 +1967,7 @@ function HomeModal({item,items,onApply,onClose}){
 }
 
 // ── 斷貨／改色／取消：逐位客人處理，並同步修改本工具內的訂單資料 ──
-function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose,onAddVariant}){
+function ChangeModal({item,items,parsed,iopenData,savedAlloc,changes,onApply,onClose,onAddVariant}){
   const fk=flatKey(item);
   const rows=[];
   if(parsed&&parsed.orders){
@@ -1979,8 +1979,19 @@ function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose,onAdd
       rows.push({oi,li,qty:ln.qty,price:ln.price||0,account:c.account||o.customerKey,name:c.name||"",shipped});
     });});
   }
+  // iOPEN 品項：客人資料在 iopenData[帳號].customItems（不在直播訂單內），一樣可以逐位客人改款／取消
+  if(itemSource(item)==="iopen"&&iopenData){
+    const shippedCI={};Object.values(savedAlloc||{}).forEach(o=>{(o.shippedCI||[]).forEach(k=>{shippedCI[k]=1;});});
+    Object.keys(iopenData).forEach(ig=>{
+      if(ig.indexOf("__")===0)return;const t=iopenData[ig];if(!t||!Array.isArray(t.customItems))return;
+      t.customItems.forEach((ci,li)=>{
+        if((ci.prod||"")!==(item.product||"")||(ci.spec1||"")!==(item.color||"")||(ci.spec2||"")!==(item.size||""))return;
+        rows.push({io:true,ig,oi:"io|"+ig,li,qty:ci.qty||1,price:0,account:ig,name:"",shipped:!!shippedCI[custKey(ci)]});
+      });
+    });
+  }
   // 目標清單：可選任一商品（預設同商品）的「所有顏色 × 所有尺寸」；備貨清單裡還沒有的組合選了之後會自動新增品項
-  const poolAll=items.filter(x=>itemSource(x)===itemSource(item));
+  const poolAll=itemSource(item)==='iopen'?items.slice():items.filter(x=>itemSource(x)===itemSource(item));
   const groups=[];poolAll.forEach(x=>{const g=gProd(x);if(!groups.includes(g))groups.push(g);});
   groups.sort((a,b)=>(a===gProd(item)?-1:b===gProd(item)?1:a.localeCompare(b,"zh-Hant")));
   const SEP="\u0001";
@@ -2007,7 +2018,7 @@ function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose,onAdd
   const btn={fontSize:12,borderRadius:6,padding:"4px 10px",cursor:"pointer",border:`1px solid ${C.line}`,background:C.surface,color:C.ink};
   const todo=rows.filter(r=>!r.shipped&&get(r).act!=="keep"&&(get(r).act==="cancel"||(get(r).to&&(get(r).to!=="__custom__"||String(get(r).cc||"").trim()))));
   const apply=()=>{
-    const ds=todo.map(r=>({oi:r.oi,li:r.li,act:get(r).act,n:Math.max(1,Math.min(r.qty,parseInt(get(r).n,10)||r.qty)),to:get(r).to==="__custom__"?"new"+SEP+baseProd(get(r).tp||gProd(item))+SEP+(get(r).tp||gProd(item))+SEP+((get(r).tp||gProd(item))===gProd(item)&&!(item.style&&!item.color)?(item.style||""):(((get(r).tp||gProd(item))===gProd(item))?String(get(r).cc).trim():""))+SEP+((get(r).tp||gProd(item))===gProd(item)&&item.style&&!item.color?"":String(get(r).cc).trim())+SEP+(String(get(r).cz||"").trim()||item.size||""):get(r).to}));
+    const ds=todo.map(r=>({io:!!r.io,ig:r.ig,oi:r.oi,li:r.li,act:get(r).act,n:Math.max(1,Math.min(r.qty,parseInt(get(r).n,10)||r.qty)),to:get(r).to==="__custom__"?"new"+SEP+baseProd(get(r).tp||gProd(item))+SEP+(get(r).tp||gProd(item))+SEP+((get(r).tp||gProd(item))===gProd(item)&&!(item.style&&!item.color)?(item.style||""):(((get(r).tp||gProd(item))===gProd(item))?String(get(r).cc).trim():""))+SEP+((get(r).tp||gProd(item))===gProd(item)&&item.style&&!item.color?"":String(get(r).cc).trim())+SEP+(String(get(r).cz||"").trim()||item.size||""):get(r).to}));
     setDone(onApply(item,ds));
   };
   return(
@@ -2026,7 +2037,7 @@ function ChangeModal({item,items,parsed,savedAlloc,changes,onApply,onClose,onAdd
           <div style={{display:"flex",gap:8,marginTop:8}}><button style={btn} onClick={()=>{try{navigator.clipboard.writeText(done.join("\n"));}catch(e){}}}>複製紀錄</button><button style={{...btn,background:C.stamp,color:"#fff",border:"none"}} onClick={onClose}>完成</button></div>
         </div>):(<div>
         {!parsed&&<div style={{marginTop:10,fontSize:12,color:C.warning}}>尚未上傳客訂XLS，沒有客人訂單可修改；只能標記斷貨。</div>}
-        {parsed&&rows.length===0&&<div style={{marginTop:10,fontSize:12,color:C.inkMuted}}>客訂XLS 內找不到訂這個品項的客人（iOPEN 品項沒有逐位客人資料）。</div>}
+        {parsed&&rows.length===0&&<div style={{marginTop:10,fontSize:12,color:C.inkMuted}}>客訂XLS 內找不到訂這個品項的客人。</div>}
         {rows.filter(r=>!r.shipped).length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}><button style={btn} onClick={()=>all("cancel")}>全部取消</button><button style={btn} onClick={()=>all("keep")}>全部不動</button></div>}
         <div style={{marginTop:10}}>
           {rows.map(r=>{const d=get(r);return(
@@ -2141,8 +2152,35 @@ function App(){
     const nowTxt=new Date().toLocaleString("zh-TW",{hour12:false,timeZone:"Asia/Taipei"});
     let newStore=store,newAlloc=savedAllocRef.current;
     const created={};
-    decisions.forEach(d=>{if(d.act==="swap"&&String(d.to).indexOf("new\u0001")===0&&!created[d.to]){const[,tp0,gp0,st,co,z]=d.to.split("\u0001");created[d.to]={...item,id:"n"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),product:tp0,homeProduct:gp0!==tp0?gp0:undefined,style:st,color:co,size:z,qty:0,orderedQty:0,orderedEdited:false,arrivedQty:0,stockQty:0,shippedQty:0,defectQty:0,allArrived:false,allOrdered:false,firstOrderDate:"",secondOrderDate:"",orderBatches:[],stockLog:[],arrivalLog:[],firstStockTs:"",arrivedTs:"",firstArrivedTs:"",counted:false,soldOut:false,shortStatus:undefined};}});
+    const allDec=decisions;const ioDec=decisions.filter(d=>d.io);decisions=decisions.filter(d=>!d.io);
+    allDec.forEach(d=>{if(d.act==="swap"&&String(d.to).indexOf("new\u0001")===0&&!created[d.to]){const[,tp0,gp0,st,co,z]=d.to.split("\u0001");created[d.to]={...item,id:"n"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),product:tp0,homeProduct:gp0!==tp0?gp0:undefined,style:st,color:co,size:z,qty:0,orderedQty:0,orderedEdited:false,arrivedQty:0,stockQty:0,shippedQty:0,defectQty:0,allArrived:false,allOrdered:false,firstOrderDate:"",secondOrderDate:"",orderBatches:[],stockLog:[],arrivalLog:[],firstStockTs:"",arrivedTs:"",firstArrivedTs:"",counted:false,soldOut:false,shortStatus:undefined};}});
     const allItems=items.concat(Object.values(created));
+    // iOPEN 客人：直接改 iopenData[帳號].customItems
+    let baseStore=store;const ioChanges=[];
+    if(ioDec.length){
+      baseStore={...store};
+      ioDec.forEach(d=>{
+        const t0=baseStore[d.ig];if(!t0||!Array.isArray(t0.customItems))return;
+        const cis=t0.customItems.map(x=>({...x}));const ci=cis[d.li];if(!ci)return;
+        const n=Math.min(d.n,ci.qty||1);if(n<=0)return;
+        let tt=null;
+        if(d.act==="swap"){tt=created[d.to]||items.find(x=>x.id===d.to);if(!tt)return;if(flatKey(tt)===flatKey(item)){logs.push("（略過）"+d.ig+"：改成的品項與原品項相同");return;}}
+        ci.qty=(ci.qty||1)-n;delta[item.id]=(delta[item.id]||0)-n;
+        let text;
+        if(d.act==="cancel"){text=nowTxt+"　"+d.ig+"　"+dispName(item)+" ×"+n+" → 取消";}
+        else{
+          const ex=cis.find((x,xi)=>xi!==d.li&&(x.orderNo||"")===(ci.orderNo||"")&&(x.prod||"")===tt.product&&(x.spec1||"")===(tt.color||"")&&(x.spec2||"")===(tt.size||""));
+          if(ex)ex.qty=(ex.qty||1)+n;else cis.push({...ci,prod:tt.product,spec1:tt.color||"",spec2:tt.size||"",qty:n});
+          delta[tt.id]=(delta[tt.id]||0)+n;
+          text=nowTxt+"　"+d.ig+"　"+dispName(item)+" ×"+n+" → 改成 "+dispName(tt);
+        }
+        baseStore[d.ig]={...t0,customItems:cis.filter(x=>(x.qty||0)>0)};
+        logs.push(text);ioChanges.push({ts:new Date().toISOString(),fk:flatKey(item),text,who:d.ig,act:d.act,qty:n,from:dispName(item),to:d.act==="cancel"?"":dispName(tt),done:false});
+      });
+      newStore=baseStore;
+      if(baseStore.__orders__)newStore={...baseStore,__orders__:{...baseStore.__orders__,changes:[...((baseStore.__orders__&&baseStore.__orders__.changes)||[]),...ioChanges].slice(-300)}};
+      const custList=iopenCustomFromData(newStore);iopenCustomRef.current=custList.slice();
+    }
     if(op&&decisions.length){
       const parsed=JSON.parse(JSON.stringify(op));const cur=JSON.parse(JSON.stringify(savedAllocRef.current||{}));
       const refs=decisions.map(d=>({d,o:parsed.orders[d.oi],ln:parsed.orders[d.oi].items[d.li],oldKey:null}));
@@ -2173,7 +2211,7 @@ function App(){
       oldKeys.forEach((ok,o)=>{const nk=dropped.includes(o)?null:makeOrderKey(o.customerKey,o.items);if(nk!==ok&&cur[ok]){if(nk&&!cur[nk])cur[nk]=cur[ok];delete cur[ok];}});
       let recomputed=cur;try{recomputed=recalculateAlloc(cur,parsed,allItems.map(x=>delta[x.id]?{...x,qty:Math.max(0,(x.qty||0)+delta[x.id])}:x),"amount");}catch(e){}
       newAlloc=recomputed;
-      newStore={...store,__orders__:{...store.__orders__,parsed,changes:[...((store.__orders__&&store.__orders__.changes)||[]),...changesNew].slice(-300)}};
+      newStore={...baseStore,__orders__:{...baseStore.__orders__,parsed,changes:[...((baseStore.__orders__&&baseStore.__orders__.changes)||[]),...ioChanges,...changesNew].slice(-300)}};
     }
     iopenDataRef.current=newStore;setIopenData(newStore);savedAllocRef.current=newAlloc;setSavedAlloc(newAlloc);
     setItems(prev0=>{
@@ -2451,7 +2489,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-F</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-G</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2680,7 +2718,7 @@ function App(){
       {showChanges&&<ChangesModal changes={(iopenData&&iopenData.__orders__&&iopenData.__orders__.changes)||[]} onToggle={toggleChange} onAllDone={allChangesDone} onClose={()=>setShowChanges(false)}/>}
       {homeItem&&<HomeModal item={items.find(x=>x.id===homeItem.id)||homeItem} items={items} onApply={applyHome} onClose={()=>setHomeItem(null)}/>}
       {addVarItem&&<AddVariantModal item={addVarItem} items={items} onApply={applyAddVariants} onClose={()=>setAddVarItem(null)}/>}
-      {chgItem&&<ChangeModal item={items.find(x=>x.id===chgItem.id)||chgItem} items={items} parsed={(iopenData&&iopenData.__orders__&&iopenData.__orders__.parsed)||null} savedAlloc={savedAlloc} changes={(iopenData&&iopenData.__orders__&&iopenData.__orders__.changes)||[]} onApply={applyOrderChanges} onClose={()=>setChgItem(null)} onAddVariant={()=>setAddVarItem(items.find(x=>x.id===chgItem.id)||chgItem)}/>}
+      {chgItem&&<ChangeModal item={items.find(x=>x.id===chgItem.id)||chgItem} items={items} iopenData={iopenData} parsed={(iopenData&&iopenData.__orders__&&iopenData.__orders__.parsed)||null} savedAlloc={savedAlloc} changes={(iopenData&&iopenData.__orders__&&iopenData.__orders__.changes)||[]} onApply={applyOrderChanges} onClose={()=>setChgItem(null)} onAddVariant={()=>setAddVarItem(items.find(x=>x.id===chgItem.id)||chgItem)}/>}
       {batchSel.size>0&&!allocMode&&!countMode&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:C.ink,zIndex:50,padding:"14px 16px",boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
           <div style={{maxWidth:640,margin:"0 auto"}}>
