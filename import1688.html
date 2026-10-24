@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AB</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AC</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -51,6 +51,11 @@
     <div class="mute" style="margin-bottom:8px">從 1688「已買到的貨品」匯出的訂單明細（.xlsx）。可一次匯入多張訂單。</div>
     <input type="file" id="file" accept=".xlsx,.xls,.csv" multiple/>
     <div id="fileInfo" class="mute" style="margin-top:6px"></div>
+  </div>
+  <div class="card" id="cMerge" style="display:none">
+    <h2>商品合併（同一商品有兩個名稱／兩個賣場）</h2>
+    <div class="mute" style="margin-bottom:6px">備貨追蹤裡同一個商品若被分成不同名稱（例如直播叫 A、iOPEN 叫 B，或 iOPEN 依尺寸分成好幾個賣場），在這裡併成同一個，需求與叫貨件數才會加在一起。設定記在這個瀏覽器。</div>
+    <div id="mergeBody"></div>
   </div>
   <div class="card" id="cMap" style="display:none">
     <h2>③ 對應設定</h2>
@@ -92,7 +97,9 @@ let conv=(s)=>s; try{ if(window.OpenCC){const c=OpenCC.Converter({from:"cn",to:"
 // ---- 備貨追蹤邏輯（與 stock-tracker.html 相同）----
 const gProd=it=>it.homeProduct||it.product;
 const _np=p=>String(p||"").replace(/奶霜立領/g,"立領奶霜").replace(/釦/g,"扣").replace(/紐/g,"鈕").replace(/現貨|預購/g,"").replace(/[（(][^）)]*[）)]/g,"").replace(/\d+\s*[~\-–]\s*\d+\s*(cm|公分)?|\d+\s*(cm|公分)/gi,"").replace(/賣場|直播|兒童|上衣|款|[｜|\s\-_·]/g,"");
-function sameProd(x,gp){const a=gProd(x);if(a===gp)return true;const n=_np(a),m=_np(gp);return n.length>=3&&m.length>=3&&(n===m||n.includes(m)||m.includes(n));}
+function sameName(a,b){if(a===b)return true;const n=_np(a),m=_np(b);return n.length>=3&&m.length>=3&&(n===m||n.includes(m)||m.includes(n));}
+function canonP(n){MAP.alias=MAP.alias||{};let x=n,i=0;while(MAP.alias[x]&&MAP.alias[x]!==x&&i++<6)x=MAP.alias[x];return x;}
+function sameProd(x,gp){const a=gProd(x);if(sameName(a,gp))return true;const ca=canonP(a),cg=canonP(gp);return ca===cg||((ca!==a||cg!==gp)&&sameName(ca,cg));}
 const netNeed=it=>Math.max(0,(it.qty||0)-(it.stockQty||0));
 const needTotal=it=>netNeed(it)+(it.defectQty||0);
 const isMarked=it=>!!(it.firstOrderDate||it.allOrdered);
@@ -107,7 +114,7 @@ const colorKey=it=>nk((it.style||"")+SEP+(it.color||""));
 let SRC=null;      // {token,gistId,rev,items,raw}
 let LINES=[];      // 1688 明細
 let MAP=loadMap();
-function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{},auto:m.auto||{},ret:m.ret||{},fam:m.fam||{},fam2:m.fam2||{},cx:m.cx||{},rfd:m.rfd||{},spr:m.spr||{},spr2:m.spr2||{},wx:m.wx||{}};}catch(e){return{prod:{},color:{},auto:{},ret:{},fam:{},fam2:{},cx:{},rfd:{},spr:{},spr2:{},wx:{}};}}
+function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{},auto:m.auto||{},ret:m.ret||{},fam:m.fam||{},fam2:m.fam2||{},cx:m.cx||{},rfd:m.rfd||{},spr:m.spr||{},spr2:m.spr2||{},wx:m.wx||{},alias:m.alias||{}};}catch(e){return{prod:{},color:{},auto:{},ret:{},fam:{},fam2:{},cx:{},rfd:{},spr:{},spr2:{},wx:{}};}}
 function saveMap(){try{localStorage.setItem(MAPKEY,JSON.stringify(MAP));}catch(e){}}
 
 // ---- 讀取雲端 ----
@@ -215,6 +222,39 @@ function suggestColor(prod,c){const t=conv(c).replace(/^(长袖|長袖|短袖|�
 function prodOf(title){const m=MAP.prod[title];return m===undefined?"":m;}   // ""=未設定, "__skip__"=忽略
 function colorOf(title,c){const m=MAP.color[title+"|"+c];return m===undefined?"":nk(m);}
 
+
+function prodClusters(){
+  const ps=prodOptions();const par=ps.map((_,i)=>i);const f=i=>par[i]===i?i:(par[i]=f(par[i]));
+  for(let i=0;i<ps.length;i++)for(let j=i+1;j<ps.length;j++){if(sameName(ps[i],ps[j])||canonP(ps[i])===canonP(ps[j])){par[f(i)]=f(j);}}
+  const g={};ps.forEach((p,i)=>{(g[f(i)]=g[f(i)]||[]).push(p);});
+  const cnt=p=>SRC.all.filter(it=>gProd(it)===p).length;
+  return Object.values(g).map(m=>{m.sort((a,b)=>cnt(b)-cnt(a));return{members:m,rep:m[0],n:m.reduce((a,p)=>a+cnt(p),0)};});
+}
+function renderMerge(){
+  const card=$("cMerge");if(!card)return;if(!SRC){card.style.display="none";return;}card.style.display="";
+  MAP.alias=MAP.alias||{};
+  const cl=prodClusters();const lab=c=>c.members.map(prodLabel).join(" ／ ");
+  const sug=[];
+  for(let i=0;i<cl.length;i++)for(let j=i+1;j<cl.length;j++){
+    let best=0;cl[i].members.forEach(a=>cl[j].members.forEach(b=>{const x=_np(a),y=_np(b);if(x.length<3||y.length<3)return;const sc=sim(x,y);if(sc>best)best=sc;}));
+    if(best>=0.6)sug.push({i,j,sc:best});
+  }
+  sug.sort((a,b)=>b.sc-a.sc);
+  let h="";
+  if(sug.length){h+='<div style="font-weight:700;margin-bottom:4px">可能是同一個商品（名稱相近）</div>';
+    sug.slice(0,12).forEach(x=>{h+='<div class="grp"><div>'+esc(lab(cl[x.i]))+'</div><div>＝ '+esc(lab(cl[x.j]))+' ？</div><button class="mini" data-mg="'+x.i+'|'+x.j+'">合併這兩個</button></div>';});
+  }else h+='<div class="mute">沒有名稱相近、尚未合併的商品。</div>';
+  const opt=cl.map((c,i)=>'<option value="'+i+'">'+esc(c.rep)+(c.members.length>1?'（含'+c.members.length+'個名稱）':'')+'</option>').join("");
+  h+='<div style="font-weight:700;margin:10px 0 4px">手動合併</div><div class="row"><select id="mgA"><option value="">（選商品）</option>'+opt+'</select><span>＋</span><select id="mgB"><option value="">（選商品）</option>'+opt+'</select><button class="mini" id="mgGo">合併</button></div>';
+  const tg={};Object.keys(MAP.alias).forEach(k=>{if(MAP.alias[k]!==k)(tg[MAP.alias[k]]=tg[MAP.alias[k]]||[]).push(k);});
+  const tk=Object.keys(tg);
+  if(tk.length){h+='<div style="font-weight:700;margin:10px 0 4px">已合併</div>';tk.forEach(t=>{h+='<div class="grp"><div>'+esc(t)+'</div><div class="mute">＋ '+tg[t].map(esc).join('、')+'</div><button class="mini" data-mgx="'+esc(t)+'">取消這組合併</button></div>';});}
+  $("mergeBody").innerHTML=h;
+  const doMerge=(a,b)=>{if(a===b||!cl[a]||!cl[b])return;const tgt=cl[b].rep;[...cl[a].members,...cl[b].members].forEach(m=>{if(m!==tgt)MAP.alias[m]=tgt;});saveMap();refresh();};
+  $("mergeBody").querySelectorAll("button[data-mg]").forEach(b=>b.onclick=()=>{const [x,y]=b.dataset.mg.split("|").map(Number);doMerge(x,y);});
+  $("mgGo").onclick=()=>{const a=$("mgA").value,b=$("mgB").value;if(a===""||b===""||a===b){alert("請選兩個不同的商品");return;}doMerge(+a,+b);};
+  $("mergeBody").querySelectorAll("button[data-mgx]").forEach(b=>b.onclick=()=>{const t=b.dataset.mgx;Object.keys(MAP.alias).forEach(k=>{if(MAP.alias[k]===t)delete MAP.alias[k];});saveMap();refresh();});
+}
 function renderMap(){
   if(!LINES.length||!SRC){$("cMap").style.display="none";return;}
   $("cMap").style.display="";
@@ -473,7 +513,7 @@ async function removeOrder(ref){
     await loadSrc();refresh();
   }catch(e){$("oldMsg").innerHTML='<span class="err">'+esc(e.message||e)+'</span>';}
 }
-function refresh(){renderMap();renderResult();renderOld();updMapBadge();}
+function refresh(){renderMerge();renderMap();renderResult();renderOld();updMapBadge();}
 function updMapBadge(){
   const h=$("cMap")&&$("cMap").querySelector("h2");if(!h||!LINES.length)return;
   const titles=[...new Set(LINES.map(l=>l.title))];
@@ -493,7 +533,7 @@ function makeCollapsible(id,open){
   set(st);h.onclick=()=>set(body.style.display==="none");
 }
 document.querySelector("main .card:nth-child(2)").id="cFile";
-makeCollapsible("cSrc",false);makeCollapsible("cFile",true);makeCollapsible("cMap",false);makeCollapsible("cOld",false);
+makeCollapsible("cSrc",false);makeCollapsible("cFile",true);makeCollapsible("cMerge",false);makeCollapsible("cMap",false);makeCollapsible("cOld",false);
 
 // ---- 寫回備貨追蹤 ----
 async function writeItems(mut){   // mut(freshItems)->新 items；寫入前重新讀取，避免蓋掉其他裝置的修改
