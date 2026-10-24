@@ -2283,7 +2283,7 @@ function App(){
     iopenDataRef.current=newStore;setIopenData(newStore);savedAllocRef.current=newAlloc;setSavedAlloc(newAlloc);
     setItems(prev0=>{
       const prev=prev0.concat(Object.values(created));
-      const next=prev.map(x=>{if(!delta[x.id])return x;const q=(x.qty||0)+delta[x.id];const y={...x,qty:q};if(!y.orderedEdited)y.orderedQty=Math.max(0,q-(y.stockQty||0));if(y.soldOut)y.soldOut=undefined;return y;});
+      const next=prev.map(x=>{if(!delta[x.id])return x;const q=(x.qty||0)+delta[x.id];const y={...x,qty:q,extraTs:Date.now()};if(!y.orderedEdited)y.orderedQty=Math.max(0,q-(y.stockQty||0));if(y.soldOut)y.soldOut=undefined;return y;});
       scheduleSave(next,newAlloc);return next;
     });
     logs.alloc=newAlloc;logs.parsed=parsed;
@@ -2502,7 +2502,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-H</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-I</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
