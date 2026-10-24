@@ -727,7 +727,70 @@ function buildShipNotice(orderNo,store,prods,dateStr){
   var t=dateStr||new Date().toLocaleDateString("zh-TW");
   return "您好～這是出貨通知\n"+(orderNo||"")+"\n"+prods.join("\n")+(prods.length?"\n":"")+"於今日"+t+"已寄出\n至您下單指定的"+(store||"")+"\n2-3天後即到門市\n請務必記得留意簡訊呦\n3天後簡訊沒有收到的話建議致電門市詢問\n\u203c\ufe0f超商有無發簡訊我們無法知曉，再麻煩媽咪記得到超商詢問一下呦\n\u203c\ufe0f如若未取貨，訂單原始金額+退回運費38+純取運費60=匯款金額，未取貨請48H內完成匯款\n（未取貨訂單等同訂單卷失效）";
 }
-function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,onRevokeShipment,onUnarrive,onArrive,onAddToStock,iopenData,onSaveIopen}){
+
+function AddItemModal({account,name,items,onClose,onApply}){
+  const[q,setQ]=useState("");
+  const[entries,setEntries]=useState([]);
+  const[nw,setNw]=useState(false);
+  const[np,setNp]=useState("");const[nc,setNc]=useState("");const[nz,setNz]=useState("");
+  const[done,setDone]=useState(null);
+  const btn={fontSize:12,borderRadius:6,padding:"4px 10px",cursor:"pointer",border:`1px solid ${C.line}`,background:C.surface,color:C.ink};
+  const words=q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const hits=words.length?items.filter(it=>{const t=(dispName(it)+" "+it.product+" "+(it.homeProduct||"")).toLowerCase();return words.every(w=>t.includes(w));}).slice(0,30):[];
+  const prods=[...new Set(items.map(it=>it.product).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"zh-Hant"));
+  const addEntry=(e)=>setEntries(prev=>[...prev,{n:1,price:"",...e}]);
+  const setE=(i,patch)=>setEntries(prev=>prev.map((x,j)=>j===i?{...x,...patch}:x));
+  const inp={fontSize:13,border:`1px solid ${C.line}`,borderRadius:6,padding:"4px 6px",boxSizing:"border-box"};
+  const label=(e)=>e.id?dispName(items.find(x=>x.id===e.id)||{product:"?"}):dispName({product:e.spec.product,color:e.spec.color,size:e.spec.size});
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:60,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"20px 10px"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:14,maxWidth:560,width:"100%",padding:"16px 16px 20px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{fontWeight:800,fontSize:16,color:C.ink}}>＋新增品項（私下追加）</div>
+          <button onClick={onClose} style={btn}>關閉</button>
+        </div>
+        <div style={{fontSize:13,color:C.ink,marginTop:6,fontWeight:700}}>{account}{name&&name!==account?"（"+name+"）":""}</div>
+        <div style={{fontSize:11,color:C.inkMuted,marginTop:4,lineHeight:1.6}}>新增的品項會成為這位客人的一筆「私下追加」訂單：備貨需求、配貨、1688 叫貨比對都會一起增加。iOPEN／直播平台上的原始訂單不會被改。</div>
+        {done?(<div style={{marginTop:12}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#059669",marginBottom:6}}>✓ 已新增</div>
+          <textarea readOnly value={done.join("\n")} style={{width:"100%",height:100,fontSize:12,border:`1px solid ${C.line}`,borderRadius:8,padding:8,boxSizing:"border-box"}}/>
+          <div style={{marginTop:8}}><button style={{...btn,background:C.stamp,color:"#fff",border:"none"}} onClick={onClose}>完成</button></div>
+        </div>):(<div>
+          <div style={{marginTop:10,fontSize:12,color:C.inkMuted}}>搜尋備貨清單的品項（可輸入多個關鍵字，例如：奶霜 灰 110）</div>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="商品／花色／尺寸" style={{...inp,width:"100%",marginTop:4}}/>
+          {hits.length>0&&<div style={{border:`1px solid ${C.line}`,borderRadius:8,marginTop:6,maxHeight:220,overflowY:"auto"}}>
+            {hits.map(it=>(<div key={it.id} onClick={()=>{addEntry({id:it.id});setQ("");}} style={{padding:"6px 8px",fontSize:13,borderTop:`1px solid ${C.line}`,cursor:"pointer",color:C.ink}}>{dispName(it)}<span style={{fontSize:11,color:C.inkMuted,marginLeft:6}}>需求 {it.qty||0}・現貨 {it.stockQty||0}{(it.source||(it.isCustomStock?"iopen":"live"))==="iopen"?"・iOPEN":""}</span></div>))}
+          </div>}
+          {words.length>0&&hits.length===0&&<div style={{fontSize:12,color:C.inkMuted,marginTop:6}}>備貨清單找不到。可用下方「建立新品項」。</div>}
+          <div style={{marginTop:8}}><button style={btn} onClick={()=>setNw(!nw)}>{nw?"收起":"找不到？建立新品項"}</button></div>
+          {nw&&<div style={{border:`1px solid ${C.line}`,borderRadius:8,padding:8,marginTop:6}}>
+            <div style={{fontSize:12,color:C.inkMuted}}>商品（選現有商品，或自行輸入新名稱）</div>
+            <input list="addProdList" value={np} onChange={e=>setNp(e.target.value)} placeholder="商品名稱" style={{...inp,width:"100%",marginTop:4}}/>
+            <datalist id="addProdList">{prods.map(p=><option key={p} value={p}/>)}</datalist>
+            <div style={{display:"flex",gap:8,marginTop:6}}>
+              <input value={nc} onChange={e=>setNc(e.target.value)} placeholder="花色" style={{...inp,flex:1,minWidth:0}}/>
+              <input value={nz} onChange={e=>setNz(e.target.value)} placeholder="尺寸" style={{...inp,flex:1,minWidth:0}}/>
+            </div>
+            <button style={{...btn,marginTop:6}} onClick={()=>{if(!np.trim()){alert("請輸入商品名稱");return;}addEntry({spec:{product:np.trim(),color:nc.trim(),size:nz.trim()}});setNp("");setNc("");setNz("");setNw(false);}}>加入清單</button>
+          </div>}
+          {entries.length>0&&<div style={{marginTop:12}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.ink,marginBottom:4}}>要新增的品項</div>
+            {entries.map((e,i)=>(<div key={i} style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",padding:"6px 0",borderTop:`1px solid ${C.line}`}}>
+              <span style={{fontSize:13,color:C.ink,flex:"1 1 180px"}}>{label(e)}{e.spec&&<span style={{fontSize:11,color:C.orange,marginLeft:4}}>新品項</span>}</span>
+              <span style={{fontSize:11,color:C.inkMuted}}>件數</span><input type="number" min="1" value={e.n} onChange={ev=>setE(i,{n:ev.target.value})} style={{...inp,width:56}}/>
+              <span style={{fontSize:11,color:C.inkMuted}}>單價</span><input type="number" min="0" value={e.price} placeholder="可空白" onChange={ev=>setE(i,{price:ev.target.value})} style={{...inp,width:72}}/>
+              <button style={btn} onClick={()=>setEntries(prev=>prev.filter((_,j)=>j!==i))}>移除</button>
+            </div>))}
+            <button style={{...btn,background:C.stamp,color:"#fff",border:"none",marginTop:10,padding:"6px 14px"}} onClick={()=>{const ok=entries.map(e=>({...e,n:Math.max(1,parseInt(e.n,10)||1),price:parseFloat(e.price)||0}));setDone(onApply(account,ok));}}>確認新增（{entries.reduce((a,e)=>a+Math.max(1,parseInt(e.n,10)||1),0)} 件）</button>
+          </div>}
+        </div>)}
+      </div>
+    </div>
+  );
+}
+
+function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,onRevokeShipment,onUnarrive,onArrive,onAddToStock,iopenData,onSaveIopen,onAddItems}){
+  const[addFor,setAddFor]=useState(null);
   const[editAlloc,setEditAlloc]=useState(savedAlloc||null);
   const[allocMethod,setAllocMethod]=useState("amount"); // "amount" | "proportional"
   const[parsedCSV,setParsedCSV]=useState(null); // 暫存解析後的CSV，模式切換時重新計算
@@ -1442,8 +1505,9 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
               <span style={{fontWeight:700,fontSize:14,color:C.ink}}>{c.account||c.name}</span>
               {c.name&&c.account&&<span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>{c.name}</span>}{catFilter==="shipped"&&!c.done&&<span style={{marginLeft:6,fontSize:11,background:C.orangeSoft,color:C.orange,border:`1px solid ${C.orange}`,borderRadius:10,padding:"1px 7px",fontWeight:600}}>部分出貨</span>}{iopenInfo&&iopenInfo.needGift&&<span style={{marginLeft:6,fontSize:11,background:"#FFF5F5",color:"#C0392B",border:"1px solid #C0392B",borderRadius:10,padding:"1px 7px"}}>🎁 滿額贈</span>}{iopenInfo&&iopenInfo.orders&&iopenInfo.orders.map((ord,oi2)=>{const used=c.orders.some(oo=>(oo.shipments||[]).some(s=>String(s.orderNo)===String(ord.orderNo)));const tk=c.orders[0]&&c.orders[0].oKey;return(<button key={oi2} onClick={()=>{if(tk&&!used){setShipInputs(p=>({...p,[tk]:ord.orderNo}));}else{navigator.clipboard.writeText(ord.orderNo).catch(()=>{});}}} style={{marginLeft:6,fontSize:11,color:used?C.inkMuted:C.info,border:`1px solid ${used?C.line:C.info}`,background:used?"transparent":C.infoSoft,borderRadius:10,padding:"1px 7px",cursor:"pointer",textDecoration:used?"line-through":"none",opacity:used?0.5:1}}>出貨單{["①","②","③","④"][Math.min(oi2,3)]}{ord.amount>0?" $"+ord.amount:""}</button>);})}
             </div>
-            <span style={{fontSize:12,fontFamily:"monospace",color:C.inkMuted}}>NT${c.totalAmount.toLocaleString()}</span>
+            <span style={{display:"flex",alignItems:"center",gap:8}}>{catFilter==="live"&&onAddItems&&<button onClick={()=>setAddFor(c.account||c.name)} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>＋新增品項</button>}<span style={{fontSize:12,fontFamily:"monospace",color:C.inkMuted}}>NT${c.totalAmount.toLocaleString()}</span></span>
           </div>
+          {addFor===(c.account||c.name)&&<AddItemModal account={c.account||c.name} name={c.name} items={items} onClose={()=>setAddFor(null)} onApply={(acc,ents)=>{const lg=onAddItems(acc,ents);if(lg&&lg.alloc)setEditAlloc(lg.alloc);if(lg&&lg.parsed)setParsedCSV(lg.parsed);return lg;}}/>}
 
           {catFilter!=="shipped"&&iopenInfo&&iopenInfo.customItems&&iopenInfo.customItems.length>0&&(()=>{
           const primaryKey=c.orders[0]&&c.orders[0].oKey;
@@ -2076,6 +2140,46 @@ function App(){
     });
     return logs.length?logs:["（沒有客人異動）"];
   }
+  function applyAddItems(account,entries){
+    const store=iopenDataRef.current||{};
+    const op=store.__orders__&&store.__orders__.parsed;
+    if(!op){alert("尚未上傳客訂XLS／CSV，沒有訂單資料可以新增。");return["（沒有訂單資料）"];}
+    const parsed=JSON.parse(JSON.stringify(op));
+    const ck=Object.keys(parsed.customers||{}).find(k=>String((parsed.customers[k]||{}).account||k).toLowerCase()===String(account).toLowerCase());
+    if(!ck){alert("找不到這位客人的訂單資料。");return["（找不到客人）"];}
+    const nowTxt=new Date().toLocaleString("zh-TW",{hour12:false,timeZone:"Asia/Taipei"});
+    const created={},delta={},lines=[],logs=[],changesNew=[];
+    const c=parsed.customers[ck];const who=(c.account||ck)+(c.name&&c.name!==c.account?"（"+c.name+"）":"");
+    entries.forEach(e=>{
+      let t=e.id?items.find(x=>x.id===e.id):null;
+      if(!t){
+        const sp={product:e.spec.product,color:e.spec.color||"",size:e.spec.size||"",style:""};
+        t=items.concat(Object.values(created)).find(x=>flatKey(x)===flatKey(sp));
+        if(!t){t={id:"n"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),...sp,qty:0,orderedQty:0,orderedEdited:false,arrivedQty:0,stockQty:0,shippedQty:0,defectQty:0,allArrived:false,allOrdered:false,firstOrderDate:"",secondOrderDate:"",orderBatches:[],stockLog:[],arrivalLog:[],firstStockTs:"",arrivedTs:"",firstArrivedTs:"",counted:false,soldOut:false,importedAt:todayStr(),source:"live"};created[t.id]=t;}
+      }
+      const ex=lines.find(l=>flatKey(l)===flatKey(t));
+      if(ex)ex.qty+=e.n;else lines.push({product:t.product,color:t.color,size:t.size,style:t.style,qty:e.n,price:e.price||0});
+      delta[t.id]=(delta[t.id]||0)+e.n;
+      const text=nowTxt+"　"+who+"　私下追加　"+dispName(t)+" ×"+e.n;
+      logs.push(text);changesNew.push({ts:new Date().toISOString(),fk:flatKey(t),text,who,act:"add",qty:e.n,from:"",to:dispName(t),done:false});
+    });
+    const amount=lines.reduce((a,l)=>a+(l.price||0)*l.qty,0);
+    const nAdd=parsed.orders.filter(o=>o.customerKey===ck&&String(o.orderRef||"").indexOf("_追")>-1).length+1;
+    parsed.orders.push({orderRef:ck+"_追"+nAdd,customerKey:ck,amount,items:lines});
+    if(c.totalAmount!=null)c.totalAmount=(c.totalAmount||0)+amount;
+    const allItems=items.concat(Object.values(created));
+    let newAlloc=savedAllocRef.current;
+    try{newAlloc=recalculateAlloc(JSON.parse(JSON.stringify(savedAllocRef.current||{})),parsed,allItems.map(x=>delta[x.id]?{...x,qty:(x.qty||0)+delta[x.id]}:x),"amount");}catch(err){}
+    const newStore={...store,__orders__:{...store.__orders__,parsed,changes:[...((store.__orders__&&store.__orders__.changes)||[]),...changesNew].slice(-300)}};
+    iopenDataRef.current=newStore;setIopenData(newStore);savedAllocRef.current=newAlloc;setSavedAlloc(newAlloc);
+    setItems(prev0=>{
+      const prev=prev0.concat(Object.values(created));
+      const next=prev.map(x=>{if(!delta[x.id])return x;const q=(x.qty||0)+delta[x.id];const y={...x,qty:q};if(!y.orderedEdited)y.orderedQty=Math.max(0,q-(y.stockQty||0));if(y.soldOut)y.soldOut=undefined;return y;});
+      scheduleSave(next,newAlloc);return next;
+    });
+    logs.alloc=newAlloc;logs.parsed=parsed;
+    return logs;
+  }
   function updateField(id,field,value){setItems(prev=>{const next=prev.map(it=>it.id===id?{...it,[field]:value}:it);scheduleSave(next);return next;});}
 
   function saveWorkspaces(ws,idx){localStorage.setItem("st_workspaces",JSON.stringify(ws));localStorage.setItem("st_active",String(idx));}
@@ -2253,7 +2357,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-M</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-N</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2312,7 +2416,7 @@ function App(){
 
       {allocMode&&<AllocationView items={items} savedAlloc={savedAlloc} onClose={()=>setAllocMode(false)}
         onSaveAlloc={(newAlloc)=>{savedAllocRef.current=newAlloc;setSavedAlloc(newAlloc);scheduleSave(items,newAlloc);}}
-        iopenData={iopenData}
+        iopenData={iopenData} onAddItems={applyAddItems}
         onSaveIopen={(d)=>{iopenDataRef.current=d;setIopenData(d);var custList=iopenCustomFromData(d);iopenCustomRef.current=custList.slice();setItems(function(prev){var next=mergeCustomIntoItems(prev,custList);scheduleSave(next,savedAllocRef.current);return next;});}}
         onConfirmShipment={(oKey,shippedItems,newAlloc)=>{
           // 扣除庫存，並明確傳遞最新 alloc 避免閉包舊值問題
