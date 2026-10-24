@@ -1990,6 +1990,8 @@ function ChangeModal({item,items,parsed,iopenData,savedAlloc,changes,onApply,onC
       });
     });
   }
+  // 找不到逐位客人（手動建立的 iOPEN 品項）：用一列「只調整需求件數」讓你把件數搬到別的花色／尺寸
+  if(itemSource(item)==="iopen"&&!rows.length&&(item.qty||0)>0)rows.push({io:true,ig:"",oi:"io|",li:0,qty:item.qty,price:0,account:"（這個品項沒有客人資料，只調整需求件數）",name:"",shipped:false});
   // 目標清單：可選任一商品（預設同商品）的「所有顏色 × 所有尺寸」；備貨清單裡還沒有的組合選了之後會自動新增品項
   const poolAll=itemSource(item)==='iopen'?items.slice():items.filter(x=>itemSource(x)===itemSource(item));
   const groups=[];poolAll.forEach(x=>{const g=gProd(x);if(!groups.includes(g))groups.push(g);});
@@ -2160,6 +2162,17 @@ function App(){
     if(ioDec.length){
       baseStore={...store};
       ioDec.forEach(d=>{
+        if(!d.ig){   // 沒有客人資料：只搬需求件數
+          const n=Math.min(d.n,item.qty||0);if(n<=0)return;
+          let tt=null;
+          if(d.act==="swap"){tt=created[d.to]||items.find(x=>x.id===d.to);if(!tt)return;if(flatKey(tt)===flatKey(item)){logs.push("（略過）改成的品項與原品項相同");return;}}
+          delta[item.id]=(delta[item.id]||0)-n;
+          let text;
+          if(d.act==="cancel")text=nowTxt+"　"+dispName(item)+" ×"+n+" → 取消（手動調整需求）";
+          else{delta[tt.id]=(delta[tt.id]||0)+n;text=nowTxt+"　"+dispName(item)+" ×"+n+" → 改成 "+dispName(tt)+"（手動調整需求）";}
+          logs.push(text);ioChanges.push({ts:new Date().toISOString(),fk:flatKey(item),text,who:"手動",act:d.act,qty:n,from:dispName(item),to:d.act==="cancel"?"":dispName(tt),done:false});
+          return;
+        }
         const t0=baseStore[d.ig];if(!t0||!Array.isArray(t0.customItems))return;
         const cis=t0.customItems.map(x=>({...x}));const ci=cis[d.li];if(!ci)return;
         const n=Math.min(d.n,ci.qty||1);if(n<=0)return;
@@ -2489,7 +2502,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-G</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-H</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
