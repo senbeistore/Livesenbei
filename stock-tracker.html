@@ -462,6 +462,7 @@ async function gFetch(token,gistId){
   const d=await r.json();const content=d.files[GIST_FILE]?.content;
   try{const p=JSON.parse(content||"{}");window.__stRev=p.rev||"";return{rev:p.rev||"",items:(p.items||[]).filter(it=>!(isLiveMarkerProd(it.product)&&!(it.arrivedQty>0))).map(migrateItem),savedAlloc:p.savedAlloc||null,iopenCustom:p.iopenCustom||[],iopenData:p.iopenData||{}};}catch{return{items:[],savedAlloc:null,iopenCustom:[],iopenData:{}};}
 }
+function cloudInfo(res){try{const ord=(res.iopenData&&res.iopenData.__orders__&&res.iopenData.__orders__.parsed&&res.iopenData.__orders__.parsed.orders)||[];const ex=ord.filter(o=>String(o.orderRef||"").indexOf("_追")>-1).length;const t=parseInt(String(res.rev||"").slice(0,8),36);const ts=isFinite(t)&&t>1e12?new Date(t).toLocaleString("zh-TW",{hour12:false,timeZone:"Asia/Taipei"}):"?";return"\n雲端資料時間："+ts+"｜訂單 "+ord.length+" 筆（追加單 "+ex+" 筆）";}catch(e){return"";}}
 async function gSave(token,gistId,items,savedAlloc,iopenCustom,iopenData){
   const rev=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   const r=await fetch(`https://api.github.com/gists/${gistId}`,{method:"PATCH",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify({rev,items,savedAlloc,iopenCustom:iopenCustom||[],iopenData:iopenData||{}},null,2)}}})});
@@ -2111,9 +2112,9 @@ function App(){
         if(res.iopenCustom&&res.iopenCustom.length){iopenCustomRef.current=res.iopenCustom;setIopenCustom(res.iopenCustom);}
         if(res.iopenData&&Object.keys(res.iopenData).length){iopenDataRef.current=res.iopenData;setIopenData(res.iopenData);}
         setSyncTick(t=>t+1);
-        setGlobalErr("已載入其他分頁／裝置的最新資料。");
-      }else if(manual){setGlobalErr("已經是最新版本。");}
-    }).catch(e=>{window.__stRev=before;if(manual)setGlobalErr("同步失敗："+e.message);}).finally(()=>{syncBusy.current=false;setSyncing(false);});
+        setGlobalErr("已載入其他分頁／裝置的最新資料。");if(manual)alert("已載入雲端最新資料。"+cloudInfo(res));
+      }else if(manual){alert("雲端沒有比這台更新的資料（版本相同）。"+cloudInfo(res));}
+    }).catch(e=>{window.__stRev=before;if(manual)alert("同步失敗："+e.message);}).finally(()=>{syncBusy.current=false;setSyncing(false);});
   },[token,gistId,setupMode]);
   // 回到這個分頁／視窗時，檢查雲端是否被其他分頁／裝置更新過；沒有未存修改就自動載入最新版
   useEffect(()=>{
@@ -2455,7 +2456,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-D</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-E</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2463,6 +2464,7 @@ function App(){
           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
             {saving&&<span style={{color:C.inkMuted,fontSize:11}}>儲存中…</span>}
             {lastSaved&&!saving&&<span style={{color:C.inkMuted,fontSize:11}}>已儲存 {fmtSavedTime(lastSaved)}</span>}
+            <button onClick={()=>{if(!window.confirm("把這台裝置目前的資料整份上傳到雲端，覆蓋雲端版本？\n（其他裝置較新的修改會被蓋掉，請確認這台才是最新的）"))return;scheduleSave(items,savedAllocRef.current);}} title="用這台的資料覆蓋雲端" style={{background:C.surface,color:C.inkMuted,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 9px",fontSize:12,cursor:"pointer"}}>⬆ 上傳</button>
             <button onClick={()=>syncCloud(true)} disabled={syncing} title="從雲端載入其他裝置的最新資料" style={{background:C.surface,color:C.inkMuted,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 9px",fontSize:12,cursor:"pointer"}}>{syncing?"同步中…":"🔄 同步"}</button>
             {!allocMode&&!countMode&&<button onClick={()=>fileRef.current.click()} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>匯入備貨清單</button>}
             {!allocMode&&!countMode&&<button onClick={()=>iopenAppRef.current.click()} style={{background:"#7C3AED",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>客訂XLS</button>}
