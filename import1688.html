@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AI</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AJ</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -109,7 +109,7 @@ const colorKey=it=>nk((it.style||"")+SEP+(it.color||""));
 let SRC=null;      // {token,gistId,rev,items,raw}
 let LINES=[];      // 1688 明細
 let MAP=loadMap();
-function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{},auto:m.auto||{},ret:m.ret||{},fam:m.fam||{},fam2:m.fam2||{},cx:m.cx||{},rfd:m.rfd||{},spr:m.spr||{},spr2:m.spr2||{},wx:m.wx||{}};}catch(e){return{prod:{},color:{},auto:{},ret:{},fam:{},fam2:{},cx:{},rfd:{},spr:{},spr2:{},wx:{}};}}
+function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{},auto:m.auto||{},ret:m.ret||{},fam:m.fam||{},fam2:m.fam2||{},cx:m.cx||{},size:m.size||{},rfd:m.rfd||{},spr:m.spr||{},spr2:m.spr2||{},wx:m.wx||{}};}catch(e){return{prod:{},color:{},auto:{},ret:{},fam:{},fam2:{},cx:{},rfd:{},spr:{},spr2:{},wx:{}};}}
 function saveMap(){try{localStorage.setItem(MAPKEY,JSON.stringify(MAP));}catch(e){}}
 
 // ---- 讀取雲端 ----
@@ -253,11 +253,23 @@ function renderMap(){
         h+='<tr><td>'+esc(c)+'<div class="mute">'+esc(conv(c))+'</div></td><td><select data-color="'+esc(key)+'"'+(MAP.auto[key]?' style="border-color:var(--warn);background:#fff8e6"':'')+'><option value="">（請選擇）</option><option value="__skip__"'+(cc==="__skip__"?" selected":"")+'>忽略</option>'+co.map(o=>'<option value="'+esc(o.k)+'"'+(o.k===cc?" selected":"")+'>'+esc(o.label)+'</option>').join("")+'</select>'+(MAP.auto[key]?'<div class="warn" style="font-size:11px">自動建議，請確認</div>':'')+(cc&&cc!=="__skip__"?'<div class="mute" style="margin-top:4px">同時算入 <select data-cx="'+esc(key)+'" style="font-size:12px"><option value="">（無）</option>'+co.filter(o=>o.k!==cc).map(o=>'<option value="'+esc(o.k)+'"'+(nk(MAP.cx&&MAP.cx[key])===o.k?" selected":"")+'>'+esc(o.label)+'</option>').join("")+'</select></div>':'')+'</td></tr>';
       });
       h+='</table>';
+      // 尺寸對應：1688 的尺寸（例如 105、135）在備貨追蹤沒有時，可指定對應到哪個尺寸（例：105 → 小個M）
+      const _tz=[...new Set(SRC.all.filter(x=>sameProd(x,cur)).map(x=>x.size||""))].filter(Boolean);
+      const _tn=new Set(_tz.map(sizeNum));
+      const _bad=[...new Set(LINES.filter(l=>l.title===t).map(l=>String(l.size||"")))].filter(z=>z&&!_tn.has(sizeNum(z)));
+      MAP.size=MAP.size||{};
+      if(_bad.length){
+        h+='<table style="margin-top:6px"><tr><th>1688 尺寸（備貨追蹤沒有）</th><th>對應尺寸</th></tr>';
+        _bad.forEach(z=>{const k=t+"|"+z,curz=(MAP.size[k]||"");
+          h+='<tr><td>'+esc(z)+'</td><td><select data-size="'+esc(k)+'"><option value="">（請選擇）</option>'+_tz.sort((a,b)=>a.localeCompare(b,"zh-Hant",{numeric:true})).map(x=>'<option value="'+esc(x)+'"'+(x===curz?" selected":"")+'>'+esc(x)+'</option>').join("")+'</select></td></tr>';});
+        h+='</table>';
+      }
     }
     h+='</div>';
   });
   $("mapBody").innerHTML=h;
   $("mapBody").querySelectorAll("select[data-prod]").forEach(s=>s.onchange=()=>{MAP.prod[s.dataset.prod]=s.value;saveMap();refresh();});
+  $("mapBody").querySelectorAll("select[data-size]").forEach(s=>s.onchange=()=>{MAP.size=MAP.size||{};if(s.value)MAP.size[s.dataset.size]=s.value;else delete MAP.size[s.dataset.size];saveMap();refresh();});
   $("mapBody").querySelectorAll("select[data-cx]").forEach(s=>s.onchange=()=>{MAP.cx=MAP.cx||{};if(s.value)MAP.cx[s.dataset.cx]=s.value;else delete MAP.cx[s.dataset.cx];saveMap();refresh();});
   $("mapBody").querySelectorAll("select[data-color]").forEach(s=>s.onchange=()=>{MAP.color[s.dataset.color]=s.value;delete MAP.auto[s.dataset.color];saveMap();refresh();});
   saveMap();
@@ -283,7 +295,7 @@ function compute(){
     const ck=colorOf(l.title,l.color);
     if(ck==="__skip__")return;
     if(!ck){miss.push({l,why:"花色尚未對應"});return;}
-    const sz=sizeNum(l.size);const cx2=nk((MAP.cx||{})[l.title+"|"+l.color])||"\u0000";
+    const sz=sizeNum(((MAP.size||{})[l.title+"|"+l.size])||l.size);const cx2=nk((MAP.cx||{})[l.title+"|"+l.color])||"\u0000";
     let its=SRC.all.filter(x=>sameProd(x,gp)&&(colorKey(x)===ck||colorKey(x)===cx2)&&sizeNum(x.size)===sz).sort((a,b)=>(srcOf(a)==="live"?0:1)-(srcOf(b)==="live"?0:1));
     if(!its.length){   // 找不到同花色：花色名稱相近（藍狗／藍色狗狗）的同尺寸品項視為同一個
       const bl=String(((colorOptions(gp).find(o=>o.k===ck)||{}).label)||"").replace(/(款式|顏色|花色)[:：]|色|\s/g,"");
