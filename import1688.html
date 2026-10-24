@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AJ</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AK</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -109,7 +109,7 @@ const colorKey=it=>nk((it.style||"")+SEP+(it.color||""));
 let SRC=null;      // {token,gistId,rev,items,raw}
 let LINES=[];      // 1688 明細
 let MAP=loadMap();
-function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{},auto:m.auto||{},ret:m.ret||{},fam:m.fam||{},fam2:m.fam2||{},cx:m.cx||{},size:m.size||{},rfd:m.rfd||{},spr:m.spr||{},spr2:m.spr2||{},wx:m.wx||{}};}catch(e){return{prod:{},color:{},auto:{},ret:{},fam:{},fam2:{},cx:{},rfd:{},spr:{},spr2:{},wx:{}};}}
+function loadMap(){try{const m=JSON.parse(localStorage.getItem(MAPKEY)||"{}");return{prod:m.prod||{},color:m.color||{},auto:m.auto||{},ret:m.ret||{},fam:m.fam||{},fam2:m.fam2||{},cx:m.cx||{},size:m.size||{},also:m.also||{},rfd:m.rfd||{},spr:m.spr||{},spr2:m.spr2||{},wx:m.wx||{}};}catch(e){return{prod:{},color:{},auto:{},ret:{},fam:{},fam2:{},cx:{},rfd:{},spr:{},spr2:{},wx:{}};}}
 function saveMap(){try{localStorage.setItem(MAPKEY,JSON.stringify(MAP));}catch(e){}}
 
 // ---- 讀取雲端 ----
@@ -254,7 +254,7 @@ function renderMap(){
       });
       h+='</table>';
       // 尺寸對應：1688 的尺寸（例如 105、135）在備貨追蹤沒有時，可指定對應到哪個尺寸（例：105 → 小個M）
-      const _tz=[...new Set(SRC.all.filter(x=>sameProd(x,cur)).map(x=>x.size||""))].filter(Boolean);
+      const _tz=[...new Set(SRC.all.filter(x=>sameProd(x,cur)||(((MAP.also||{})[t])||[]).some(g=>sameProd(x,g))).map(x=>x.size||""))].filter(Boolean);
       const _tn=new Set(_tz.map(sizeNum));
       const _bad=[...new Set(LINES.filter(l=>l.title===t).map(l=>String(l.size||"")))].filter(z=>z&&!_tn.has(sizeNum(z)));
       MAP.size=MAP.size||{};
@@ -264,12 +264,18 @@ function renderMap(){
           h+='<tr><td>'+esc(z)+'</td><td><select data-size="'+esc(k)+'"><option value="">（請選擇）</option>'+_tz.sort((a,b)=>a.localeCompare(b,"zh-Hant",{numeric:true})).map(x=>'<option value="'+esc(x)+'"'+(x===curz?" selected":"")+'>'+esc(x)+'</option>').join("")+'</select></td></tr>';});
         h+='</table>';
       }
+      const also=(MAP.also&&MAP.also[t])||[];
+      h+='<div style="margin-top:8px;padding-top:6px;border-top:1px dashed var(--line)"><div class="mute">同款在 iOPEN 依尺寸分成不同賣場時，也可對應到其他商品（會依序找有這個尺寸的那一個）</div>'
+        +also.map(p=>'<span class="bdg" style="display:inline-block;margin:4px 6px 0 0;padding:2px 8px;border:1px solid var(--line);border-radius:10px;font-size:12px">'+esc(p)+' <a href="#" data-at="'+esc(t)+'" data-ap="'+esc(p)+'" style="color:var(--warn);text-decoration:none">✕</a></span>').join("")
+        +'<div class="row" style="margin-top:4px"><select data-also="'+esc(t)+'"><option value="">＋也對應到其他商品…</option>'+po.filter(p=>p!==cur&&!also.includes(p)).map(p=>'<option value="'+esc(p)+'">'+esc(prodLabel(p))+'</option>').join("")+'</select></div></div>';
     }
     h+='</div>';
   });
   $("mapBody").innerHTML=h;
   $("mapBody").querySelectorAll("select[data-prod]").forEach(s=>s.onchange=()=>{MAP.prod[s.dataset.prod]=s.value;saveMap();refresh();});
   $("mapBody").querySelectorAll("select[data-size]").forEach(s=>s.onchange=()=>{MAP.size=MAP.size||{};if(s.value)MAP.size[s.dataset.size]=s.value;else delete MAP.size[s.dataset.size];saveMap();refresh();});
+  $("mapBody").querySelectorAll("select[data-also]").forEach(s=>s.onchange=()=>{if(!s.value)return;MAP.also=MAP.also||{};const a=MAP.also[s.dataset.also]=MAP.also[s.dataset.also]||[];if(!a.includes(s.value))a.push(s.value);saveMap();refresh();});
+  $("mapBody").querySelectorAll("a[data-at]").forEach(a=>a.onclick=e=>{e.preventDefault();const arr=((MAP.also||{})[a.dataset.at]||[]).filter(x=>x!==a.dataset.ap);MAP.also[a.dataset.at]=arr;if(!arr.length)delete MAP.also[a.dataset.at];saveMap();refresh();});
   $("mapBody").querySelectorAll("select[data-cx]").forEach(s=>s.onchange=()=>{MAP.cx=MAP.cx||{};if(s.value)MAP.cx[s.dataset.cx]=s.value;else delete MAP.cx[s.dataset.cx];saveMap();refresh();});
   $("mapBody").querySelectorAll("select[data-color]").forEach(s=>s.onchange=()=>{MAP.color[s.dataset.color]=s.value;delete MAP.auto[s.dataset.color];saveMap();refresh();});
   saveMap();
@@ -289,7 +295,7 @@ function compute(){
   const miss=[];
   LINES.forEach(l=>{
     if(l.cancelled)return;   // 1688 上已關閉／取消的訂單不計入
-    const gp=prodOf(l.title);
+    let gp=prodOf(l.title);
     if(gp==="__skip__")return;
     if(!gp){miss.push({l,why:"商品尚未對應"});return;}
     const ck=colorOf(l.title,l.color);
@@ -300,6 +306,14 @@ function compute(){
     if(!its.length){   // 找不到同花色：花色名稱相近（藍狗／藍色狗狗）的同尺寸品項視為同一個
       const bl=String(((colorOptions(gp).find(o=>o.k===ck)||{}).label)||"").replace(/(款式|顏色|花色)[:：]|色|\s/g,"");
       if(bl.length>=2)its=SRC.all.filter(x=>sameProd(x,gp)&&sizeNum(x.size)===sz).filter(x=>{const c=colorLabel(x).replace(/(款式|顏色|花色)[:：]|色|\s/g,"");return c.length>=2&&fzc(c,bl);});
+    }
+    if(!its.length){   // 同一個 1688 商品在 iOPEN 依尺寸分成不同賣場：依序試「也對應到」的其他商品
+      const gp1=gp,bl1=String(((colorOptions(gp1).find(o=>o.k===ck)||{}).label)||"").replace(/(款式|顏色|花色)[:：]|色|\s/g,"");
+      for(const g of ((MAP.also||{})[l.title]||[])){
+        let c=SRC.all.filter(x=>sameProd(x,g)&&(colorKey(x)===ck||colorKey(x)===cx2)&&sizeNum(x.size)===sz);
+        if(!c.length&&bl1.length>=2)c=SRC.all.filter(x=>sameProd(x,g)&&sizeNum(x.size)===sz).filter(x=>{const cc=colorLabel(x).replace(/(款式|顏色|花色)[:：]|色|\s/g,"");return cc.length>=2&&fzc(cc,bl1);});
+        if(c.length){its=c.sort((a,b)=>(srcOf(a)==="live"?0:1)-(srcOf(b)==="live"?0:1));gp=g;break;}
+      }
     }
     if(!its.length){
       const same=SRC.all.filter(x=>sameProd(x,gp)&&colorKey(x)===ck);
