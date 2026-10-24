@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AE</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AF</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -381,7 +381,7 @@ function renderResult(){
   (FILT==='all'||FILT==='unver'?res.unver:[]).slice().sort((a,b)=>(gProd(a.it)+colorLabel(a.it)).localeCompare(gProd(b.it)+colorLabel(b.it),"zh-Hant")).forEach(u=>{
     h+='<tr><td><input type="checkbox" class="uk" data-uid="'+esc(u.it.id)+'"/></td><td>'+esc(colorLabel(u.it))+' · '+esc(u.it.size||"")+'<div class="mute">'+esc(gProd(u.it))+'</div>'+unverWhy(u.it,res)+'</td><td>0</td><td>'+u.qty+'</td><td><span class="tag t-less">標記已叫貨，但 1688 沒有</span></td></tr>';
   });
-  if(res.unver.length&&(FILT==='all'||FILT==='unver'))h+='<tr><td colspan="5"><button class="mini" id="btnWx">勾選的品項：微信叫貨</button> <button class="mini" id="btnUnmark">取消勾選品項的「已叫貨」標記</button> <span class="mute">若是更早的 1688 訂單叫的，請先匯入那張訂單的檔案，不要取消。</span></td></tr>';
+  if(res.unver.length&&(FILT==='all'||FILT==='unver'))h+='<tr><td colspan="5"><button class="mini" id="btnWx">勾選的品項：微信叫貨</button> <button class="mini" id="btnUnmark">取消勾選品項的「已叫貨」標記</button> <button class="mini" id="btnDelItems" style="border-color:var(--err,#b91c1c);color:#b91c1c">從備貨追蹤刪除勾選品項</button> <span class="mute">若是更早的 1688 訂單叫的，請先匯入那張訂單的檔案，不要取消。</span></td></tr>';
   if(rows.length===0&&!(FILT==='all'||FILT==='miss'||(FILT==='unver'&&res.unver.length)))h+='<tr><td colspan="5" class="mute">沒有符合的品項</td></tr>';
   $("resTbl").innerHTML=h;
   const canAny=rows.some(r=>r.appliedHere<r.fileQty);
@@ -405,6 +405,18 @@ function renderResult(){
     try{
       await writeItems(items=>items.map(it=>ids.includes(it.id)?{...it,orderBatches:[],orderedQty:Math.max(0,(it.qty||0)-(it.stockQty||0)),orderedEdited:false,firstOrderDate:"",secondOrderDate:"",allOrdered:false}:it));
       $("applyMsg").innerHTML='<span class="ok">✓ 已取消 '+ids.length+' 個品項的標記。</span>　備貨追蹤若還開著，請先重新整理再操作。';
+      await loadSrc();refresh();
+    }catch(e){$("applyMsg").innerHTML='<span class="err">'+esc(e.message||e)+'</span>';}
+  };
+  if($("btnDelItems"))$("btnDelItems").onclick=async()=>{
+    const ids=[...document.querySelectorAll("input.uk:checked")].map(x=>x.dataset.uid);
+    if(!ids.length){alert("請先勾選要刪除的品項");return;}
+    const names=ids.map(id=>{const it=SRC.all.find(x=>x.id===id);return it?(gProd(it)+" "+colorLabel(it)+"·"+(it.size||"")):id;});
+    if(!confirm("從備貨追蹤永久刪除這 "+ids.length+" 個品項？\n\n"+names.slice(0,12).join("\n")+(names.length>12?"\n…":"")))return;
+    $("applyMsg").textContent="寫入中…";
+    try{
+      await writeItems(items=>items.filter(it=>!ids.includes(it.id)));
+      $("applyMsg").innerHTML='<span class="ok">✓ 已刪除 '+ids.length+' 個品項。</span>　備貨追蹤若還開著，請先重新整理再操作。';
       await loadSrc();refresh();
     }catch(e){$("applyMsg").innerHTML='<span class="err">'+esc(e.message||e)+'</span>';}
   };
