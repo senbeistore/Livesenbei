@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-Y</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-Z</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -250,6 +250,12 @@ function renderMap(){
 }
 
 // ---- 比對 ----
+function unverWhy(it,res){
+  const cs=SRC.all.filter(x=>x.id!==it.id&&sizeNum(x.size)===sizeNum(it.size)&&colorLabel(x)===colorLabel(it)&&_np(gProd(x)).slice(0,4)===_np(gProd(it)).slice(0,4));
+  if(!cs.length)return '<div class="mute" style="font-size:11px">檢查：備貨追蹤裡找不到同花色、同尺寸的其他品項（這一筆只有自己）。</div>';
+  return cs.map(x=>{const row=res.rows.find(r=>r.items.some(y=>y.id===x.id));
+    return '<div class="mute" style="font-size:11px">檢查：另有「'+esc(gProd(x))+'」'+esc(colorLabel(x))+'·'+esc(x.size||"")+'（'+(srcOf(x)==="live"?"直播":"iOPEN")+'，需求 '+(x.qty||0)+'、現貨 '+(x.stockQty||0)+'）；同商品：'+(sameProd(x,gProd(it))?'是':'否')+'；花色鍵相同：'+(colorKey(x)===colorKey(it)?'是':'否 ['+esc(JSON.stringify(colorKey(x)))+' vs '+esc(JSON.stringify(colorKey(it)))+']')+'；已在比對列：'+(row?'是':'否')+'</div>';}).join('');
+}
 function compute(){
   const orderNos=new Set(LINES.filter(l=>!l.cancelled).map(l=>l.orderNo));
   const target={};   // item.id -> {item, qty, orders:{no:{qty,date}}}
@@ -364,7 +370,7 @@ function renderResult(){
     h+='<tr><td></td><td>'+esc(colorLabel(f.it))+' · '+esc(f.it.size||"")+'<div class="mute">'+esc(gProd(f.it))+'</div></td><td>0</td><td>'+f.toOrder+'</td><td><span class="tag t-miss">漏叫 '+f.toOrder+'</span></td></tr>';
   });
   (FILT==='all'||FILT==='unver'?res.unver:[]).slice().sort((a,b)=>(gProd(a.it)+colorLabel(a.it)).localeCompare(gProd(b.it)+colorLabel(b.it),"zh-Hant")).forEach(u=>{
-    h+='<tr><td><input type="checkbox" class="uk" data-uid="'+esc(u.it.id)+'"/></td><td>'+esc(colorLabel(u.it))+' · '+esc(u.it.size||"")+'<div class="mute">'+esc(gProd(u.it))+'</div></td><td>0</td><td>'+u.qty+'</td><td><span class="tag t-less">標記已叫貨，但 1688 沒有</span></td></tr>';
+    h+='<tr><td><input type="checkbox" class="uk" data-uid="'+esc(u.it.id)+'"/></td><td>'+esc(colorLabel(u.it))+' · '+esc(u.it.size||"")+'<div class="mute">'+esc(gProd(u.it))+'</div>'+unverWhy(u.it,res)+'</td><td>0</td><td>'+u.qty+'</td><td><span class="tag t-less">標記已叫貨，但 1688 沒有</span></td></tr>';
   });
   if(res.unver.length&&(FILT==='all'||FILT==='unver'))h+='<tr><td colspan="5"><button class="mini" id="btnWx">勾選的品項：微信叫貨</button> <button class="mini" id="btnUnmark">取消勾選品項的「已叫貨」標記</button> <span class="mute">若是更早的 1688 訂單叫的，請先匯入那張訂單的檔案，不要取消。</span></td></tr>';
   if(rows.length===0&&!(FILT==='all'||FILT==='miss'||(FILT==='unver'&&res.unver.length)))h+='<tr><td colspan="5" class="mute">沒有符合的品項</td></tr>';
