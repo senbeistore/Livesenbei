@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AG</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AH</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -139,7 +139,8 @@ async function loadSrc(){
     SRC=await fetchGist();
     const live=SRC.items.filter(it=>(it.source||(it.isCustomStock?"iopen":"live"))==="live");
     SRC.live=live;SRC.all=SRC.items;
-    $("srcStatus").innerHTML='<span class="ok">✓ 已讀取</span>　工作區「'+esc(SRC.name||"")+'」，直播品項 '+live.length+' 筆，iOPEN 品項 '+(SRC.items.length-live.length)+' 筆（兩邊都會比對）。　<button id="btnReload">重新讀取</button>';
+    $("srcStatus").innerHTML='<span class="ok">✓ 已讀取</span>　工作區「'+esc(SRC.name||"")+'」，直播品項 '+live.length+' 筆，iOPEN 品項 '+(SRC.items.length-live.length)+' 筆（兩邊都會比對）。　<button id="btnReload">重新讀取</button>　<button id="btnDump" class="mini">下載資料（給 Claude 核對）</button>';
+    $("btnDump").onclick=()=>{try{const blob=new Blob([JSON.stringify({savedAt:new Date().toISOString(),gist:SRC.raw,map:MAP,lines:LINES},null,0)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="stock-check-data.json";document.body.appendChild(a);a.click();a.remove();}catch(e){alert("下載失敗："+e.message);}};
     $("btnReload").onclick=async()=>{await loadSrc();refresh();};
   }catch(e){$("srcStatus").innerHTML='<span class="err">'+esc(e.message)+'</span>　<button id="btnReload">重試</button>';$("btnReload").onclick=loadSrc;}
 }
