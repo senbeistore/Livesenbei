@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AH</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AI</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -55,6 +55,8 @@
   <div class="card" id="cMap" style="display:none">
     <h2>③ 對應設定</h2>
     <div class="mute" style="margin-bottom:6px">1688 的商品名、花色用簡體與廠商命名，請指定對應到備貨追蹤的商品與花色。設定會記在這個瀏覽器，下次不用再選。</div>
+    <div class="row" style="margin-bottom:8px"><input id="mapQ" type="search" placeholder="搜尋 1688 商品名、花色、對應商品" style="flex:1;min-width:160px"><label class="mute"><input type="checkbox" id="mapOnlyBad"> 只看待設定</label></div>
+    <div id="mapCnt" class="mute" style="margin-bottom:6px"></div>
     <div id="mapBody"></div>
   </div>
   <div class="card" id="cRes" style="display:none">
@@ -222,10 +224,21 @@ function renderMap(){
   const titles=[...new Set(LINES.map(l=>l.title))];
   const po=prodOptions();
   let h="";
+  const stOf={};
   titles.forEach(t=>{
     if(MAP.prod[t]===undefined){const s=suggestProd(t);if(s)MAP.prod[t]=s;}
+    const cur0=MAP.prod[t]||"";let st=cur0?2:0;
+    if(cur0&&cur0!=="__skip__"){[...new Set(LINES.filter(l=>l.title===t).map(l=>l.color))].forEach(c=>{const key=t+"|"+c;if(MAP.color[key]===undefined){const sg=suggestColor(cur0,c);if(sg){MAP.color[key]=sg;MAP.auto[key]=1;}}if(!MAP.color[key])st=Math.min(st,0);else if(MAP.auto[key])st=Math.min(st,1);});}
+    stOf[t]=st;
+  });
+  const q=(($("mapQ")||{}).value||"").trim().toLowerCase(),onlyBad=!!($("mapOnlyBad")||{}).checked;
+  const hay=t=>{const cur=MAP.prod[t]||"";return (t+" "+conv(t)+" "+cur+" "+LINES.filter(l=>l.title===t).map(l=>l.color+" "+conv(l.color)).join(" ")).toLowerCase();};
+  const shown=titles.map((t,i)=>({t,i})).filter(o=>(!q||hay(o.t).includes(q))&&(!onlyBad||stOf[o.t]<2)).sort((a,b)=>stOf[a.t]-stOf[b.t]||a.i-b.i).map(o=>o.t);
+  const nBad=titles.filter(t=>stOf[t]===0).length,nAuto=titles.filter(t=>stOf[t]===1).length;
+  $("mapCnt").textContent="共 "+titles.length+" 個商品｜待設定 "+nBad+"｜自動建議待確認 "+nAuto+"｜顯示 "+shown.length+"（待設定排在最前面）";
+  shown.forEach(t=>{
     const cur=MAP.prod[t]||"";
-    h+='<div class="grp"><div style="font-weight:700">'+esc(t)+'</div><div class="mute">'+esc(conv(t))+'</div>';
+    h+='<div class="grp"><div class="mute" style="font-size:11px;float:right">'+(stOf[t]===0?'<span class="warn">待設定</span>':stOf[t]===1?'<span class="warn">待確認</span>':'<span class="ok">已設定</span>')+'</div><div style="font-weight:700">'+esc(t)+'</div><div class="mute">'+esc(conv(t))+'</div>';
     h+='<div class="row" style="margin-top:4px"><span class="mute">對應商品</span><select data-prod="'+esc(t)+'"><option value="">（請選擇）</option><option value="__skip__"'+(cur==="__skip__"?" selected":"")+'>忽略這個商品</option>'+po.map(p=>'<option value="'+esc(p)+'"'+(p===cur?" selected":"")+'>'+esc(prodLabel(p))+'</option>').join("")+'</select></div>';
     if(cur&&cur!=="__skip__"){
       const co=colorOptions(cur);
@@ -500,6 +513,8 @@ async function removeOrder(ref){
     await loadSrc();refresh();
   }catch(e){$("oldMsg").innerHTML='<span class="err">'+esc(e.message||e)+'</span>';}
 }
+document.addEventListener("input",e=>{if(e.target&&e.target.id==="mapQ")renderMap();});
+document.addEventListener("change",e=>{if(e.target&&e.target.id==="mapOnlyBad")renderMap();});
 function refresh(){renderMap();renderResult();renderOld();updMapBadge();}
 function updMapBadge(){
   const h=$("cMap")&&$("cMap").querySelector("h2");if(!h||!LINES.length)return;
