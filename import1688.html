@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AD</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AE</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -276,8 +276,17 @@ function compute(){
       const alt=[...new Set(SRC.all.filter(x=>sameProd(x,gp)&&sizeNum(x.size)===sz&&colorKey(x)!==ck).map(colorLabel))];
       miss.push({l,why:"備貨追蹤沒有這個尺寸（"+(l.size||"?")+"）。已對應商品「"+gp+"」，花色「"+((colorOptions(gp).find(o=>o.k===ck)||{}).label||"?")+"」只有尺寸："+(have.join("、")||"無")+(alt.length?"；"+l.size+" 有人訂的花色："+alt.join("、"):"")+"。若花色對錯，請到「對應設定」更正。"});return;}
     const key=gp+"|"+ck+"|"+sz;
-    const t=target[key]||(target[key]={key,items:its,qty:0,orders:{}});
+    const t=target[key]||(target[key]={key,items:its,qty:0,orders:{},gp,sz});
     t.srcs=t.srcs||{};t.srcs[l.color]=(t.srcs[l.color]||0)+l.qty;t.qty+=l.qty;const o=t.orders[l.orderNo]||(t.orders[l.orderNo]={qty:0,date:l.date});o.qty+=l.qty;
+  });
+  // 花色名稱只差幾個字（例如 藍狗／藍色狗狗）：同商品同尺寸、沒被其他比對列用到的品項，併進花色相近的那一列
+  const _cs=v=>String(v||"").replace(/色|\s/g,"");
+  const used=new Set(Object.values(target).flatMap(t=>t.items.map(x=>x.id)));
+  Object.values(target).forEach(t=>{
+    const base=_cs(colorLabel(t.items[0]));if(base.length<2)return;
+    const ex=SRC.all.filter(x=>!used.has(x.id)&&sameProd(x,t.gp)&&sizeNum(x.size)===t.sz).filter(x=>{const c=_cs(colorLabel(x));return c.length>=2&&c!==base&&(c.includes(base)||base.includes(c));});
+    ex.forEach(x=>{used.add(x.id);});
+    if(ex.length){t.items=t.items.concat(ex);t.fuzzy=ex;}
   });
   MAP.rfd=MAP.rfd||{};
   Object.values(target).forEach(t=>{t.rf=0;Object.keys(t.orders).forEach(no=>{const k=t.key+"|"+no;const rf=Math.min(MAP.rfd[k]||0,t.orders[no].qty);if(rf>0){t.orders[no].qty-=rf;t.qty-=rf;t.rf+=rf;}});});
