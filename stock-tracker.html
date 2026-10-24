@@ -728,6 +728,46 @@ function buildShipNotice(orderNo,store,prods,dateStr){
   return "您好～這是出貨通知\n"+(orderNo||"")+"\n"+prods.join("\n")+(prods.length?"\n":"")+"於今日"+t+"已寄出\n至您下單指定的"+(store||"")+"\n2-3天後即到門市\n請務必記得留意簡訊呦\n3天後簡訊沒有收到的話建議致電門市詢問\n\u203c\ufe0f超商有無發簡訊我們無法知曉，再麻煩媽咪記得到超商詢問一下呦\n\u203c\ufe0f如若未取貨，訂單原始金額+退回運費38+純取運費60=匯款金額，未取貨請48H內完成匯款\n（未取貨訂單等同訂單卷失效）";
 }
 
+function CustomerSheet({c,onClose}){
+  const ready=[],wait=[];let shipN=0;
+  const add=(arr,it,q)=>{const k=dispName(it);const e=arr.find(x=>x.k===k);if(e)e.q+=q;else arr.push({k,q});};
+  c.orders.forEach(o=>{
+    if((o.shipments&&o.shipments.length>0)||o.shippedAt)shipN+=(o.shipments&&o.shipments.length)||1;
+    (o.allocItems||[]).forEach(it=>{if(it.allocatedQty>0)add(ready,it,it.allocatedQty);});
+    (o.waitingItems||[]).forEach(it=>{const n=needQty(it);if(n>0)add(wait,it,n);});
+  });
+  const sum=a=>a.reduce((t,x)=>t+x.q,0);
+  const total=c.orders.reduce((t,o)=>t+(o.orderAmount||0),0);
+  const d=new Date(),ds=d.getFullYear()+"/"+(d.getMonth()+1)+"/"+d.getDate();
+  const row=(x,col,mark)=>(<div key={x.k} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"9px 0",borderBottom:"1px solid #eee",fontSize:16,color:"#222"}}><span><span style={{color:col,marginRight:8,fontWeight:700}}>{mark}</span>{x.k}</span><span style={{fontWeight:700,whiteSpace:"nowrap"}}>× {x.q}</span></div>);
+  return(
+    <div style={{position:"fixed",inset:0,background:"#fff",zIndex:300,overflowY:"auto"}}>
+      <div style={{maxWidth:480,margin:"0 auto",padding:"20px 18px 40px"}}>
+        <div data-noshot="1" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <span style={{fontSize:12,color:"#999"}}>整頁截圖傳給客人</span>
+          <button onClick={onClose} style={{fontSize:13,border:"1px solid #bbb",background:"#fff",borderRadius:8,padding:"4px 12px",cursor:"pointer"}}>關閉</button>
+        </div>
+        <div style={{textAlign:"center",marginBottom:16}}>
+          <div style={{fontSize:13,color:"#888",letterSpacing:2}}>仙貝童裝</div>
+          <div style={{fontSize:22,fontWeight:800,color:"#222",marginTop:2}}>{c.name||c.account}</div>
+          {c.name&&c.account&&c.name!==c.account&&<div style={{fontSize:13,color:"#888"}}>{c.account}</div>}
+          <div style={{fontSize:12,color:"#aaa",marginTop:2}}>{ds} 更新</div>
+        </div>
+        {ready.length>0&&(<div style={{marginBottom:18}}>
+          <div style={{fontSize:15,fontWeight:700,color:"#2e7d32",marginBottom:2}}>✓ 已到貨・可出貨（{sum(ready)} 件）</div>
+          {ready.map(x=>row(x,"#2e7d32","✓"))}
+        </div>)}
+        {wait.length>0&&(<div style={{marginBottom:18}}>
+          <div style={{fontSize:15,fontWeight:700,color:"#c2410c",marginBottom:2}}>⏳ 等待補貨（{sum(wait)} 件）</div>
+          {wait.map(x=>row(x,"#c2410c","⏳"))}
+        </div>)}
+        {!ready.length&&!wait.length&&<div style={{textAlign:"center",color:"#888",padding:"30px 0"}}>目前沒有待處理的品項{shipN?"（已出貨 "+shipN+" 次）":""}</div>}
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:16,fontWeight:700,color:"#222",paddingTop:12,borderTop:"2px solid #222"}}><span>訂單金額</span><span>NT$ {Math.round(total).toLocaleString()}</span></div>
+        {shipN>0&&<div style={{fontSize:12,color:"#888",marginTop:8}}>已出貨 {shipN} 次，上方僅列出尚未出貨的品項</div>}
+      </div>
+    </div>
+  );
+}
 function AddItemModal({account,name,items,onClose,onApply}){
   const[q,setQ]=useState("");
   const[entries,setEntries]=useState([]);
@@ -790,7 +830,7 @@ function AddItemModal({account,name,items,onClose,onApply}){
 }
 
 function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,onRevokeShipment,onUnarrive,onArrive,onAddToStock,iopenData,onSaveIopen,onAddItems,onEditAmount,onDeleteExtra}){
-  const[addFor,setAddFor]=useState(null);
+  const[addFor,setAddFor]=useState(null);const[sheetFor,setSheetFor]=useState(null);
   const isExtra=(o)=>!!(parsedCSV&&(parsedCSV.orders||[]).some(x=>String(x.orderRef||"").indexOf("_追")>-1&&makeOrderKey(x.customerKey,x.items)===o.oKey));
   const delExtra=(c,o)=>{if(!onDeleteExtra)return;if(!window.confirm("刪除這張追加單？\n"+(c.account||c.name)+"　NT$"+Math.round(o.orderAmount||0).toLocaleString()+"\n追加的品項會從需求中扣除，庫存重新分配。"))return;const lg=onDeleteExtra(c.account||c.name,o.oKey);if(lg&&lg.alloc)setEditAlloc(lg.alloc);if(lg&&lg.parsed)setParsedCSV(lg.parsed);};
   const editAmt=(c,o)=>{if(!onEditAmount)return;const cur=Math.round(o.orderAmount||0);const r=window.prompt("修改訂單金額（"+(c.account||c.name)+"）\n目前 NT$"+cur.toLocaleString()+"\n請輸入新的金額：",String(cur));if(r===null)return;const n=Number(String(r).replace(/[^\d.]/g,""));if(!isFinite(n)||String(r).trim()===""){alert("金額格式不正確");return;}const lg=onEditAmount(c.account||c.name,o.oKey,n);if(lg&&lg.alloc)setEditAlloc(lg.alloc);if(lg&&lg.parsed)setParsedCSV(lg.parsed);};
@@ -1508,8 +1548,9 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
               <span style={{fontWeight:700,fontSize:14,color:C.ink}}>{c.account||c.name}</span>
               {c.name&&c.account&&<span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>{c.name}</span>}{catFilter==="shipped"&&!c.done&&<span style={{marginLeft:6,fontSize:11,background:C.orangeSoft,color:C.orange,border:`1px solid ${C.orange}`,borderRadius:10,padding:"1px 7px",fontWeight:600}}>部分出貨</span>}{iopenInfo&&iopenInfo.needGift&&<span style={{marginLeft:6,fontSize:11,background:"#FFF5F5",color:"#C0392B",border:"1px solid #C0392B",borderRadius:10,padding:"1px 7px"}}>🎁 滿額贈</span>}{iopenInfo&&iopenInfo.orders&&iopenInfo.orders.map((ord,oi2)=>{const used=c.orders.some(oo=>(oo.shipments||[]).some(s=>String(s.orderNo)===String(ord.orderNo)));const tk=c.orders[0]&&c.orders[0].oKey;return(<button key={oi2} onClick={()=>{if(tk&&!used){setShipInputs(p=>({...p,[tk]:ord.orderNo}));}else{navigator.clipboard.writeText(ord.orderNo).catch(()=>{});}}} style={{marginLeft:6,fontSize:11,color:used?C.inkMuted:C.info,border:`1px solid ${used?C.line:C.info}`,background:used?"transparent":C.infoSoft,borderRadius:10,padding:"1px 7px",cursor:"pointer",textDecoration:used?"line-through":"none",opacity:used?0.5:1}}>出貨單{["①","②","③","④"][Math.min(oi2,3)]}{ord.amount>0?" $"+ord.amount:""}</button>);})}
             </div>
-            <span style={{display:"flex",alignItems:"center",gap:8}}>{catFilter==="live"&&onAddItems&&<button onClick={()=>setAddFor(c.account||c.name)} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>＋新增品項</button>}<span style={{fontSize:12,fontFamily:"monospace",color:C.inkMuted}}>NT${c.totalAmount.toLocaleString()}</span>{catFilter==="live"&&onEditAmount&&c.orders.length===1&&<button onClick={()=>editAmt(c,c.orders[0])} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>✎ 改金額</button>}</span>
+            <span style={{display:"flex",alignItems:"center",gap:8}}>{catFilter==="live"&&<button onClick={()=>setSheetFor(c.account||c.name)} style={{fontSize:11,color:C.inkMuted,border:`1px solid ${C.line}`,background:C.surface,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>🖼 客人清單</button>}{catFilter==="live"&&onAddItems&&<button onClick={()=>setAddFor(c.account||c.name)} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>＋新增品項</button>}<span style={{fontSize:12,fontFamily:"monospace",color:C.inkMuted}}>NT${c.totalAmount.toLocaleString()}</span>{catFilter==="live"&&onEditAmount&&c.orders.length===1&&<button onClick={()=>editAmt(c,c.orders[0])} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>✎ 改金額</button>}</span>
           </div>
+          {sheetFor===(c.account||c.name)&&<CustomerSheet c={c} onClose={()=>setSheetFor(null)}/>}
           {addFor===(c.account||c.name)&&<AddItemModal account={c.account||c.name} name={c.name} items={items} onClose={()=>setAddFor(null)} onApply={(acc,ents)=>{const lg=onAddItems(acc,ents);if(lg&&lg.alloc)setEditAlloc(lg.alloc);if(lg&&lg.parsed)setParsedCSV(lg.parsed);return lg;}}/>}
 
           {catFilter!=="shipped"&&iopenInfo&&iopenInfo.customItems&&iopenInfo.customItems.length>0&&(()=>{
@@ -2407,7 +2448,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-B</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-C</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
