@@ -2197,7 +2197,7 @@ function App(){
   });
   Object.values(stockByGroup).forEach(g=>g.sizes.sort((a,b)=>a.ord-b.ord));
   // 另一分頁（直播／iOPEN）的現貨：商品名正規化後相同或互相包含、且顏色/款式相同才視為同款
-  const _normP=(p)=>String(p||"").replace(/現貨|預購/g,"").replace(/[（(][^）)]*[）)]/g,"").replace(/\d+\s*[~\-–]\s*\d+\s*(cm|公分)?|\d+\s*(cm|公分)/gi,"").replace(/賣場|直播|兒童|上衣|款|[｜|\s\-_·]/g,"");
+  const _normP=(p)=>String(p||"").replace(/釦/g,"扣").replace(/紐/g,"鈕").replace(/現貨|預購/g,"").replace(/[（(][^）)]*[）)]/g,"").replace(/\d+\s*[~\-–]\s*\d+\s*(cm|公分)?|\d+\s*(cm|公分)/gi,"").replace(/賣場|直播|兒童|上衣|款|[｜|\s\-_·]/g,"");
   const _sfx=(it)=>{const v=it.size?[it.style,it.color].filter(Boolean).join("·"):getBaseStyle(it.style||it.color||"");return String(v).replace(/(^|·)(款式|顏色|颜色|花色)\s*[:：]\s*/g,"$1");};
   const otherSrc=srcTab==="live"?"iopen":"live";
   const otherStock=[];
