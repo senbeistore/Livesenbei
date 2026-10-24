@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AK</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AL</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -254,14 +254,19 @@ function renderMap(){
       });
       h+='</table>';
       // 尺寸對應：1688 的尺寸（例如 105、135）在備貨追蹤沒有時，可指定對應到哪個尺寸（例：105 → 小個M）
-      const _tz=[...new Set(SRC.all.filter(x=>sameProd(x,cur)||(((MAP.also||{})[t])||[]).some(g=>sameProd(x,g))).map(x=>x.size||""))].filter(Boolean);
-      const _tn=new Set(_tz.map(sizeNum));
-      const _bad=[...new Set(LINES.filter(l=>l.title===t).map(l=>String(l.size||"")))].filter(z=>z&&!_tn.has(sizeNum(z)));
+      const _pool=SRC.all.filter(x=>sameProd(x,cur)||(((MAP.also||{})[t])||[]).some(g=>sameProd(x,g)));
+      const _tz=[...new Set(_pool.map(x=>x.size||""))].filter(Boolean);
       MAP.size=MAP.size||{};
-      if(_bad.length){
-        h+='<table style="margin-top:6px"><tr><th>1688 尺寸（備貨追蹤沒有）</th><th>對應尺寸</th></tr>';
-        _bad.forEach(z=>{const k=t+"|"+z,curz=(MAP.size[k]||"");
-          h+='<tr><td>'+esc(z)+'</td><td><select data-size="'+esc(k)+'"><option value="">（請選擇）</option>'+_tz.sort((a,b)=>a.localeCompare(b,"zh-Hant",{numeric:true})).map(x=>'<option value="'+esc(x)+'"'+(x===curz?" selected":"")+'>'+esc(x)+'</option>').join("")+'</select></td></tr>';});
+      // 1688 的規格常同時含「長度（常規／小個子）」與尺寸（M／2XL、斤數），所以依「1688 花色＋尺寸」逐一對應
+      const _pairs=[];LINES.filter(l=>l.title===t).forEach(l=>{const z=String(l.size||"");if(!z||_pairs.some(p=>p.c===l.color&&p.z===z))return;
+        const ck2=nk(MAP.color[t+"|"+l.color]);if(!ck2||ck2==="__skip__")return;
+        const have=_pool.filter(x=>colorKey(x)===ck2).map(x=>sizeNum(x.size));
+        const k0=t+"|"+l.color+"|"+z;if(!have.includes(sizeNum(MAP.size[k0]||MAP.size[t+"|"+z]||z)))_pairs.push({c:l.color,z,have:_pool.filter(x=>colorKey(x)===ck2).map(x=>x.size||"")});});
+      if(_pairs.length){
+        h+='<table style="margin-top:6px"><tr><th>1688 花色＋尺寸（備貨追蹤沒有）</th><th>對應尺寸</th></tr>';
+        _pairs.forEach(pr=>{const k=t+"|"+pr.c+"|"+pr.z,curz=(MAP.size[k]||"");
+          const opts=[...new Set(pr.have.concat(_tz))].sort((a,b)=>a.localeCompare(b,"zh-Hant",{numeric:true}));
+          h+='<tr><td>'+esc(pr.c)+' ／ 尺寸 '+esc(pr.z)+'</td><td><select data-size="'+esc(k)+'"><option value="">（請選擇）</option>'+opts.map(x=>'<option value="'+esc(x)+'"'+(x===curz?" selected":"")+'>'+esc(x)+(pr.have.includes(x)?"":"（其他花色）")+'</option>').join("")+'</select></td></tr>';});
         h+='</table>';
       }
       const also=(MAP.also&&MAP.also[t])||[];
@@ -301,7 +306,7 @@ function compute(){
     const ck=colorOf(l.title,l.color);
     if(ck==="__skip__")return;
     if(!ck){miss.push({l,why:"花色尚未對應"});return;}
-    const sz=sizeNum(((MAP.size||{})[l.title+"|"+l.size])||l.size);const cx2=nk((MAP.cx||{})[l.title+"|"+l.color])||"\u0000";
+    const sz=sizeNum(((MAP.size||{})[l.title+"|"+l.color+"|"+l.size])||((MAP.size||{})[l.title+"|"+l.size])||l.size);const cx2=nk((MAP.cx||{})[l.title+"|"+l.color])||"\u0000";
     let its=SRC.all.filter(x=>sameProd(x,gp)&&(colorKey(x)===ck||colorKey(x)===cx2)&&sizeNum(x.size)===sz).sort((a,b)=>(srcOf(a)==="live"?0:1)-(srcOf(b)==="live"?0:1));
     if(!its.length){   // 找不到同花色：花色名稱相近（藍狗／藍色狗狗）的同尺寸品項視為同一個
       const bl=String(((colorOptions(gp).find(o=>o.k===ck)||{}).label)||"").replace(/(款式|顏色|花色)[:：]|色|\s/g,"");
