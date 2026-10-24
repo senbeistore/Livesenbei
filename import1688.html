@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AM</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AN</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -356,7 +356,11 @@ function compute(){
   // 漏叫：已對應商品中，備貨追蹤還要叫、但這份清單沒有
   const prodSet=new Set(Object.values(MAP.prod).filter(v=>v&&v!=="__skip__"));
   const inList=new Set(rows.flatMap(r=>r.items.map(x=>x.id)));
-  const forgot=SRC.all.filter(it=>(it.extraTs||[...prodSet].some(pp=>sameProd(it,pp)))&&!inList.has(it.id)).map(it=>{
+  // 配貨區「私下追加」的品項（含舊的追加單）：不論商品有沒有出現在 1688 清單，都要列入漏叫／少叫
+  const _xk=new Set();
+  try{(((SRC.raw||{}).iopenData||{}).__orders__||{parsed:{}}).parsed.orders.forEach(o=>{if(String(o.orderRef||"").indexOf("_追")>-1)(o.items||[]).forEach(l=>_xk.add([l.product,l.color||"",l.size||"",l.style||""].join("\u0001")));});}catch(e){}
+  const isExtra=it=>!!it.extraTs||_xk.has([it.product,it.color||"",it.size||"",it.style||""].join("\u0001"));
+  const forgot=SRC.all.filter(it=>(isExtra(it)||[...prodSet].some(pp=>sameProd(it,pp)))&&!inList.has(it.id)).map(it=>{
     const rec=isMarked(it)?effOrdered(it):0;return{it,toOrder:Math.max(0,needTotal(it)-rec)};
   }).filter(x=>x.toOrder>0);
   // 標記未叫（不限已對應的商品）：備貨追蹤已標記「已叫貨」（沒有 1688 單號、也還沒到貨），但這份 1688 清單裡沒有
