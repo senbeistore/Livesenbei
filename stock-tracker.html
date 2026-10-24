@@ -789,8 +789,9 @@ function AddItemModal({account,name,items,onClose,onApply}){
   );
 }
 
-function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,onRevokeShipment,onUnarrive,onArrive,onAddToStock,iopenData,onSaveIopen,onAddItems}){
+function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,onRevokeShipment,onUnarrive,onArrive,onAddToStock,iopenData,onSaveIopen,onAddItems,onEditAmount}){
   const[addFor,setAddFor]=useState(null);
+  const editAmt=(c,o)=>{if(!onEditAmount)return;const cur=Math.round(o.orderAmount||0);const r=window.prompt("修改訂單金額（"+(c.account||c.name)+"）\n目前 NT$"+cur.toLocaleString()+"\n請輸入新的金額：",String(cur));if(r===null)return;const n=Number(String(r).replace(/[^\d.]/g,""));if(!isFinite(n)||String(r).trim()===""){alert("金額格式不正確");return;}const lg=onEditAmount(c.account||c.name,o.oKey,n);if(lg&&lg.alloc)setEditAlloc(lg.alloc);if(lg&&lg.parsed)setParsedCSV(lg.parsed);};
   const[editAlloc,setEditAlloc]=useState(savedAlloc||null);
   const[allocMethod,setAllocMethod]=useState("amount"); // "amount" | "proportional"
   const[parsedCSV,setParsedCSV]=useState(null); // 暫存解析後的CSV，模式切換時重新計算
@@ -1505,7 +1506,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
               <span style={{fontWeight:700,fontSize:14,color:C.ink}}>{c.account||c.name}</span>
               {c.name&&c.account&&<span style={{fontSize:12,color:C.inkMuted,marginLeft:6}}>{c.name}</span>}{catFilter==="shipped"&&!c.done&&<span style={{marginLeft:6,fontSize:11,background:C.orangeSoft,color:C.orange,border:`1px solid ${C.orange}`,borderRadius:10,padding:"1px 7px",fontWeight:600}}>部分出貨</span>}{iopenInfo&&iopenInfo.needGift&&<span style={{marginLeft:6,fontSize:11,background:"#FFF5F5",color:"#C0392B",border:"1px solid #C0392B",borderRadius:10,padding:"1px 7px"}}>🎁 滿額贈</span>}{iopenInfo&&iopenInfo.orders&&iopenInfo.orders.map((ord,oi2)=>{const used=c.orders.some(oo=>(oo.shipments||[]).some(s=>String(s.orderNo)===String(ord.orderNo)));const tk=c.orders[0]&&c.orders[0].oKey;return(<button key={oi2} onClick={()=>{if(tk&&!used){setShipInputs(p=>({...p,[tk]:ord.orderNo}));}else{navigator.clipboard.writeText(ord.orderNo).catch(()=>{});}}} style={{marginLeft:6,fontSize:11,color:used?C.inkMuted:C.info,border:`1px solid ${used?C.line:C.info}`,background:used?"transparent":C.infoSoft,borderRadius:10,padding:"1px 7px",cursor:"pointer",textDecoration:used?"line-through":"none",opacity:used?0.5:1}}>出貨單{["①","②","③","④"][Math.min(oi2,3)]}{ord.amount>0?" $"+ord.amount:""}</button>);})}
             </div>
-            <span style={{display:"flex",alignItems:"center",gap:8}}>{catFilter==="live"&&onAddItems&&<button onClick={()=>setAddFor(c.account||c.name)} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>＋新增品項</button>}<span style={{fontSize:12,fontFamily:"monospace",color:C.inkMuted}}>NT${c.totalAmount.toLocaleString()}</span></span>
+            <span style={{display:"flex",alignItems:"center",gap:8}}>{catFilter==="live"&&onAddItems&&<button onClick={()=>setAddFor(c.account||c.name)} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>＋新增品項</button>}<span style={{fontSize:12,fontFamily:"monospace",color:C.inkMuted}}>NT${c.totalAmount.toLocaleString()}</span>{catFilter==="live"&&onEditAmount&&c.orders.length===1&&<button onClick={()=>editAmt(c,c.orders[0])} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:10,padding:"2px 8px",cursor:"pointer"}}>✎ 改金額</button>}</span>
           </div>
           {addFor===(c.account||c.name)&&<AddItemModal account={c.account||c.name} name={c.name} items={items} onClose={()=>setAddFor(null)} onApply={(acc,ents)=>{const lg=onAddItems(acc,ents);if(lg&&lg.alloc)setEditAlloc(lg.alloc);if(lg&&lg.parsed)setParsedCSV(lg.parsed);return lg;}}/>}
 
@@ -1537,7 +1538,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
               <div key={o.oKey} style={{borderTop:oi>0?`1px solid ${C.line}`:"none",paddingTop:oi>0?10:0,marginTop:oi>0?10:0}}>
                 {c.orders.length>1&&(
                   <div style={{fontSize:11,fontWeight:600,color:C.inkMuted,marginBottom:6}}>
-                    訂單{oi+1}　NT${o.orderAmount.toLocaleString()}
+                    訂單{oi+1}　NT${o.orderAmount.toLocaleString()}{catFilter==="live"&&onEditAmount&&<button onClick={()=>editAmt(c,o)} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:10,padding:"0 6px",marginLeft:6,cursor:"pointer"}}>✎ 改金額</button>}
                     {hasShipments&&<span style={{color:C.success,marginLeft:6}}>📦 已出貨{shipments.length>1?` ${shipments.length}次`:""}</span>}
                   </div>
                 )}
@@ -2164,8 +2165,19 @@ function App(){
       logs.push(text);changesNew.push({ts:new Date().toISOString(),fk:flatKey(t),text,who,act:"add",qty:e.n,from:"",to:dispName(t),done:false});
     });
     const amount=lines.reduce((a,l)=>a+(l.price||0)*l.qty,0);
-    const nAdd=parsed.orders.filter(o=>o.customerKey===ck&&String(o.orderRef||"").indexOf("_追")>-1).length+1;
-    parsed.orders.push({orderRef:ck+"_追"+nAdd,customerKey:ck,amount,items:lines});
+    // 私下追加的品項合併成同一張「追加」訂單（已出貨過的追加單不動，另開新單）
+    const _sa=savedAllocRef.current||{};
+    const _shipped=(o)=>{const e=_sa[makeOrderKey(o.customerKey,o.items)];return !!(e&&((e.shipments&&e.shipments.length>0)||e.shippedAt));};
+    const extras=parsed.orders.filter(o=>o.customerKey===ck&&String(o.orderRef||"").indexOf("_追")>-1&&!_shipped(o));
+    const mergeInto=(tgt,ls,amt)=>{ls.forEach(l=>{const e2=tgt.items.find(x=>flatKey(x)===flatKey(l)&&(x.price||0)===(l.price||0));if(e2)e2.qty+=l.qty;else tgt.items.push({...l});});tgt.amount=(tgt.amount||0)+amt;};
+    if(extras.length){
+      const base0=extras[0];
+      extras.slice(1).forEach(o=>{mergeInto(base0,o.items,o.amount||0);parsed.orders.splice(parsed.orders.indexOf(o),1);});
+      mergeInto(base0,lines,amount);
+    }else{
+      const nAdd=parsed.orders.filter(o=>o.customerKey===ck&&String(o.orderRef||"").indexOf("_追")>-1).length+1;
+      parsed.orders.push({orderRef:ck+"_追"+nAdd,customerKey:ck,amount,items:lines});
+    }
     if(c.totalAmount!=null)c.totalAmount=(c.totalAmount||0)+amount;
     const allItems=items.concat(Object.values(created));
     let newAlloc=savedAllocRef.current;
@@ -2179,6 +2191,23 @@ function App(){
     });
     logs.alloc=newAlloc;logs.parsed=parsed;
     return logs;
+  }
+  function applyEditAmount(account,oKey,newAmt){
+    const store=iopenDataRef.current||{};
+    const op=store.__orders__&&store.__orders__.parsed;
+    if(!op){alert("沒有訂單資料可以修改。");return null;}
+    const parsed=JSON.parse(JSON.stringify(op));
+    const o=parsed.orders.find(x=>makeOrderKey(x.customerKey,x.items)===oKey);
+    if(!o){alert("找不到這筆訂單。");return null;}
+    const v=Math.max(0,Math.round(Number(newAmt)));if(!isFinite(v))return null;
+    const c=parsed.customers[o.customerKey];const diff=v-(o.amount||0);
+    o.amount=v;if(c&&c.totalAmount!=null)c.totalAmount=Math.max(0,(c.totalAmount||0)+diff);
+    let newAlloc=savedAllocRef.current;
+    try{newAlloc=recalculateAlloc(JSON.parse(JSON.stringify(savedAllocRef.current||{})),parsed,items,"amount");}catch(err){}
+    const newStore={...store,__orders__:{...store.__orders__,parsed}};
+    iopenDataRef.current=newStore;setIopenData(newStore);savedAllocRef.current=newAlloc;setSavedAlloc(newAlloc);
+    scheduleSave(items,newAlloc);
+    return{alloc:newAlloc,parsed};
   }
   function updateField(id,field,value){setItems(prev=>{const next=prev.map(it=>it.id===id?{...it,[field]:value}:it);scheduleSave(next);return next;});}
 
@@ -2357,7 +2386,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1022-N</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-A</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2416,7 +2445,7 @@ function App(){
 
       {allocMode&&<AllocationView items={items} savedAlloc={savedAlloc} onClose={()=>setAllocMode(false)}
         onSaveAlloc={(newAlloc)=>{savedAllocRef.current=newAlloc;setSavedAlloc(newAlloc);scheduleSave(items,newAlloc);}}
-        iopenData={iopenData} onAddItems={applyAddItems}
+        iopenData={iopenData} onAddItems={applyAddItems} onEditAmount={applyEditAmount}
         onSaveIopen={(d)=>{iopenDataRef.current=d;setIopenData(d);var custList=iopenCustomFromData(d);iopenCustomRef.current=custList.slice();setItems(function(prev){var next=mergeCustomIntoItems(prev,custList);scheduleSave(next,savedAllocRef.current);return next;});}}
         onConfirmShipment={(oKey,shippedItems,newAlloc)=>{
           // 扣除庫存，並明確傳遞最新 alloc 避免閉包舊值問題
