@@ -789,8 +789,10 @@ function AddItemModal({account,name,items,onClose,onApply}){
   );
 }
 
-function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,onRevokeShipment,onUnarrive,onArrive,onAddToStock,iopenData,onSaveIopen,onAddItems,onEditAmount}){
+function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,onRevokeShipment,onUnarrive,onArrive,onAddToStock,iopenData,onSaveIopen,onAddItems,onEditAmount,onDeleteExtra}){
   const[addFor,setAddFor]=useState(null);
+  const isExtra=(o)=>!!(parsedCSV&&(parsedCSV.orders||[]).some(x=>String(x.orderRef||"").indexOf("_追")>-1&&makeOrderKey(x.customerKey,x.items)===o.oKey));
+  const delExtra=(c,o)=>{if(!onDeleteExtra)return;if(!window.confirm("刪除這張追加單？\n"+(c.account||c.name)+"　NT$"+Math.round(o.orderAmount||0).toLocaleString()+"\n追加的品項會從需求中扣除，庫存重新分配。"))return;const lg=onDeleteExtra(c.account||c.name,o.oKey);if(lg&&lg.alloc)setEditAlloc(lg.alloc);if(lg&&lg.parsed)setParsedCSV(lg.parsed);};
   const editAmt=(c,o)=>{if(!onEditAmount)return;const cur=Math.round(o.orderAmount||0);const r=window.prompt("修改訂單金額（"+(c.account||c.name)+"）\n目前 NT$"+cur.toLocaleString()+"\n請輸入新的金額：",String(cur));if(r===null)return;const n=Number(String(r).replace(/[^\d.]/g,""));if(!isFinite(n)||String(r).trim()===""){alert("金額格式不正確");return;}const lg=onEditAmount(c.account||c.name,o.oKey,n);if(lg&&lg.alloc)setEditAlloc(lg.alloc);if(lg&&lg.parsed)setParsedCSV(lg.parsed);};
   const[editAlloc,setEditAlloc]=useState(savedAlloc||null);
   const[allocMethod,setAllocMethod]=useState("amount"); // "amount" | "proportional"
@@ -1538,7 +1540,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
               <div key={o.oKey} style={{borderTop:oi>0?`1px solid ${C.line}`:"none",paddingTop:oi>0?10:0,marginTop:oi>0?10:0}}>
                 {c.orders.length>1&&(
                   <div style={{fontSize:11,fontWeight:600,color:C.inkMuted,marginBottom:6}}>
-                    訂單{oi+1}　NT${o.orderAmount.toLocaleString()}{catFilter==="live"&&onEditAmount&&<button onClick={()=>editAmt(c,o)} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:10,padding:"0 6px",marginLeft:6,cursor:"pointer"}}>✎ 改金額</button>}
+                    訂單{oi+1}　NT${o.orderAmount.toLocaleString()}{catFilter==="live"&&onEditAmount&&<button onClick={()=>editAmt(c,o)} style={{fontSize:11,color:C.info,border:`1px solid ${C.info}`,background:C.surface,borderRadius:10,padding:"0 6px",marginLeft:6,cursor:"pointer"}}>✎ 改金額</button>}{catFilter==="live"&&onDeleteExtra&&!hasShipments&&isExtra(o)&&<button onClick={()=>delExtra(c,o)} style={{fontSize:11,color:C.stamp,border:`1px solid ${C.stamp}`,background:C.surface,borderRadius:10,padding:"0 6px",marginLeft:6,cursor:"pointer"}}>🗑 刪除追加單</button>}
                     {hasShipments&&<span style={{color:C.success,marginLeft:6}}>📦 已出貨{shipments.length>1?` ${shipments.length}次`:""}</span>}
                   </div>
                 )}
@@ -2209,6 +2211,25 @@ function App(){
     scheduleSave(items,newAlloc);
     return{alloc:newAlloc,parsed};
   }
+  function applyDeleteExtra(account,oKey){
+    const store=iopenDataRef.current||{};
+    const op=store.__orders__&&store.__orders__.parsed;
+    if(!op)return null;
+    const parsed=JSON.parse(JSON.stringify(op));
+    const i=parsed.orders.findIndex(x=>makeOrderKey(x.customerKey,x.items)===oKey&&String(x.orderRef||"").indexOf("_追")>-1);
+    if(i<0){alert("找不到這張追加單。");return null;}
+    const o=parsed.orders[i];const c=parsed.customers[o.customerKey];
+    parsed.orders.splice(i,1);
+    if(c&&c.totalAmount!=null)c.totalAmount=Math.max(0,(c.totalAmount||0)-(o.amount||0));
+    const dec={};o.items.forEach(l=>{const it=items.find(x=>flatKey(x)===flatKey(l));if(it)dec[it.id]=(dec[it.id]||0)+l.qty;});
+    const nextItems=items.map(x=>{if(!dec[x.id])return x;const q=Math.max(0,(x.qty||0)-dec[x.id]);const y={...x,qty:q};if(!y.orderedEdited)y.orderedQty=Math.max(0,q-(y.stockQty||0));return y;});
+    let newAlloc=savedAllocRef.current;
+    try{const a0=JSON.parse(JSON.stringify(savedAllocRef.current||{}));delete a0[oKey];newAlloc=recalculateAlloc(a0,parsed,nextItems,"amount");}catch(err){}
+    const newStore={...store,__orders__:{...store.__orders__,parsed}};
+    iopenDataRef.current=newStore;setIopenData(newStore);savedAllocRef.current=newAlloc;setSavedAlloc(newAlloc);
+    setItems(nextItems);scheduleSave(nextItems,newAlloc);
+    return{alloc:newAlloc,parsed};
+  }
   function updateField(id,field,value){setItems(prev=>{const next=prev.map(it=>it.id===id?{...it,[field]:value}:it);scheduleSave(next);return next;});}
 
   function saveWorkspaces(ws,idx){localStorage.setItem("st_workspaces",JSON.stringify(ws));localStorage.setItem("st_active",String(idx));}
@@ -2386,7 +2407,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-A</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-B</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2445,7 +2466,7 @@ function App(){
 
       {allocMode&&<AllocationView items={items} savedAlloc={savedAlloc} onClose={()=>setAllocMode(false)}
         onSaveAlloc={(newAlloc)=>{savedAllocRef.current=newAlloc;setSavedAlloc(newAlloc);scheduleSave(items,newAlloc);}}
-        iopenData={iopenData} onAddItems={applyAddItems} onEditAmount={applyEditAmount}
+        iopenData={iopenData} onAddItems={applyAddItems} onEditAmount={applyEditAmount} onDeleteExtra={applyDeleteExtra}
         onSaveIopen={(d)=>{iopenDataRef.current=d;setIopenData(d);var custList=iopenCustomFromData(d);iopenCustomRef.current=custList.slice();setItems(function(prev){var next=mergeCustomIntoItems(prev,custList);scheduleSave(next,savedAllocRef.current);return next;});}}
         onConfirmShipment={(oKey,shippedItems,newAlloc)=>{
           // 扣除庫存，並明確傳遞最新 alloc 避免閉包舊值問題
