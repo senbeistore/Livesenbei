@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AF</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AG</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -256,6 +256,7 @@ function unverWhy(it,res){
   return cs.map(x=>{const row=res.rows.find(r=>r.items.some(y=>y.id===x.id));
     return '<div class="mute" style="font-size:11px">檢查：另有「'+esc(gProd(x))+'」'+esc(colorLabel(x))+'·'+esc(x.size||"")+'（'+(srcOf(x)==="live"?"直播":"iOPEN")+'，需求 '+(x.qty||0)+'、現貨 '+(x.stockQty||0)+'）；同商品：'+(sameProd(x,gProd(it))?'是':'否')+'；花色鍵相同：'+(colorKey(x)===colorKey(it)?'是':'否 ['+esc(JSON.stringify(colorKey(x)))+' vs '+esc(JSON.stringify(colorKey(it)))+']')+'；已在比對列：'+(row?'是':'否')+'</div>';}).join('');
 }
+function fzc(a,b){return a.length>=2&&b.length>=2&&(a.includes(b)||b.includes(a))&&a[0]===b[0]&&a.slice(-1)===b.slice(-1);}
 function compute(){
   const orderNos=new Set(LINES.filter(l=>!l.cancelled).map(l=>l.orderNo));
   const target={};   // item.id -> {item, qty, orders:{no:{qty,date}}}
@@ -269,7 +270,11 @@ function compute(){
     if(ck==="__skip__")return;
     if(!ck){miss.push({l,why:"花色尚未對應"});return;}
     const sz=sizeNum(l.size);const cx2=nk((MAP.cx||{})[l.title+"|"+l.color])||"\u0000";
-    const its=SRC.all.filter(x=>sameProd(x,gp)&&(colorKey(x)===ck||colorKey(x)===cx2)&&sizeNum(x.size)===sz).sort((a,b)=>(srcOf(a)==="live"?0:1)-(srcOf(b)==="live"?0:1));
+    let its=SRC.all.filter(x=>sameProd(x,gp)&&(colorKey(x)===ck||colorKey(x)===cx2)&&sizeNum(x.size)===sz).sort((a,b)=>(srcOf(a)==="live"?0:1)-(srcOf(b)==="live"?0:1));
+    if(!its.length){   // 找不到同花色：花色名稱相近（藍狗／藍色狗狗）的同尺寸品項視為同一個
+      const bl=String(((colorOptions(gp).find(o=>o.k===ck)||{}).label)||"").replace(/(款式|顏色|花色)[:：]|色|\s/g,"");
+      if(bl.length>=2)its=SRC.all.filter(x=>sameProd(x,gp)&&sizeNum(x.size)===sz).filter(x=>{const c=colorLabel(x).replace(/(款式|顏色|花色)[:：]|色|\s/g,"");return c.length>=2&&fzc(c,bl);});
+    }
     if(!its.length){
       const same=SRC.all.filter(x=>sameProd(x,gp)&&colorKey(x)===ck);
       const have=[...new Set(same.map(x=>sizeNum(x.size)))].sort((p,q)=>p-q);
@@ -280,11 +285,11 @@ function compute(){
     t.srcs=t.srcs||{};t.srcs[l.color]=(t.srcs[l.color]||0)+l.qty;t.qty+=l.qty;const o=t.orders[l.orderNo]||(t.orders[l.orderNo]={qty:0,date:l.date});o.qty+=l.qty;
   });
   // 花色名稱只差幾個字（例如 藍狗／藍色狗狗）：同商品同尺寸、沒被其他比對列用到的品項，併進花色相近的那一列
-  const _cs=v=>String(v||"").replace(/色|\s/g,"");
+  const _cs=v=>String(v||"").replace(/(款式|顏色|花色)[:：]|色|\s/g,"");
   const used=new Set(Object.values(target).flatMap(t=>t.items.map(x=>x.id)));
   Object.values(target).forEach(t=>{
     const base=_cs(colorLabel(t.items[0]));if(base.length<2)return;
-    const ex=SRC.all.filter(x=>!used.has(x.id)&&sameProd(x,t.gp)&&sizeNum(x.size)===t.sz).filter(x=>{const c=_cs(colorLabel(x));return c.length>=2&&c!==base&&(c.includes(base)||base.includes(c));});
+    const ex=SRC.all.filter(x=>!used.has(x.id)&&sameProd(x,t.gp)&&sizeNum(x.size)===t.sz).filter(x=>{const c=_cs(colorLabel(x));return c.length>=2&&c!==base&&fzc(c,base);});
     ex.forEach(x=>{used.add(x.id);});
     if(ex.length){t.items=t.items.concat(ex);t.fuzzy=ex;}
   });
