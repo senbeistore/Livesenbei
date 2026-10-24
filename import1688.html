@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AA</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AB</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -91,7 +91,7 @@ let conv=(s)=>s; try{ if(window.OpenCC){const c=OpenCC.Converter({from:"cn",to:"
 
 // ---- 備貨追蹤邏輯（與 stock-tracker.html 相同）----
 const gProd=it=>it.homeProduct||it.product;
-const _np=p=>String(p||"").replace(/釦/g,"扣").replace(/紐/g,"鈕").replace(/現貨|預購/g,"").replace(/[（(][^）)]*[）)]/g,"").replace(/\d+\s*[~\-–]\s*\d+\s*(cm|公分)?|\d+\s*(cm|公分)/gi,"").replace(/賣場|直播|兒童|上衣|款|[｜|\s\-_·]/g,"");
+const _np=p=>String(p||"").replace(/奶霜立領/g,"立領奶霜").replace(/釦/g,"扣").replace(/紐/g,"鈕").replace(/現貨|預購/g,"").replace(/[（(][^）)]*[）)]/g,"").replace(/\d+\s*[~\-–]\s*\d+\s*(cm|公分)?|\d+\s*(cm|公分)/gi,"").replace(/賣場|直播|兒童|上衣|款|[｜|\s\-_·]/g,"");
 function sameProd(x,gp){const a=gProd(x);if(a===gp)return true;const n=_np(a),m=_np(gp);return n.length>=3&&m.length>=3&&(n===m||n.includes(m)||m.includes(n));}
 const netNeed=it=>Math.max(0,(it.qty||0)-(it.stockQty||0));
 const needTotal=it=>netNeed(it)+(it.defectQty||0);
