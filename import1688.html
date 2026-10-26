@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AN</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AO</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -347,7 +347,7 @@ function compute(){
     const appliedHere=allB.filter(b=>b.ref&&orderNos.has(b.ref)).reduce((a,b)=>a+(b.qty||0),0);
     const recorded=its.reduce((a,x)=>a+(isMarked(x)?effOrdered(x):0),0);
     const legacy=!allB.length&&recorded>0;   // 之前只按過「已叫貨」、沒有單號：視為就是這份清單的叫貨
-    const others=legacy?0:Math.max(0,recorded-appliedHere);
+    const others=legacy?0:Math.min(Math.max(0,recorded-appliedHere),allB.filter(b=>b.ref&&!orderNos.has(b.ref)).reduce((a,b)=>a+(b.qty||0),0));   // 只有「綁了其他單號（不在這份清單）」的叫貨才算另外叫的；沒有單號的記錄視為這份 1688 清單的叫貨
     const need=its.reduce((a,x)=>a+needTotal(x),0);
     MAP.fam=MAP.fam||{};const fam=MAP.fam[t.key]||0;MAP.spr=MAP.spr||{};const spr=MAP.spr[t.key]||0;const expect=Math.max(0,need-others)+fam+spr;
     const diff=t.qty-expect;
