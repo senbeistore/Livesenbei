@@ -517,15 +517,17 @@ function mergeCustomIntoItems(currentItems,custList){
   var agg={};
   custList.forEach(function(c){var sku=c.prod+"|"+(c.spec1||"")+"|"+(c.spec2||"");if(!agg[sku])agg[sku]={product:c.prod,color:c.spec1||"",size:c.spec2||"",qty:0};agg[sku].qty+=(c.qty||1);});
   var have={};(currentItems||[]).forEach(function(it){have[(it.product||"")+"|"+(it.color||"")+"|"+(it.size||"")+"|"+(it.style||"")]=1;});
-  var added=[];var bumped=0;
+  var added=[];var bumped=0;var st={live:0,lower:0,same:0};
   // 已存在的 iOPEN 品項：重新匯入的客訂件數比目前多時，把需求補上去（只增不減）
   var cur=(currentItems||[]).map(function(it){
-    if(itemSource(it)!=="iopen"||it.style)return it;
     var a=agg[(it.product||"")+"|"+(it.color||"")+"|"+(it.size||"")];
-    if(a&&a.qty>(it.qty||0)){bumped++;return Object.assign({},it,{qty:a.qty});}
+    if(!a||it.style)return it;
+    if(itemSource(it)!=="iopen"){st.live++;return it;}
+    if(a.qty>(it.qty||0)){bumped++;return Object.assign({},it,{qty:a.qty});}
+    if(a.qty<(it.qty||0))st.lower++;else st.same++;
     return it;
   });
-  mergeCustomIntoItems.lastBumped=bumped;
+  mergeCustomIntoItems.lastBumped=bumped;mergeCustomIntoItems.lastStats=st;mergeCustomIntoItems.lastPieces=custList.reduce(function(n,c){return n+(c.qty||1);},0);
   currentItems=cur;
   Object.keys(agg).forEach(function(sku){var a=agg[sku];var k=a.product+"|"+a.color+"|"+a.size+"|";if(have[k])return;have[k]=1;added.push(migrateItem({id:"cust_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,7),product:a.product,color:a.color,size:a.size,style:"",qty:a.qty,isCustomStock:true,source:"iopen"}));});
   return added.length?(currentItems||[]).concat(added):(currentItems||[]);
@@ -2403,7 +2405,7 @@ function App(){
             var next=mergeCustomIntoItems(prev,filtered);
             var addedN=next.length-(prev?prev.length:0);var bumpN=mergeCustomIntoItems.lastBumped||0;
             if(token&&gistId){scheduleSave(next,savedAllocRef.current);}
-            setTimeout(function(){alert("客訂商品匯入完成：新增 "+addedN+" 項到備貨清單"+(bumpN?"，補上 "+bumpN+" 項的需求件數":"")+"（已存在的品項不重複）。");},50);
+            setTimeout(function(){alert("客訂商品匯入完成：新增 "+addedN+" 項到備貨清單"+(bumpN?"，補上 "+bumpN+" 項的需求件數":"")+"（已存在的品項不重複）。\n\n本次共讀到 "+(mergeCustomIntoItems.lastPieces||0)+" 件客訂。已存在且件數相同 "+((mergeCustomIntoItems.lastStats||{}).same||0)+" 項；已存在但這次讀到的件數比較少（沒有更動）"+((mergeCustomIntoItems.lastStats||{}).lower||0)+" 項；屬於直播訂單品項（沒有更動）"+((mergeCustomIntoItems.lastStats||{}).live||0)+" 項。");},50);
             return next;
           });
         }
@@ -2511,7 +2513,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-J</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-K</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
