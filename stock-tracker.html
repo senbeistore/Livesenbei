@@ -905,7 +905,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   function computeAllocUsage(alloc,excludeKey){
     const usage={};
     Object.entries(alloc||{}).forEach(([k,o])=>{
-      if(k===excludeKey)return;
+      // 含本張訂單自己已配的件數：可再配的數量＝庫存－全部已配（包含自己），否則同一件庫存會被算兩次
       o.allocItems.forEach(it=>{const fk=flatKey(it);usage[fk]=(usage[fk]||0)+it.allocatedQty;});
     });
     return usage;
@@ -1382,8 +1382,8 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
       {catFilter==="shipped"&&(()=>{
         // 蒐集目前已出貨分頁所有可選批次，供跨客人批次通知
         const rows=[];
-        filteredDisplay.filter(c=>c.hasShip).forEach(c=>{const info=iopenLC[String(c.account||"").toLowerCase()];c.orders.forEach(o=>{(o.shipments||[]).forEach((s,si)=>{const store=s.store||(info&&info.orders&&(info.orders.find(x=>String(x.orderNo)===String(s.orderNo))||{}).store)||"";const prods=(s.items||[]).filter(it=>it.allocatedQty>0).map(it=>dispName(it)+(it.allocatedQty>1?" ×"+it.allocatedQty:""));rows.push({bk:o.oKey+"|"+si,account:c.account,name:c.name,orderNo:s.orderNo,store:store,prods:prods});});});});
-        const selRows=rows.filter(r=>batchSel.has(r.bk));
+        filteredDisplay.filter(c=>c.hasShip).forEach(c=>{const info=iopenLC[String(c.account||"").toLowerCase()];c.orders.forEach(o=>{(o.shipments||[]).forEach((s,si)=>{const store=s.store||(info&&info.orders&&(info.orders.find(x=>String(x.orderNo)===String(s.orderNo))||{}).store)||"";const prods=(s.items||[]).filter(it=>it.allocatedQty>0).map(it=>dispName(it)+(it.allocatedQty>1?" ×"+it.allocatedQty:""));const rk=String(c.account||c.name)+"|"+s.orderNo;const ex=rows.find(r=>r.rk===rk);if(ex){ex.bks.push(o.oKey+"|"+si);ex.prods=ex.prods.concat(prods);}else rows.push({rk:rk,bk:o.oKey+"|"+si,bks:[o.oKey+"|"+si],account:c.account,name:c.name,orderNo:s.orderNo,store:store,prods:prods});});});});
+        const selRows=rows.filter(r=>r.bks.some(b=>batchSel.has(b)));
         const dstr=batchDate?new Date(batchDate+"T00:00:00").toLocaleDateString("zh-TW"):"";
         return(<div style={{border:`1px solid ${C.info}`,background:C.infoSoft||"#EFF6FF",borderRadius:12,padding:"10px 12px",marginBottom:10}}>
           <div onClick={()=>setBatchOpen(v=>!v)} style={{fontSize:13,fontWeight:700,color:C.info,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
@@ -1621,16 +1621,24 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                 {/* 出貨歷史記錄（只在「已出貨」分頁顯示） */}
                 {catFilter==="shipped"&&shipments.map((s,si)=>{
                   const sc=shipColor(si);
-                  const sItems=(s.items||[]).filter(it=>it.allocatedQty>0);
+                  // 同一個出貨單號、分在這位客人不同訂單的出貨（一起出貨）：合併成一張通知卡，只在第一筆顯示
+                  const grp=[];c.orders.forEach(oo=>{(oo.shipments||[]).forEach((ss,ii)=>{if(String(ss.orderNo)===String(s.orderNo))grp.push({o:oo,si:ii,s:ss});});});
+                  const merged=grp.length>1;
+                  if(merged&&!(grp[0].o.oKey===o.oKey&&grp[0].si===si))return null;
+                  const sItems=grp.reduce((a,g)=>a.concat((g.s.items||[]).filter(it=>it.allocatedQty>0)),[]);
+                  const allNotified=grp.every(g=>g.s.notified);
+                  const bks=grp.map(g=>g.o.oKey+"|"+g.si);
+                  const setNotified=(target)=>{grp.forEach(g=>{if(!!g.s.notified!==target)toggleNotified(g.o.oKey,g.si);});};
                   return(
                     <div key={si} style={{background:sc.bg,border:`1px solid ${sc.border}`,borderRadius:8,padding:"8px 10px",marginBottom:6}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:sItems.length?6:0}}>
-                        {(()=>{const bk=o.oKey+"|"+si;const on=batchSel.has(bk);return(<button onClick={()=>setBatchSel(pv=>{const nn=new Set(pv);nn.has(bk)?nn.delete(bk):nn.add(bk);return nn;})} title="選取以批次通知" style={{width:20,height:20,borderRadius:5,border:`2px solid ${on?C.info:sc.border}`,background:on?C.info:"#fff",color:"#fff",cursor:"pointer",fontSize:12,lineHeight:1,padding:0,flexShrink:0}}>{on?"✓":""}</button>);})()}
+                        {(()=>{const on=bks.every(k=>batchSel.has(k));return(<button onClick={()=>setBatchSel(pv=>{const nn=new Set(pv);bks.forEach(k=>{on?nn.delete(k):nn.add(k);});return nn;})} title="選取以批次通知" style={{width:20,height:20,borderRadius:5,border:`2px solid ${on?C.info:sc.border}`,background:on?C.info:"#fff",color:"#fff",cursor:"pointer",fontSize:12,lineHeight:1,padding:0,flexShrink:0}}>{on?"✓":""}</button>);})()}
                         <span style={{color:sc.color,fontWeight:700,fontSize:12}}>📦 第{si+1}批出貨 {fmtTs(s.shippedAt)}</span>
                         <span style={{color:sc.color,fontFamily:"monospace",fontSize:12,opacity:0.85}}>{s.orderNo}</span>
-                        <button onClick={()=>toggleNotified(o.oKey,si)} title={s.notified?"取消已通知":"標記已通知"} style={{display:"flex",alignItems:"center",gap:4,color:s.notified?C.success:C.inkMuted,border:`1px solid ${s.notified?C.success:C.line}`,background:s.notified?"#ECFDF5":C.surface,borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:600,cursor:"pointer"}}>{s.notified?"✓ 已通知":"未通知"}</button>
-                        <button onClick={()=>{const store=s.store||(iopenInfo&&iopenInfo.orders&&(iopenInfo.orders.find(x=>String(x.orderNo)===String(s.orderNo))||{}).store)||"";const prods=(s.items||[]).filter(it=>it.allocatedQty>0).map(it=>dispName(it)+(it.allocatedQty>1?" ×"+it.allocatedQty:""));const key=o.oKey+"|b"+si;navigator.clipboard.writeText(buildShipNotice(s.orderNo,store,prods,batchDate?new Date(batchDate+"T00:00:00").toLocaleDateString("zh-TW"):"")).then(()=>{setCopiedKey(key);setTimeout(()=>setCopiedKey(""),1800);if(!s.notified)toggleNotified(o.oKey,si);}).catch(()=>{});}} style={{color:sc.color,border:`1px solid ${sc.border}`,background:C.surface,borderRadius:6,padding:"2px 8px",fontSize:11,cursor:"pointer"}}>{copiedKey===(o.oKey+"|b"+si)?"\u2713 已複製":"\ud83d\udccb 複製通知"}</button>
-                        <button onClick={()=>{if(window.confirm("確定撤銷這筆出貨記錄？品項會退回可出貨清單。"))revokeShipment(o.oKey,si);}} style={{marginLeft:"auto",color:sc.color,border:`1px solid ${sc.border}`,background:C.surface,borderRadius:6,padding:"2px 8px",fontSize:11,cursor:"pointer"}}>撤銷</button>
+                        {merged&&<span style={{fontSize:11,color:sc.color,border:`1px solid ${sc.border}`,borderRadius:6,padding:"1px 6px",background:C.surface}}>{grp.length} 張訂單合併</span>}
+                        <button onClick={()=>setNotified(!allNotified)} title={allNotified?"取消已通知":"標記已通知"} style={{display:"flex",alignItems:"center",gap:4,color:allNotified?C.success:C.inkMuted,border:`1px solid ${allNotified?C.success:C.line}`,background:allNotified?"#ECFDF5":C.surface,borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:600,cursor:"pointer"}}>{allNotified?"✓ 已通知":"未通知"}</button>
+                        <button onClick={()=>{const store=s.store||(iopenInfo&&iopenInfo.orders&&(iopenInfo.orders.find(x=>String(x.orderNo)===String(s.orderNo))||{}).store)||"";const prods=sItems.map(it=>dispName(it)+(it.allocatedQty>1?" ×"+it.allocatedQty:""));const key=o.oKey+"|b"+si;navigator.clipboard.writeText(buildShipNotice(s.orderNo,store,prods,batchDate?new Date(batchDate+"T00:00:00").toLocaleDateString("zh-TW"):"")).then(()=>{setCopiedKey(key);setTimeout(()=>setCopiedKey(""),1800);if(!allNotified)setNotified(true);}).catch(()=>{});}} style={{color:sc.color,border:`1px solid ${sc.border}`,background:C.surface,borderRadius:6,padding:"2px 8px",fontSize:11,cursor:"pointer"}}>{copiedKey===(o.oKey+"|b"+si)?"\u2713 已複製":"\ud83d\udccb 複製通知"}</button>
+                        <button onClick={()=>{if(!window.confirm(merged?"確定撤銷這個出貨單號的出貨記錄（"+grp.length+" 張訂單一起）？品項會退回各自的可出貨清單。":"確定撤銷這筆出貨記錄？品項會退回可出貨清單。"))return;grp.slice().sort((x,y)=>y.si-x.si).forEach(g=>revokeShipment(g.o.oKey,g.si));}} style={{marginLeft:"auto",color:sc.color,border:`1px solid ${sc.border}`,background:C.surface,borderRadius:6,padding:"2px 8px",fontSize:11,cursor:"pointer"}}>撤銷</button>
                       </div>
                       {sItems.map((it,ii)=>(
                         <div key={ii} style={{fontSize:12,color:sc.color,paddingLeft:4,lineHeight:1.8}}>
@@ -2528,7 +2536,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-M</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-O</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
