@@ -859,6 +859,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   const[editingNote,setEditingNote]=useState("");
   const[noteInputs,setNoteInputs]=useState({});
   const[shipInputs,setShipInputs]=useState({});
+  const[shipTogether,setShipTogether]=useState({});
   const[packed,setPacked]=useState({});  // 裝袋標記：key = oKey|sku
   const togglePacked=(oKey,sku)=>setPacked(p=>({...p,[oKey+"|"+sku]:!p[oKey+"|"+sku]}));
   function saveNote(oKey,text){setEditAlloc(prev=>{if(!prev||!prev[oKey])return prev;const next={...prev,[oKey]:{...prev[oKey],note:text}};onSaveAlloc(next);return next;});}
@@ -1810,7 +1811,16 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                       const anyPacked=anyAllocPacked||anyCustPacked;
                       const hasInput=!!(shipInputs[o.oKey]&&shipInputs[o.oKey].trim());
                       const canConfirm=hasInput&&anyPacked;
+                      const _cnt=(x)=>{let n=0,v=0;x.allocItems.forEach(it=>{for(let u=0;u<(it.allocatedQty||0);u++){if(packed[x.oKey+"|"+unitPackKey(x.allocItems,it,u)]){n++;v+=Math.round(it.price||0);}}});return{x,n,v};};
+                      const _others=c.orders.filter(x=>x.oKey!==o.oKey).map(_cnt).filter(z=>z.n>0);
+                      const _tog=_others.length>0&&shipTogether[o.oKey]!==false;
+                      const _mine=_cnt(o);
                       return(
+                    <div>
+                    {_others.length>0&&<label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.ink,marginBottom:6,cursor:"pointer"}}>
+                      <input type="checkbox" checked={_tog} onChange={e=>setShipTogether(p=>({...p,[o.oKey]:e.target.checked}))}/>
+                      <span>同一個出貨單號，連同這位客人其他已裝袋的訂單一起出貨（本單已勾 ${_mine.v}＋其他 {_others.length} 張 ${_others.reduce((a,z)=>a+z.v,0)}＝${_mine.v+_others.reduce((a,z)=>a+z.v,0)}）</span>
+                    </label>}
                     <div style={{display:"flex",gap:6}}>
                       <input type="text" value={shipInputs[o.oKey]||""} onChange={e=>setShipInputs(p=>({...p,[o.oKey]:e.target.value}))}
                         placeholder={(iopenInfo&&iopenInfo.orders&&iopenInfo.orders[shipments.length]&&iopenInfo.orders[shipments.length].orderNo)||(hasShipments?"填入第二次出貨單號":"填入出貨單號")}
@@ -1818,12 +1828,15 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                       <button onClick={()=>{
                         if(!hasInput)return;
                         if(!anyPacked){alert("請先勾選已裝袋的品項（含客訂品項），才能出貨");return;}
-                        confirmShipment(o.oKey,shipInputs[o.oKey].trim());
+                        const _no=shipInputs[o.oKey].trim();
+                        confirmShipment(o.oKey,_no);
+                        if(_tog)_others.forEach(z=>confirmShipment(z.x.oKey,_no));
                       }}
                         disabled={!canConfirm}
                         style={{background:canConfirm?C.success:"#ccc",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:canConfirm?"pointer":"default",whiteSpace:"nowrap"}}>
                         確認出貨
                       </button>
+                    </div>
                     </div>
                       );})()}
                   </div>
@@ -2513,7 +2526,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-K</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-L</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
