@@ -861,7 +861,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
   const[copiedKey,setCopiedKey]=useState("");
   const[editingNote,setEditingNote]=useState("");
   const[noteInputs,setNoteInputs]=useState({});
-  const[shipInputs,setShipInputs]=useState({});
+  const[shipInputs,setShipInputs]=useState({});const[shipStores,setShipStores]=useState({});
   const[shipTogether,setShipTogether]=useState({});
   const[packed,setPacked]=useState({});  // 裝袋標記：key = oKey|sku
   const togglePacked=(oKey,sku)=>setPacked(p=>({...p,[oKey+"|"+sku]:!p[oKey+"|"+sku]}));
@@ -973,7 +973,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
     });
   }
 
-  function confirmShipment(oKey,orderNo){
+  function confirmShipment(oKey,orderNo,storeOv){
     setEditAlloc(prev=>{
       const order=prev[oKey];
       // 只出貨「已打勾裝袋」的件數；用單件(unit)為粒度計算，
@@ -994,7 +994,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
       if(_info&&_info.customItems)_info.customItems.forEach(ci=>{const ck=custKey(ci);if(newShippedCI.indexOf(ck)>-1)return;if(packed[oKey+"|CI|"+ck]){custShipped.push(custToItem(ci));newShippedCI.push(ck);}});
       if(shippedItems.length===0&&custShipped.length===0)return prev; // 一件都沒勾就不動作
       const _iord=_info&&_info.orders&&_info.orders.find(x=>String(x.orderNo)===String(orderNo));
-      const newShipment={orderNo,shippedAt:new Date().toISOString(),items:shippedItems.concat(custShipped),store:_iord?_iord.store:"",amount:_iord?_iord.amount:0};
+      const newShipment={orderNo,shippedAt:new Date().toISOString(),items:shippedItems.concat(custShipped),store:(storeOv&&String(storeOv).trim())||(_iord?_iord.store:""),amount:_iord?_iord.amount:0};
       const existingShipments=order.shipments||(order.shippedAt?[{orderNo:order.shippedOrderNo,shippedAt:order.shippedAt,items:order.allocItems}]:[]);
       const next={...prev,[oKey]:{...order,
         allocItems:remainItems,
@@ -1006,7 +1006,7 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
       onConfirmShipment(oKey,shippedItems,next); // 明確傳遞最新 alloc，避免閉包舊值
       return next;
     });
-    setShipInputs(p=>({...p,[oKey]:""}));
+    setShipInputs(p=>({...p,[oKey]:""}));setShipStores(p=>({...p,[oKey]:""}));
     setPacked(p=>{const n={...p};Object.keys(n).forEach(k=>{if(k.indexOf(oKey+"|")===0)delete n[k];});return n;});
   }
 
@@ -1838,12 +1838,16 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
                       <input type="text" value={shipInputs[o.oKey]||""} onChange={e=>setShipInputs(p=>({...p,[o.oKey]:e.target.value}))}
                         placeholder={(iopenInfo&&iopenInfo.orders&&iopenInfo.orders[shipments.length]&&iopenInfo.orders[shipments.length].orderNo)||(hasShipments?"填入第二次出貨單號":"填入出貨單號")}
                         style={{flex:1,border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,minWidth:0}}/>
+                      <input type="text" value={shipStores[o.oKey]||""} onChange={e=>setShipStores(p=>({...p,[o.oKey]:e.target.value}))}
+                        placeholder="門市（選填）"
+                        style={{width:110,border:`1px solid ${C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,minWidth:0}}/>
                       <button onClick={()=>{
                         if(!hasInput)return;
                         if(!anyPacked){alert("請先勾選已裝袋的品項（含客訂品項），才能出貨");return;}
                         const _no=shipInputs[o.oKey].trim();
-                        confirmShipment(o.oKey,_no);
-                        if(_tog)_others.forEach(z=>confirmShipment(z.x.oKey,_no));
+                        const _st=(shipStores[o.oKey]||"").trim();
+                        confirmShipment(o.oKey,_no,_st);
+                        if(_tog)_others.forEach(z=>confirmShipment(z.x.oKey,_no,_st));
                       }}
                         disabled={!canConfirm}
                         style={{background:canConfirm?C.success:"#ccc",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:canConfirm?"pointer":"default",whiteSpace:"nowrap"}}>
@@ -2623,7 +2627,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-S</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-T</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
