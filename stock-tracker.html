@@ -1861,6 +1861,32 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
 }
 
 // ── 主應用 ──
+// 把已到貨、尚未配出去的庫存，依客人總金額高→低補給「待補貨」品項（只補待補，不動已配好的）
+function autoFillWaiting(alloc,items){
+  const stock={};items.forEach(it=>{const fk=flatKey(it);stock[fk]=(stock[fk]||0)+Math.max(0,Math.max(0,(it.arrivedQty||0)-(it.defectQty||0))+(it.stockQty||0)-(it.shippedQty||0));});
+  Object.values(alloc||{}).forEach(o=>(o.allocItems||[]).forEach(it=>{const fk=flatKey(it);stock[fk]=Math.max(0,(stock[fk]||0)-(it.allocatedQty||0));}));
+  const keys=Object.keys(alloc||{}).sort((a,b)=>((alloc[b].customerTotalAmount||0)-(alloc[a].customerTotalAmount||0))||((alloc[a].orderIndex||0)-(alloc[b].orderIndex||0)));
+  let filled=0;
+  keys.forEach(k=>{
+    const o=alloc[k];if(!o||!(o.waitingItems||[]).length)return;
+    const allocItems=(o.allocItems||[]).slice();
+    const waiting=[];
+    o.waitingItems.forEach(w=>{
+      const need=needQty(w);if(!(need>0)){return;}
+      const fk=flatKey(w);const have=stock[fk]||0;const give=Math.min(need,have);
+      if(give>0){
+        stock[fk]=have-give;filled+=give;
+        const i=allocItems.findIndex(x=>itemKey(x)===itemKey(w));
+        if(i>=0)allocItems[i]={...allocItems[i],allocatedQty:(allocItems[i].allocatedQty||0)+give};
+        else allocItems.push({...w,orderedQty:need,allocatedQty:give});
+      }
+      const left=need-give;
+      if(left>0)waiting.push({...w,orderedQty:left,qty:left});
+    });
+    alloc[k]={...o,allocItems,waitingItems:waiting};
+  });
+  return{alloc,filled};
+}
 // 到貨清點台：直播＋iOPEN 同款商品合併成一列，只點一次數量，系統依各自「還差幾件」自動分給直播／iOPEN
 const _ctNormP=(p)=>String(p||"").replace(/奶霜立領/g,"立領奶霜").replace(/釦/g,"扣").replace(/紐/g,"鈕").replace(/現貨|預購/g,"").replace(/[（(][^）)]*[）)]/g,"").replace(/\d+\s*[~\-–]\s*\d+\s*(cm|公分)?|\d+\s*(cm|公分)/gi,"").replace(/賣場|直播|兒童|上衣|款|[｜|\s\-_·]/g,"");
 const _ctSfx=(it)=>{const v=it.size?[it.style,it.color].filter(Boolean).join("·"):getBaseStyle(it.style||it.color||"");return String(v).replace(/(^|·)(款式|顏色|颜色|花色)\s*[:：]\s*/g,"$1");};
@@ -1893,6 +1919,7 @@ function CountView({items,onApply,onClose}){
   const [sel,setSel]=useState("");
   const [draft,setDraft]=useState({});
   const [closed,setClosed]=useState(true);
+  const [autoFill,setAutoFill]=useState(true);
   const cur=prods.find(p=>p.id===sel);
   const get=(k)=>draft[k]||{add:0,defect:0};
   const setD=(k,patch)=>setDraft(pv=>({...pv,[k]:{...get(k),...pv[k],...patch}}));
@@ -1909,9 +1936,9 @@ function CountView({items,onApply,onClose}){
       if(closed)patch.counted=true;
       if(x.add>0){patch.arrivalLog=[...(it.arrivalLog||[]),{ts:now,d:x.add,total:tot}];if(!it.firstArrivedTs)patch.firstArrivedTs=now;patch.arrivedTs=now;}
       return{id:it.id,patch};});
-    onApply(ups);
+    const n=onApply(ups,autoFill)||0;
     setDraft({});
-    alert("已完成清點並儲存");
+    alert("已完成清點並儲存"+(n>0?"\n已自動把 "+n+" 件補給待補貨的客人（到「配貨」頁可看到）。":""));
   }
   const btn={border:`1px solid ${C.line}`,background:C.surface,color:C.ink,borderRadius:8,width:36,height:36,fontSize:18,cursor:"pointer"};
   return(<div style={{maxWidth:640,margin:"0 auto",padding:"14px"}}>
@@ -1946,6 +1973,7 @@ function CountView({items,onApply,onClose}){
           </div>
         </div>);})}
       <label style={{display:"flex",alignItems:"flex-start",gap:8,margin:"10px 0",cursor:"pointer"}}><input type="checkbox" checked={closed} onChange={e=>setClosed(e.target.checked)} style={{width:20,height:20,marginTop:1}}/><span style={{fontSize:13,color:C.ink}}>這批貨已全部到齊，未收齊的算<strong>短少</strong>（若還有貨在路上，請取消勾選）</span></label>
+      <label style={{display:"flex",alignItems:"flex-start",gap:8,margin:"0 0 10px",cursor:"pointer"}}><input type="checkbox" checked={autoFill} onChange={e=>setAutoFill(e.target.checked)} style={{width:20,height:20,marginTop:1}}/><span style={{fontSize:13,color:C.ink}}>清點後自動把到貨補給「待補貨」的客人（依客人金額高→低；不動已配好、已裝袋的品項）</span></label>
       <button onClick={finish} style={{width:"100%",background:C.stamp,color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:15,fontWeight:700,cursor:"pointer"}}>完成清點並儲存</button>
     </div>)}
   </div>);
@@ -2200,7 +2228,15 @@ function App(){
   useEffect(()=>{const h=(e)=>{if(pendingSave.current){e.preventDefault();e.returnValue="";}};window.addEventListener("beforeunload",h);return()=>window.removeEventListener("beforeunload",h);},[]);
 
   const [countMode,setCountMode]=useState(false);
-  function applyCount(ups){setItems(prev=>{const next=prev.map(it=>{const u=ups.find(x=>x.id===it.id);return u?{...it,...u.patch}:it;});scheduleSave(next);return next;});}
+  function applyCount(ups,auto){
+    const next=items.map(it=>{const u=ups.find(x=>x.id===it.id);return u?{...it,...u.patch}:it;});
+    let alloc=savedAllocRef.current,filled=0;
+    if(auto&&alloc){try{const r=autoFillWaiting(JSON.parse(JSON.stringify(alloc)),next);if(r.filled>0){alloc=r.alloc;filled=r.filled;}}catch(e){}}
+    setItems(next);
+    if(filled>0){savedAllocRef.current=alloc;setSavedAlloc(alloc);}
+    scheduleSave(next,alloc);
+    return filled;
+  }
   const[chgItem,setChgItem]=useState(null);const[homeItem,setHomeItem]=useState(null);const[showChanges,setShowChanges]=useState(false);const[addVarItem,setAddVarItem]=useState(null);
   function applyAddVariants(prod,plan){
     setItems(prev=>{
@@ -2569,7 +2605,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-P</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-Q</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
