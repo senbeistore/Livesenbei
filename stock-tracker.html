@@ -1861,25 +1861,53 @@ function AllocationView({items,savedAlloc,onClose,onSaveAlloc,onConfirmShipment,
 }
 
 // ── 主應用 ──
+// 到貨清點台：直播＋iOPEN 同款商品合併成一列，只點一次數量，系統依各自「還差幾件」自動分給直播／iOPEN
+const _ctNormP=(p)=>String(p||"").replace(/奶霜立領/g,"立領奶霜").replace(/釦/g,"扣").replace(/紐/g,"鈕").replace(/現貨|預購/g,"").replace(/[（(][^）)]*[）)]/g,"").replace(/\d+\s*[~\-–]\s*\d+\s*(cm|公分)?|\d+\s*(cm|公分)/gi,"").replace(/賣場|直播|兒童|上衣|款|[｜|\s\-_·]/g,"");
+const _ctSfx=(it)=>{const v=it.size?[it.style,it.color].filter(Boolean).join("·"):getBaseStyle(it.style||it.color||"");return String(v).replace(/(^|·)(款式|顏色|颜色|花色)\s*[:：]\s*/g,"$1");};
+function ctSrcLabel(it){return itemSource(it)==="iopen"?"IOPEN":"直播";}
+function ctSplit(members,add,defect){
+  // 依「直播→IOPEN」順序，各自先補到應收；超出的件數放在第一筆
+  const ord=members.slice().sort((a,b)=>(itemSource(a)==="live"?0:1)-(itemSource(b)==="live"?0:1));
+  const res={};ord.forEach(it=>{res[it.id]={add:0,defect:0};});
+  let left=add;
+  ord.forEach(it=>{const rem=Math.max(0,effOrderedQty(it)-(it.arrivedQty||0));const g=Math.min(left,rem);res[it.id].add=g;left-=g;});
+  if(left>0&&ord.length)res[ord[0].id].add+=left;
+  let dl=defect;
+  ord.forEach(it=>{const g=Math.min(dl,res[it.id].add);res[it.id].defect=g;dl-=g;});
+  if(dl>0&&ord.length)res[ord[0].id].defect+=dl;
+  return res;
+}
 function CountView({items,onApply,onClose}){
-  const prods=useMemo(()=>{const m={};items.forEach(it=>{const has=isOrderedMarked(it)||(it.arrivedQty||0)>0;if(!has)return;if(effOrderedQty(it)<=0&&(it.arrivedQty||0)<=0)return;(m[gProd(it)]=m[gProd(it)]||[]).push(it);});return Object.keys(m).sort((a,b)=>a.localeCompare(b)).map(k=>({prod:k,rows:m[k].slice().sort((a,b)=>{const c=getGroupKey(a).localeCompare(getGroupKey(b));return c!==0?c:getSortSize(a)-getSortSize(b);})}));},[items]);
+  const prods=useMemo(()=>{
+    const el=items.filter(it=>{const has=isOrderedMarked(it)||(it.arrivedQty||0)>0;if(!has)return false;if(effOrderedQty(it)<=0&&(it.arrivedQty||0)<=0)return false;return true;});
+    const cl=[];
+    el.forEach(it=>{const np=_ctNormP(gProd(it));let c=cl.find(x=>x.np===np||(np.length>=3&&x.np.length>=3&&(x.np.includes(np)||np.includes(x.np))));if(!c){c={np,items:[]};cl.push(c);}c.items.push(it);});
+    return cl.map(c=>{
+      const names=[...new Set(c.items.map(i=>gProd(i)))].sort((a,b)=>a.length-b.length);
+      const srcs=[...new Set(c.items.map(ctSrcLabel))];
+      const m={};c.items.forEach(it=>{const k=_ctSfx(it)+"|"+String(it.size||"");(m[k]=m[k]||[]).push(it);});
+      const skus=Object.keys(m).map(k=>({key:k,members:m[k]})).sort((a,b)=>{const x=a.members[0],y=b.members[0];const g=getGroupKey(x).localeCompare(getGroupKey(y));return g!==0?g:getSortSize(x)-getSortSize(y);});
+      return{id:c.np,prod:names[0],names,srcs,skus,all:c.items};
+    }).sort((a,b)=>a.prod.localeCompare(b.prod));
+  },[items]);
   const [sel,setSel]=useState("");
   const [draft,setDraft]=useState({});
   const [closed,setClosed]=useState(true);
-  const cur=prods.find(p=>p.prod===sel);
-  const get=(id)=>draft[id]||{add:0,defect:0};
-  const setD=(id,patch)=>setDraft(pv=>({...pv,[id]:{...get(id),...pv[id],...patch}}));
-  function fillAll(){const d={};cur.rows.forEach(it=>{d[it.id]={add:Math.max(0,effOrderedQty(it)-(it.arrivedQty||0)),defect:(draft[it.id]||{}).defect||0};});setDraft(pv=>({...pv,...d}));}
+  const cur=prods.find(p=>p.id===sel);
+  const get=(k)=>draft[k]||{add:0,defect:0};
+  const setD=(k,patch)=>setDraft(pv=>({...pv,[k]:{...get(k),...pv[k],...patch}}));
+  const remOf=(members)=>members.reduce((a,i)=>a+Math.max(0,effOrderedQty(i)-(i.arrivedQty||0)),0);
+  function fillAll(){const d={};cur.skus.forEach(sk=>{d[sk.key]={add:remOf(sk.members),defect:(draft[sk.key]||{}).defect||0};});setDraft(pv=>({...pv,...d}));}
   function finish(){
     if(!cur)return;
-    let shortN=0,addN=0;
-    cur.rows.forEach(it=>{const d=get(it.id);addN+=d.add;const tot=(it.arrivedQty||0)+d.add;if(closed&&effOrderedQty(it)>tot)shortN+=effOrderedQty(it)-tot;});
-    const msg=`「${cur.prod}」本次共收 ${addN} 件。`+(closed?(shortN>0?`\n有 ${shortN} 件短少，會列入短少追蹤。`:"\n數量完全相符。"):"\n未收齊的部分仍視為在途（不算短少）。")+"\n確定完成清點？";
+    let shortN=0,addN=0;const plan=[];
+    cur.skus.forEach(sk=>{const d=get(sk.key);const sp=ctSplit(sk.members,d.add,d.defect);sk.members.forEach(it=>{const x=sp[it.id];addN+=x.add;const tot=(it.arrivedQty||0)+x.add;if(closed&&effOrderedQty(it)>tot)shortN+=effOrderedQty(it)-tot;plan.push({it,x});});});
+    const msg=`「${displayProd(cur.prod)}」本次共收 ${addN} 件。`+(closed?(shortN>0?`\n有 ${shortN} 件短少，會列入短少追蹤。`:"\n數量完全相符。"):"\n未收齊的部分仍視為在途（不算短少）。")+"\n確定完成清點？";
     if(!window.confirm(msg))return;
     const now=new Date().toISOString();
-    const ups=cur.rows.map(it=>{const d=get(it.id);const tot=(it.arrivedQty||0)+d.add;const eff=effOrderedQty(it);const patch={arrivedQty:tot,defectQty:(it.defectQty||0)+d.defect,allArrived:eff>0&&tot>=eff};
+    const ups=plan.map(({it,x})=>{const tot=(it.arrivedQty||0)+x.add;const eff=effOrderedQty(it);const patch={arrivedQty:tot,defectQty:(it.defectQty||0)+x.defect,allArrived:eff>0&&tot>=eff};
       if(closed)patch.counted=true;
-      if(d.add>0){patch.arrivalLog=[...(it.arrivalLog||[]),{ts:now,d:d.add,total:tot}];if(!it.firstArrivedTs)patch.firstArrivedTs=now;patch.arrivedTs=now;}
+      if(x.add>0){patch.arrivalLog=[...(it.arrivalLog||[]),{ts:now,d:x.add,total:tot}];if(!it.firstArrivedTs)patch.firstArrivedTs=now;patch.arrivedTs=now;}
       return{id:it.id,patch};});
     onApply(ups);
     setDraft({});
@@ -1887,29 +1915,34 @@ function CountView({items,onApply,onClose}){
   }
   const btn={border:`1px solid ${C.line}`,background:C.surface,color:C.ink,borderRadius:8,width:36,height:36,fontSize:18,cursor:"pointer"};
   return(<div style={{maxWidth:640,margin:"0 auto",padding:"14px"}}>
-    <div style={{display:"flex",alignItems:"center",marginBottom:10}}><div style={{fontWeight:700,fontSize:16,color:C.ink}}>📦 到貨清點</div><button onClick={onClose} style={{marginLeft:"auto",border:`1px solid ${C.line}`,background:C.surface,color:C.inkMuted,borderRadius:8,padding:"6px 12px",fontSize:13,cursor:"pointer"}}>返回</button></div>
-    <div style={{fontSize:12,color:C.inkMuted,marginBottom:8}}>選一個商品，逐款輸入「本次實收」與「瑕疵」，系統會比對應收並標出短少。</div>
+    <div style={{display:"flex",alignItems:"center",marginBottom:10}}><div style={{fontWeight:700,fontSize:16,color:C.ink}}>📦 到貨清點台</div><button onClick={onClose} style={{marginLeft:"auto",border:`1px solid ${C.line}`,background:C.surface,color:C.inkMuted,borderRadius:8,padding:"6px 12px",fontSize:13,cursor:"pointer"}}>返回</button></div>
+    <div style={{fontSize:12,color:C.inkMuted,marginBottom:8,lineHeight:1.6}}>直播與 IOPEN 的同款商品合併成一列，只要輸入實收總數，系統會依各自還差幾件自動分配（先補直播、再補 IOPEN，多出的放在直播）。</div>
     <select value={sel} onChange={e=>{setSel(e.target.value);setDraft({});}} style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:10,padding:"10px",fontSize:14,background:C.surface,color:C.ink,marginBottom:12}}>
       <option value="">選擇要清點的商品…</option>
-      {prods.map(p=>{const sh=p.rows.reduce((a,i)=>a+shortQty(i),0);const wait=p.rows.reduce((a,i)=>a+Math.max(0,effOrderedQty(i)-(i.arrivedQty||0)),0);return(<option key={p.prod} value={p.prod}>{displayProd(p.prod)}（待收 {wait}{sh>0?`／短少 ${sh}`:""}）</option>);})}
+      {prods.map(p=>{const sh=p.all.reduce((a,i)=>a+shortQty(i),0);const wait=remOf(p.all);return(<option key={p.id} value={p.id}>{displayProd(p.prod)}［{p.srcs.join("＋")}］（待收 {wait}{sh>0?`／短少 ${sh}`:""}）</option>);})}
     </select>
     {!cur&&<div style={{color:C.inkMuted,textAlign:"center",padding:"32px 0",fontSize:13}}>{prods.length===0?"目前沒有已訂購的品項可清點":"請先選擇商品"}</div>}
     {cur&&(<div>
+      {cur.names.length>1&&<div style={{fontSize:11,color:C.inkMuted,marginBottom:6}}>已合併的商品名稱：{cur.names.map(n=>displayProd(n)).join("、")}</div>}
       <div style={{display:"flex",gap:8,marginBottom:8}}><button onClick={fillAll} style={{border:`1px solid ${C.success}`,color:C.success,background:"#f0faf4",borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer"}}>照單全收（填入全部應收）</button><button onClick={()=>setDraft({})} style={{border:`1px solid ${C.line}`,color:C.inkMuted,background:C.surface,borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer"}}>全部歸零</button></div>
-      {cur.rows.map(it=>{const d=get(it.id);const eff=effOrderedQty(it);const prior=it.arrivedQty||0;const tot=prior+d.add;const diff=tot-eff;const label=[it.color,it.size,it.style].filter(Boolean).join(" · ")||it.product;
-        return(<div key={it.id} style={{background:C.surface,border:`1px solid ${diff<0?"#FCA5A5":C.line}`,borderRadius:12,padding:"10px 12px",marginBottom:8}}>
+      {cur.skus.map(sk=>{const d=get(sk.key);const eff=sk.members.reduce((a,i)=>a+effOrderedQty(i),0);const prior=sk.members.reduce((a,i)=>a+(i.arrivedQty||0),0);const tot=prior+d.add;const diff=tot-eff;const first=sk.members[0];const label=[first.color,first.size,first.style].filter(Boolean).join(" · ")||first.product;
+        const sp=ctSplit(sk.members,d.add,d.defect);
+        return(<div key={sk.key} style={{background:C.surface,border:`1px solid ${diff<0?"#FCA5A5":C.line}`,borderRadius:12,padding:"10px 12px",marginBottom:8}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontWeight:700,fontSize:14,color:C.ink}}>{label}</span>
             <span style={{fontSize:12,color:C.inkMuted}}>應收 {eff}・先前已收 {prior}</span>
             <span style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:diff===0?C.success:diff<0?"#B91C1C":C.orange}}>{diff===0?"✓ 相符":diff<0?`缺 ${-diff}`:`多 ${diff}`}</span>
           </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
+            {sk.members.map(it=>{const x=sp[it.id];const e=effOrderedQty(it);return(<span key={it.id} style={{fontSize:11,color:itemSource(it)==="iopen"?"#6B21A8":C.info,background:itemSource(it)==="iopen"?"#F3E8FF":C.infoSoft,borderRadius:6,padding:"2px 7px"}}>{ctSrcLabel(it)} 應收 {e}・已收 {it.arrivedQty||0}{d.add>0?`　→ 本次 +${x.add}`:""}</span>);})}
+          </div>
           <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,flexWrap:"wrap"}}>
             <span style={{fontSize:12,color:C.inkMuted}}>本次收到</span>
-            <button style={btn} onClick={()=>setD(it.id,{add:Math.max(0,d.add-1)})}>−</button>
-            <input type="number" min="0" value={d.add} onChange={e=>setD(it.id,{add:Math.max(0,parseInt(e.target.value,10)||0)})} style={{width:56,height:36,border:`1px solid ${C.info}`,borderRadius:8,textAlign:"center",fontSize:15,fontWeight:700,background:"#EFF6FC",color:C.info}}/>
-            <button style={btn} onClick={()=>setD(it.id,{add:d.add+1})}>＋</button>
+            <button style={btn} onClick={()=>setD(sk.key,{add:Math.max(0,d.add-1)})}>−</button>
+            <input type="number" min="0" value={d.add} onChange={e=>setD(sk.key,{add:Math.max(0,parseInt(e.target.value,10)||0)})} style={{width:56,height:36,border:`1px solid ${C.info}`,borderRadius:8,textAlign:"center",fontSize:15,fontWeight:700,background:"#EFF6FC",color:C.info}}/>
+            <button style={btn} onClick={()=>setD(sk.key,{add:d.add+1})}>＋</button>
             <span style={{fontSize:12,color:"#B91C1C",marginLeft:6}}>瑕疵</span>
-            <input type="number" min="0" value={d.defect} onChange={e=>setD(it.id,{defect:Math.max(0,parseInt(e.target.value,10)||0)})} style={{width:46,height:36,border:`1px solid ${d.defect>0?"#B91C1C":C.line}`,borderRadius:8,textAlign:"center",fontSize:14,background:C.bg}}/>
+            <input type="number" min="0" value={d.defect} onChange={e=>setD(sk.key,{defect:Math.max(0,parseInt(e.target.value,10)||0)})} style={{width:46,height:36,border:`1px solid ${d.defect>0?"#B91C1C":C.line}`,borderRadius:8,textAlign:"center",fontSize:14,background:C.bg}}/>
           </div>
         </div>);})}
       <label style={{display:"flex",alignItems:"flex-start",gap:8,margin:"10px 0",cursor:"pointer"}}><input type="checkbox" checked={closed} onChange={e=>setClosed(e.target.checked)} style={{width:20,height:20,marginTop:1}}/><span style={{fontSize:13,color:C.ink}}>這批貨已全部到齊，未收齊的算<strong>短少</strong>（若還有貨在路上，請取消勾選）</span></label>
@@ -2536,7 +2569,7 @@ function App(){
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-O</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1024-P</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
