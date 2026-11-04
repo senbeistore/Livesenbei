@@ -38,7 +38,7 @@
 </head>
 <body>
 <header>
-  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AQ</span>
+  <h1>1688 叫貨比對</h1><span class="badge">build 1688-AR</span>
   <a href="stock-tracker.html">← 備貨追蹤</a>
   <span id="rl" class="mute" style="color:#fff;margin-left:auto"></span>
 </header>
@@ -559,37 +559,46 @@ document.addEventListener("change",e=>{if(e.target&&e.target.id==="mapOnlyBad")r
 
 // ---- 到貨核對（連動備貨追蹤的清點台）----
 function readCountLink(){try{const v=JSON.parse(localStorage.getItem("st_count_link_v1")||"null");return v&&v.byItem?v:{ts:0,byItem:{},selIds:[]};}catch(e){return{ts:0,byItem:{},selIds:[]};}}
+let ARRF="all";
+function setArrF(f){ARRF=f;renderArrival();}
 function renderArrival(){
   const box=$("arrBody");if(!box)return;
   if(!SRC||!LINES.length){box.innerHTML='<div class="mute">請先讀取備貨追蹤並上傳 1688 訂單檔。</div>';return;}
-  const link=readCountLink();const by=link.byItem||{};const sel=new Set(link.selIds||[]);
+  const link=readCountLink();const by=link.byItem||{};
   let res;try{res=compute();}catch(e){box.innerHTML='<span class="err">'+esc(e.message||e)+'</span>';return;}
-  const hit=r=>r.items.some(x=>by[x.id]||sel.has(x.id));
-  const rows=res.rows.filter(hit);
   const age=link.ts?Math.round((Date.now()-link.ts)/1000):0;
   const stat={};LINES.forEach(l=>{if(!stat[l.orderNo])stat[l.orderNo]=l.status;});
-  if(!rows.length&&!Object.keys(by).length){box.innerHTML='<div class="mute">清點台目前沒有輸入中的數量。請到備貨追蹤按「清點」，選商品並輸入「本次收到」，這裡會自動出現對照。（若清點台在另一個分頁，請按「重新整理」）</div>';return;}
-  let short=0,over=0,ok=0,pend=0,pendQ=0;const pr=[];
-  const trs=rows.map(r=>{
+  // 這份 1688 清單的全部款式一起比：累計收到（先前已收＋清點台本次輸入）對 1688 叫貨數
+  const rows=res.rows.map(r=>{
     const prior=r.items.reduce((a,x)=>a+(x.arrivedQty||0),0);
     const now=r.items.reduce((a,x)=>a+((by[x.id]||{}).add||0),0);
     const def=r.items.reduce((a,x)=>a+((by[x.id]||{}).defect||0),0);
     const total=prior+now,diff=r.fileQty-total;
-    if(!now&&!def&&!r.items.some(x=>sel.has(x.id)))return"";
     const entered=now>0||def>0;
-    let tag;if(!entered){pend++;pendQ+=Math.max(0,diff);tag='<span class="mute">尚未輸入</span>';}else if(diff>0){short+=diff;tag='<span class="err">短少 '+diff+'</span>';}else if(diff<0){over+=-diff;tag='<span class="warn">多收 '+(-diff)+'</span>';}else{ok++;tag='<span class="ok">✓ 相符</span>';}
+    const kind=diff<0?"over":(diff>0?(entered?"short":"wait"):(entered||prior>0?"ok":"wait"));
+    return{r,prior,now,def,total,diff,entered,kind};
+  });
+  const cnt={short:0,over:0,ok:0,wait:0},qty={short:0,over:0,wait:0};
+  rows.forEach(x=>{cnt[x.kind]++;if(x.kind==="short")qty.short+=x.diff;else if(x.kind==="over")qty.over+=-x.diff;else if(x.kind==="wait")qty.wait+=Math.max(0,x.diff);});
+  const order={short:0,over:1,ok:2,wait:3};
+  const vis=rows.filter(x=>ARRF==="all"||x.kind===ARRF).sort((a,b)=>order[a.kind]-order[b.kind]||(a.entered===b.entered?0:a.entered?-1:1));
+  const tagOf=x=>x.kind==="short"?'<span class="err">短少 '+x.diff+'</span>':x.kind==="over"?'<span class="warn">多收 '+(-x.diff)+'</span>':x.kind==="ok"?'<span class="ok">✓ 相符</span>':'<span class="mute">'+(x.diff>0?'尚未輸入（還差 '+x.diff+'）':'尚未輸入')+'</span>';
+  const trs=vis.map(x=>{const r=x.r;
     const ord=Object.keys(r.orders).map(no=>esc(no)+"×"+r.orders[no].qty+(stat[no]?'（'+esc(stat[no])+'）':"")).join("<br>");
     const lab=esc(gProd(r.it))+'<br><b>'+esc(colorLabel(r.it))+' · '+esc(r.it.size||"")+'</b>';
-    const html='<tr'+(entered?'':' style="opacity:.55"')+'><td>'+lab+'</td><td class="num">'+r.fileQty+'</td><td class="num">'+prior+'</td><td class="num"><b>'+now+'</b>'+(def?'<br><span class="err">瑕疵 '+def+'</span>':"")+'</td><td class="num">'+total+'</td><td>'+tag+'</td><td style="font-size:11px">'+ord+'</td></tr>';
-    pr.push({entered,html});return"x";
-  }).filter(Boolean);
-  const trs2=pr.filter(x=>x.entered).concat(pr.filter(x=>!x.entered)).map(x=>x.html);
+    return'<tr'+(x.kind==="wait"?' style="opacity:.6"':'')+'><td>'+lab+'</td><td class="num">'+r.fileQty+'</td><td class="num">'+x.prior+'</td><td class="num"><b>'+x.now+'</b>'+(x.def?'<br><span class="err">瑕疵 '+x.def+'</span>':"")+'</td><td class="num">'+x.total+'</td><td>'+tagOf(x)+'</td><td style="font-size:11px">'+ord+'</td></tr>';
+  });
   // 清點台有輸入、但 1688 清單對不到的品項
   const inRows=new Set(res.rows.flatMap(r=>r.items.map(x=>x.id)));
   const lone=Object.keys(by).filter(id=>!inRows.has(id)&&(by[id].add>0||by[id].defect>0)).map(id=>SRC.all.find(x=>x.id===id)).filter(Boolean);
   const loneHtml=lone.length?'<div class="warn" style="margin-top:8px">以下有輸入收到、但這份 1688 清單沒有對到（可能是微信叫貨，或還沒設定對應）：'+lone.map(x=>esc(gProd(x))+' '+esc(colorLabel(x))+'·'+esc(x.size||"")+'（收 '+by[x.id].add+'）').join('、')+'</div>':"";
-  const head='<div class="row" style="margin-bottom:8px;gap:12px"><span>'+(short?'<span class="err">共短少 '+short+' 件</span>':'<span class="ok">✓ 沒有短少</span>')+'</span>'+(over?'<span class="warn">多收 '+over+' 件</span>':"")+'<span class="mute">'+ok+' 款相符'+(pend?'；另有 '+pend+' 款（1688 共 '+pendQ+' 件）清點台還沒輸入，未列入短少':'')+(link.ts?'　清點台資料 '+(age<60?age+' 秒':Math.round(age/60)+' 分鐘')+'前更新':'')+'</span></div>';
-  box.innerHTML=head+(trs2.length?'<div class="scroll"><table><tr><th>款式</th><th>1688 叫貨</th><th>先前已收</th><th>本次輸入</th><th>累計收到</th><th>結果</th><th>1688 單號（狀態）</th></tr>'+trs2.join("")+'</table></div>':'<div class="mute">清點台選的商品在這份 1688 清單裡沒有對應款式。</div>')+loneHtml+'<div class="mute" style="margin-top:6px">「累計收到」= 先前已收 + 本次輸入。「短少」表示 1688 叫的比累計收到多；若 1688 單狀態還沒出貨，可能只是還在途。數字沒按「完成清點並儲存」之前都不會寫入備貨追蹤。</div>';
+  const chip=(k,t,n)=>'<button onclick="setArrF(\''+k+'\')" style="margin-right:6px;'+(ARRF===k?'background:#2b5fa5;color:#fff;border-color:#2b5fa5':'')+'">'+t+(n!=null?' '+n:'')+'</button>';
+  const head='<div style="margin-bottom:8px">'
+    +(qty.short?'<span class="err"><b>短少 '+qty.short+' 件</b>（'+cnt.short+' 款，已輸入的）</span>　':'<span class="ok">已輸入的款沒有短少</span>　')
+    +(qty.over?'<span class="warn"><b>多收 '+qty.over+' 件</b>（'+cnt.over+' 款）</span>　':'')
+    +'<span class="mute">'+cnt.ok+' 款相符'+(cnt.wait?'；'+cnt.wait+' 款清點台還沒輸入'+(qty.wait?'（還差 '+qty.wait+' 件）':''):'')+(link.ts?'；清點台資料 '+(age<60?age+' 秒':Math.round(age/60)+' 分鐘')+'前更新':'')+'</span></div>'
+    +'<div style="margin-bottom:8px">'+chip("all","全部",rows.length)+chip("short","短少",cnt.short)+chip("over","多收",cnt.over)+chip("ok","相符",cnt.ok)+chip("wait","尚未輸入",cnt.wait)+'</div>';
+  box.innerHTML=head+(trs.length?'<div class="scroll"><table><tr><th>款式</th><th>1688 叫貨</th><th>先前已收</th><th>本次輸入</th><th>累計收到</th><th>結果</th><th>1688 單號（狀態）</th></tr>'+trs.join("")+'</table></div>':'<div class="mute">這個分類沒有款式。</div>')+loneHtml+'<div class="mute" style="margin-top:6px">這份 1688 清單的全部款式一起比對。「累計收到」= 先前已收 + 清點台本次輸入。已輸入的款少於 1688 叫貨數算「短少」，多於叫貨數算「多收」；還沒在清點台輸入的款，只有累計已超過叫貨數才會算多收，其餘列為「尚未輸入」。1688 單狀態還沒出貨的，短少可能只是還在途。數字沒按「完成清點並儲存」之前不會寫入備貨追蹤。</div>';
 }
 window.addEventListener("storage",e=>{if(e.key==="st_count_link_v1")renderArrival();});
 window.addEventListener("focus",renderArrival);
