@@ -40,7 +40,7 @@
 </head>
 <body>
 <header>
-  <h1>🛍️ 商品上架（iOPEN Mall 商品大量上傳）<span style="font-size:11px;font-weight:400;opacity:.8"> build 1020-B</span></h1>
+  <h1>🛍️ 商品上架（iOPEN Mall 商品大量上傳）<span style="font-size:11px;font-weight:400;opacity:.8"> build 1109-A</span></h1>
   <button class="ghost small" id="btnClear">全部清空</button>
   <button class="primary" id="btnExport" style="background:#fff;color:var(--accent)">匯出 Excel</button>
 </header>
@@ -129,13 +129,21 @@ function migrate(p) {
   if (o1.length && o2.length) o1.forEach(a => o2.forEach(b => add(a, b)));
   else (o1.length ? o1 : o2).forEach(a => add(a, ""));
 }
-function expandOpts(p) {
+// replace=true：依目前的顏色×尺寸「重建」全部選項（同名選項保留已填的上限/售價，不在新組合裡的會被移除）
+function expandOpts(p, replace) {
   migrate(p);
   const cs = splitOpts(p.genColors), ss = splitOpts(p.genSizes);
   const have = new Set(p.opts.map(o => o.n));
   const names = [];
   if (cs.length && ss.length) cs.forEach(c => ss.forEach(z => names.push(c + z)));
   else (cs.length ? cs : ss).forEach(x => names.push(x));
+  if (replace) {
+    const old = new Map(p.opts.map(o => [String(o.n || "").trim(), o]));
+    const seen = new Set();
+    p.opts = [];
+    names.forEach(n => { if (seen.has(n)) return; seen.add(n); const o = old.get(n); p.opts.push({ n, stock: o ? o.stock : "", price: o ? o.price : "" }); });
+    return;
+  }
   names.forEach(n => { if (!have.has(n)) { have.add(n); p.opts.push({ n, stock: "", price: "" }); } });
 }
 function toInt(v, d) { const n = parseInt(String(v).replace(/[^\d-]/g, ""), 10); return isNaN(n) ? d : n; }
@@ -267,7 +275,7 @@ function renderEditor() {
       <div><label>尺寸（逗號分隔，可留空）</label><input data-k="genSizes" value="${esc(p.genSizes)}" placeholder="90,120"></div>
       ${field(p.mode === "preorder" ? "預設接單上限" : "預設庫存（沒個別填的選項使用）", "defStock", p, 'inputmode="numeric"')}
     </div>
-    <div class="row" style="margin:8px 0"><button class="small" id="btnExpand">⤵ 展開成選項</button><button class="small" id="btnAddOpt">＋ 新增一列</button><span class="mute">展開會把每個顏色配每個尺寸，已存在的不重複</span></div>
+    <div class="row" style="margin:8px 0"><button class="small" id="btnExpand">⤵ 重新展開成選項（取代全部）</button><button class="small" id="btnAddOpt">＋ 新增一列</button><span class="mute">按下會依上面的顏色×尺寸重新產生全部選項，名稱相同的保留已填的數量與售價</span></div>
     ${combos.length ? `<table><tr><th>選項</th><th>${p.mode === "preorder" ? "接單上限" : "庫存"}</th><th>售價</th><th></th></tr>${cellRows}</table>` : ""}
   </div>
   <div class="card">
@@ -294,7 +302,14 @@ function renderEditor() {
     el.oninput = () => { p.opts[+el.dataset.opt][el.dataset.f] = el.value; save(); renderPreview(); };
   });
   $("editor").querySelectorAll("[data-del]").forEach(el => el.onclick = () => { p.opts.splice(+el.dataset.del, 1); save(); renderAll(); });
-  $("btnExpand").onclick = () => { expandOpts(p); save(); renderAll(); };
+  $("btnExpand").onclick = () => {
+    migrate(p);
+    const cs = splitOpts(p.genColors), ss = splitOpts(p.genSizes);
+    const names = new Set(); if (cs.length && ss.length) cs.forEach(c => ss.forEach(z => names.add(c + z))); else (cs.length ? cs : ss).forEach(x => names.add(x));
+    const removed = p.opts.filter(o => !names.has(String(o.n || "").trim())).length;
+    if (removed > 0 && !confirm("將依目前的顏色與尺寸重新產生全部選項。\n不在新組合裡的 " + removed + " 個選項會被移除（包含手動新增的列）；名稱相同的選項會保留已填的數量與售價。\n要繼續嗎？")) return;
+    expandOpts(p, true); save(); renderAll();
+  };
   $("btnAddOpt").onclick = () => { migrate(p); p.opts.push({ n: "", stock: "", price: "" }); save(); renderAll(); };
   $("modeStock").onclick = () => { p.mode = "stock"; save(); renderAll(); };
   $("modePre").onclick = () => { p.mode = "preorder"; if (p.defStock === "") p.defStock = "50"; save(); renderAll(); };
