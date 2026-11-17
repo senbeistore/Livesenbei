@@ -2497,7 +2497,18 @@ function App(){
   function handleCSV(e){
     const files=Array.from(e.target.files||[]);if(!files.length)return;
     Promise.all(files.map(file=>new Promise(resolve=>{const reader=new FileReader();reader.onload=ev=>resolve(parseBakuCSV(ev.target.result));reader.readAsText(file,"utf-8");})))
-    .then(results=>{
+    .then(importParsed);
+    e.target.value="";
+  }
+  const[showPaste,setShowPaste]=useState(false);const[pasteText,setPasteText]=useState("");
+  function importPasted(){
+    const t=pasteText.trim();if(!t){alert("請先貼上 CSV 內容");return;}
+    let parsed;try{parsed=parseBakuCSV(t);}catch(err){alert("讀取失敗："+err.message);return;}
+    if(!parsed||!parsed.length){alert("沒有讀到任何商品，請確認貼的是理貨台匯出的備貨清單 CSV 全部內容（含第一列標題）。");return;}
+    importParsed([parsed]);setShowPaste(false);setPasteText("");
+  }
+  function importParsed(results){
+    {
       const aggMap={};results.forEach(parsed=>{parsed.forEach(p=>{const k=itemKey(p);if(aggMap[k])aggMap[k].qty+=p.qty;else aggMap[k]={...p};});});
       setItems(prev=>{
         const ex={};prev.forEach(it=>{ex[itemKey(it)]=it;});
@@ -2505,8 +2516,7 @@ function App(){
         const mk=new Set(merged.map(itemKey));prev.forEach(it=>{if(!mk.has(itemKey(it)))merged.push(it);});
         scheduleSave(merged);return merged;
       });
-    });
-    e.target.value="";
+    }
   }
 
   if(setupMode)return<Setup onDone={(t,g,name)=>{setToken(t);const ws=[{name:name||"第一場次",gistId:g}];setWorkspaces(ws);setActiveIdx(0);saveWorkspaces(ws,0);localStorage.setItem("st_token",t);setSetupMode(false);gFetch(t,g).then(({items:its,savedAlloc:sa})=>{setItems(its);setSavedAlloc(sa);}).catch(e=>setGlobalErr(e.message));}}/>;
@@ -2647,10 +2657,21 @@ function App(){
 
   return(
     <div style={{background:C.bg,minHeight:"100vh",paddingBottom:batchSel.size>0?220:0}}>
+      {showPaste&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"20px 10px"}} onClick={()=>setShowPaste(false)}>
+        <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:14,maxWidth:560,width:"100%",padding:16}}>
+          <div style={{fontWeight:700,marginBottom:6}}>貼上匯入備貨清單</div>
+          <div style={{color:C.inkMuted,fontSize:12,marginBottom:8}}>把理貨台匯出的備貨清單 CSV 內容全選複製（含第一列標題），貼在下面。</div>
+          <textarea value={pasteText} onChange={e=>setPasteText(e.target.value)} rows={10} placeholder="在這裡貼上 CSV 內容" style={{width:"100%",border:`1px solid ${C.line}`,borderRadius:8,padding:8,fontSize:13,boxSizing:"border-box"}}/>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:10}}>
+            <button onClick={()=>setShowPaste(false)} style={{background:C.surface,color:C.inkMuted,border:`1px solid ${C.line}`,borderRadius:8,padding:"8px 14px",fontSize:13,cursor:"pointer"}}>取消</button>
+            <button onClick={importPasted} style={{background:C.stamp,color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>匯入</button>
+          </div>
+        </div>
+      </div>}
       <div style={{background:C.surface,borderBottom:`1px solid ${C.line}`,position:"sticky",top:0,zIndex:10}}>
         <div style={{maxWidth:640,margin:"0 auto",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <div>
-            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1117-A</span></div>
+            <div style={{color:C.stamp,fontWeight:700,fontSize:17,display:"flex",alignItems:"center",gap:6}}>備貨追蹤<span style={{fontSize:10,fontWeight:600,color:"#fff",background:"#7C3AED",borderRadius:8,padding:"1px 6px"}}>build 1117-B</span></div>
             <button onClick={()=>{setShowWorkspaces(!showWorkspaces);setShowSettings(false);}} style={{color:C.inkMuted,fontSize:12,background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
               {workspaces[activeIdx]?.name||"場次"} <span style={{fontSize:10}}>▼</span>
             </button>
@@ -2661,6 +2682,7 @@ function App(){
             <button onClick={()=>{if(!window.confirm("把這台裝置目前的資料整份上傳到雲端，覆蓋雲端版本？\n（其他裝置較新的修改會被蓋掉，請確認這台才是最新的）"))return;scheduleSave(items,savedAllocRef.current);}} title="用這台的資料覆蓋雲端" style={{background:C.surface,color:C.inkMuted,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 9px",fontSize:12,cursor:"pointer"}}>⬆ 上傳</button>
             <button onClick={()=>syncCloud(true)} disabled={syncing} title="從雲端載入其他裝置的最新資料" style={{background:C.surface,color:C.inkMuted,border:`1px solid ${C.line}`,borderRadius:8,padding:"5px 9px",fontSize:12,cursor:"pointer"}}>{syncing?"同步中…":"🔄 同步"}</button>
             {!allocMode&&!countMode&&<label style={{position:"relative",display:"inline-block",background:C.stamp,color:"#fff",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer",overflow:"hidden"}}>匯入備貨清單<input ref={fileRef} type="file" accept=".csv,text/csv,text/comma-separated-values,application/vnd.ms-excel" multiple style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:0,cursor:"pointer"}} onChange={handleCSV}/></label>}
+            {!allocMode&&!countMode&&<button onClick={()=>setShowPaste(true)} style={{background:C.surface,color:C.stamp,border:`1px solid ${C.stamp}`,borderRadius:8,padding:"6px 10px",fontSize:13,fontWeight:600,cursor:"pointer"}}>貼上匯入</button>}
             {!allocMode&&!countMode&&<label style={{position:"relative",display:"inline-block",background:"#7C3AED",color:"#fff",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer",overflow:"hidden"}}>客訂XLS<input ref={iopenAppRef} type="file" accept=".xls,.xlsx" multiple style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:0,cursor:"pointer"}} onChange={e=>handleIopenAppXLS(e.target.files)}/></label>}
             <button onClick={()=>{setCountMode(!countMode);setAllocMode(false);setShowWorkspaces(false);setShowSettings(false);}} style={{background:countMode?C.success:C.surface,color:countMode?"#fff":C.inkMuted,border:`1px solid ${countMode?C.success:C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,fontWeight:countMode?"600":"400",cursor:"pointer"}}>清點</button>
             <button onClick={()=>{setAllocMode(!allocMode);setCountMode(false);setShowWorkspaces(false);setShowSettings(false);}} style={{background:allocMode?C.info:C.surface,color:allocMode?"#fff":C.inkMuted,border:`1px solid ${allocMode?C.info:C.line}`,borderRadius:8,padding:"7px 10px",fontSize:13,fontWeight:allocMode?"600":"400",cursor:"pointer"}}>配貨</button>
